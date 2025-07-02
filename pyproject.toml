@@ -1,0 +1,32 @@
+[build-system]
+requires = [
+    "setuptools>=77.0.3",   # PEP 639
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dwave-experimental"
+dynamic = ["version"]
+authors = [
+    {name = "D-Wave Inc.", email = "tools@dwavesys.com"},
+]
+description = "Ocean utilities to support advanced QPU prototype features."
+readme = {file = "README.rst", content-type = "text/x-rst"}
+license = "Apache-2.0"
+license-files = ["LICEN[CS]E*"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+]
+requires-python = ">=3.9"
+dependencies = []
+
+[project.urls]
+Issues = "https://github.com/dwavesystems/dwave-experimental/issues"
+Repository = "https://github.com/dwavesystems/dwave-experimental.git"
+
+[tool.setuptools.dynamic]
+version = {attr = "dwave.experimental.__version__"}
