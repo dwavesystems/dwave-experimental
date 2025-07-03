@@ -22,7 +22,11 @@ classifiers = [
     "Programming Language :: Python :: 3",
 ]
 requires-python = ">=3.9"
-dependencies = []
+dependencies = [
+    "dimod>=0.12.20,<0.13",
+    "dwave-cloud-client>=0.13.6,<0.14",
+    "dwave-system>=1.32.0,<2",
+]
 
 [project.urls]
 Issues = "https://github.com/dwavesystems/dwave-experimental/issues"
@@ -30,3 +34,18 @@ Repository = "https://github.com/dwavesystems/dwave-experimental.git"
 
 [tool.setuptools.dynamic]
 version = {attr = "dwave.experimental.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["dwave.*"]
+
+[tool.coverage.run]
+omit = ["tests/*"]
+source = ["dwave/experimental"]
+
+[tool.coverage.report]
+include_namespace_packages = true
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]

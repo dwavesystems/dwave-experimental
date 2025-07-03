@@ -1,5 +1,7 @@
 # install requirements
-# TODO
+dimod==0.12.20
+dwave-cloud-client==0.13.6
+dwave-system==1.32.0
 
 # dev requirements
 reno==4.1.0
