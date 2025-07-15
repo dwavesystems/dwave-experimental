@@ -14,7 +14,7 @@
 
 # from __future__ import annotations
 
-from collections.abc import Mapping #, Sequence
+from collections.abc import Mapping  # , Sequence
 from typing import Any, Optional, Iterable, Callable
 
 import numpy as np
@@ -24,7 +24,7 @@ from dimod.typing import Variable, Bias
 from dwave.system import DWaveSampler
 
 
-__all__ = ['shim_flux_biases', 'qubit_freezeout_alphaPhi']
+__all__ = ["shim_flux_biases", "qubit_freezeout_alphaPhi"]
 
 ## FOR TESTING
 from dimod import SampleSet
@@ -54,11 +54,9 @@ class ShimmingMockSampler(MockDWaveSampler):
     architectures.
     """
 
-    def __init__(
-        self, flux_biases_baseline: Optional[list[float]] = None, **kwargs
-    ):
-    kwargs.setdefault("topology_type", "pegasus")
-    kwargs.setdefault("topology_shape", [16])
+    def __init__(self, flux_biases_baseline: Optional[list[float]] = None, **kwargs):
+        kwargs.setdefault("topology_type", "pegasus")
+        kwargs.setdefault("topology_shape", [16])
         substitute_sampler = SimulatedAnnealingSampler()
         substitute_kwargs = {
             "beta_range": [0, 3],
@@ -70,7 +68,7 @@ class ShimmingMockSampler(MockDWaveSampler):
         super().__init__(
             substitute_sampler=substitute_sampler,
             substitute_kwargs=substitute_kwargs,
-            **kwargs
+            **kwargs,
         )
         num_qubits = self.properties["num_qubits"]
         if flux_biases_baseline is None:
@@ -83,7 +81,6 @@ class ShimmingMockSampler(MockDWaveSampler):
         self.mocked_parameters.add("auto_scale")
         self.mocked_parameters.add("readout_thermalization")
         self.mocked_parameters.add("annealing_time")
-
 
     def sample(self, bqm, **kwargs):
         """Sample with flux_biases transformed to Ising model linear biases."""
@@ -117,24 +114,30 @@ class ShimmingMockSampler(MockDWaveSampler):
 
         return ss
 
-def qubit_freezeout_alphaPhi(eff_temp_phi: float = 0.112, flux_associated_variance: float = 1/1024, estimator_variance: float = 1/256, unit_conversion: float = 1.148e-3):
+
+def qubit_freezeout_alphaPhi(
+    eff_temp_phi: float = 0.112,
+    flux_associated_variance: float = 1 / 1024,
+    estimator_variance: float = 1 / 256,
+    unit_conversion: float = 1.148e-3,
+):
     r"""Determine the learning rate for independent qubits.
 
     Assume a qubit is offset by phi_0, which is to be corrected
-    by some choice of flux_bias phi. A model of single qubit freezeout dictates 
+    by some choice of flux_bias phi. A model of single qubit freezeout dictates
     that magnetization <s_i> = tanh((phi_{0i} + phi_i)/ T),
     where T is the effective temperature.
 
     We assume the unshimmed magnetization to be zero mean distributed
     with small variance Delta_1. Assume that we use the standard sampling
-    based estimator with variance Delta_2 = 1/num_reads. We can then 
-    determine an update the flux as phi = l <s_i>_data, where the 
-    learning rate l = T Delta_1 /(Delta_1 + Delta_2). This update is 
+    based estimator with variance Delta_2 = 1/num_reads. We can then
+    determine an update the flux as phi = l <s_i>_data, where the
+    learning rate l = T Delta_1 /(Delta_1 + Delta_2). This update is
     optimal in the sense it minimizes the expected square magnetization.
 
     For correlated spin systems and/or experiments not well described by
     thermal freezeout it is recommended a data-driven approach is taken
-    to determining the schedule and related parameters. The freezeout 
+    to determining the schedule and related parameters. The freezeout
     (Boltzmann) distribution can be extended to correlated models, wherein
     the covariance matrix plays a role in determining optimal learning rate.
     A single qubit rate can remain a good approximation given weakly
@@ -160,48 +163,54 @@ def qubit_freezeout_alphaPhi(eff_temp_phi: float = 0.112, flux_associated_varian
 
     Example:
         Determining an alphaPhi appropriate for forward anneal of a weakly
-        coupled system Advantage_system4.1 based on published parameters. 
+        coupled system Advantage_system4.1 based on published parameters.
         Note that defaults (by contrast) are determined based on published
         values for Advantage2_system1.3
-    
-        >>> alphaPhi = qubit_freezeout_alphaPhi(eff_temp_phi=0.198, flux_associated_variance=1/1024, estimator_variance=1/256, unit_conversion=1.647e-3)
-    
-    """
-    return unit_conversion * eff_temp_phi * flux_associated_variance/(flux_associated_variance + estimator_variance)
-            
 
-def shim_flux_biases(bqm: dimod.BinaryQuadraticModel,
-                     sampler: dimod.Sampler,
-                     *,
-                     sampling_params: Optional[dict[str, Any]] = None,
-                     shimmed_variables: Iterable = None,
-                     learning_schedule: Iterable[float] = None,
-                     convergence_test: Optional[Callable] = None,
-                     symmetrize_experiments: bool = True
-                     ) -> tuple[list[Bias], dict, dict]:
-    """ Return flux_biases achieving  <s_i> = 0 for symmetry preserving 
+        >>> alphaPhi = qubit_freezeout_alphaPhi(eff_temp_phi=0.198, flux_associated_variance=1/1024, estimator_variance=1/256, unit_conversion=1.647e-3)
+
+    """
+    return (
+        unit_conversion
+        * eff_temp_phi
+        * flux_associated_variance
+        / (flux_associated_variance + estimator_variance)
+    )
+
+
+def shim_flux_biases(
+    bqm: dimod.BinaryQuadraticModel,
+    sampler: dimod.Sampler,
+    *,
+    sampling_params: Optional[dict[str, Any]] = None,
+    shimmed_variables: Iterable[Variable] = None,
+    learning_schedule: Iterable[float] = None,
+    convergence_test: Optional[Callable] = None,
+    symmetrize_experiments: bool = True,
+) -> tuple[list[Bias], dict, dict]:
+    """Return flux_biases achieving  <s_i> = 0 for symmetry preserving
     experiments.
-                                
+
     Calibration can be improved for specific QPU protocols by modification of
-    QPU programmings. The flux_bias parameter can compensate for 
+    QPU programmings. The flux_bias parameter can compensate for
     low-frequency environmental spins that couple into qubits, distorting
     the target distribution. Although modification of either flux_biases and h might
     be used to restore symmetry of the sampled distribution, flux biases
     more accurately eliminate common forms of low frequency noise.
 
     Assuming the magnetization (expectation for the
-    measured spins (sign of persistent current) to be a smooth monotonic 
+    measured spins (sign of persistent current) to be a smooth monotonic
     function of the qubit body magnetic fluxes (`flux_bias`), we can
-    determine parameters achieving a target magnetization (m) by iteration of 
-    :\math:`\Phi(t+1) \leftarrow Phi(t) - L(t) (<s> - m)`. Where 
+    determine parameters achieving a target magnetization (m) by iteration of
+    :\math:`\Phi(t+1) \leftarrow Phi(t) - L(t) (<s> - m)`. Where
     L(t) is an iteration-dependent map, <s> is the expected magnetization, m
-    is the target magnetization and Phi are the programmed flux biases. 
+    is the target magnetization and Phi are the programmed flux biases.
 
     Symmetry can be broken by the choice of initial condition in reverse
-    annealing, non-zero h, or non-zero flux biases over unshimmed 
+    annealing, non-zero h, or non-zero flux biases over unshimmed
     fluxes. We can collect data for two experients, where the symmetry
-    breaking is inverted - we can anticipate zero magnetization not per 
-    experiment but in the experimental average. Shimming based on this 
+    breaking is inverted - we can anticipate zero magnetization not per
+    experiment but in the experimental average. Shimming based on this
     symmetrized data set is expected to determine a good shim for both
     experiments, assuming a weak dependence of noise on the symmetry breaking
     field.
@@ -217,7 +226,7 @@ def shim_flux_biases(bqm: dimod.BinaryQuadraticModel,
        bqm: A dimod binary quadratic model.
        sampler: A DWaveSampler.
        sampling_params: Parameters of the DWaveSampler. Note that if sampling_params
-           contains flux_biases, these are treated as an initial condition and 
+           contains flux_biases, these are treated as an initial condition and
            edited in place.
        shimmed_variables: A list of variables to shim, by default all elements in
            bqm.variables.
@@ -227,7 +236,7 @@ def shim_flux_biases(bqm: dimod.BinaryQuadraticModel,
            as input, returning True to exit the search, and False otherwise. By default,
            all stages specified in the learning_schedule are completed.
        symmetrize_experiments: If True a test is performed to determine symmetry breaking
-           in the experiment: a non-zero initial_state for reverse anneal, non-zero h, 
+           in the experiment: a non-zero initial_state for reverse anneal, non-zero h,
            or non-zero flux_bias (on some unshimmed variables). If any of these are present
            the magnetization is inferred by averaging over two experiments (with symmetry
            breaking elements inverted). We shim so that the average of the symmetrically
@@ -237,13 +246,13 @@ def shim_flux_biases(bqm: dimod.BinaryQuadraticModel,
         1. flux_biases in a list format suitable as a DWaveSampler argument.
         2. A history of flux_bias assignments per shimmed component.
         3. A history of magnetizations per shimmed component.
-    
+
     Example:
         By use of a short geometric schedule, determine flux_biases appropriate
         for a Larmour precision experiment using fast reverse anneal on devices
         with such a feature enabled.
-        
-        
+
+
     """
 
     # Natural candidates for future feature enhancements:
@@ -254,21 +263,21 @@ def shim_flux_biases(bqm: dimod.BinaryQuadraticModel,
     # Note: the purpose of shimming should not be to learn parameters of general
     # graph-restricted Boltzmann machines, we should modify our plugin for this
     # purpose.
-    
+
     if sampling_params is None:
         sampling_params = {}
-    
-    if 'flux_biases' in sampling_params:
-        flux_biases = sampling_params.pop('flux_biases')
+
+    if "flux_biases" in sampling_params:
+        flux_biases = sampling_params.pop("flux_biases")
         pop_fb = True
     else:
-        flux_biases = [0] * sampler.properties['num_qubits']
+        flux_biases = [0] * sampler.properties["num_qubits"]
         pop_fb = False
 
     if shimmed_variables is None:
         # All variables of the model
         shimmed_variables = bqm.variables
-        
+
     if symmetrize_experiments:
         unshimmed_variables = set(bqm.variables).difference(shimmed_variables)
         fbnonzero = any(flux_biases[v] != 0 for v in shimmed_variables)
@@ -277,24 +286,26 @@ def shim_flux_biases(bqm: dimod.BinaryQuadraticModel,
         hnonzero = any(bqm.linear.values())
         if hnonzero:
             bqm = bqm.copy()
-        reverseanneal = ('initial_state' in sampling_params)
+        reverseanneal = "initial_state" in sampling_params
     else:
-        fbnonzero = hnonzero = isnonzero = False
+        fbnonzero = hnonzero = reverseanneal = False
     num_experiments = 1 + int(reverseanneal or hnonzero or fbnonzero)
 
     if learning_schedule is None:
         learning_schedule = [qubit_freezeout_alphaPhi()]
 
     if convergence_test is None:
-        convergence_test = lambda x,y : False;
+        convergence_test = lambda x, y: False
 
     flux_bias_history = {v: [flux_biases[v]] for v in shimmed_variables}
     mag_history = {v: [] for v in shimmed_variables}
-    
+
     for lr in learning_schedule:
         for _ in range(num_experiments):
             if reverseanneal:
-                sampling_params['initial_state'] = [-i for i in sampling_params['initial_state']]
+                sampling_params["initial_state"] = [
+                    -i for i in sampling_params["initial_state"]
+                ]
             if hnonzero:
                 for i in bqm.linear:
                     bqm.linear[i] *= -1
@@ -303,55 +314,67 @@ def shim_flux_biases(bqm: dimod.BinaryQuadraticModel,
                     flux_biases[i] *= -1
 
             ss = sampler.sample(bqm, flux_biases=flux_biases, **sampling_params)
-            all_mags = np.sum(ss.record.sample*ss.record.num_occurrences[:,np.newaxis], axis=0)/np.sum(ss.record.num_occurrences)
+            all_mags = np.sum(
+                ss.record.sample * ss.record.num_occurrences[:, np.newaxis], axis=0
+            ) / np.sum(ss.record.num_occurrences)
             for idx, v in enumerate(shimmed_variables):
                 mag_history[v].append(all_mags[idx])
-                
+
         if convergence_test(mag_history, flux_bias_history):
             # The data is not used to update the flux_biases
             # This can be included as part of the test evaluation (if required)
             break
-        
+
         for v in shimmed_variables:
-            flux_biases[v] = flux_biases[v] - lr*sum(mag_history[v][-num_experiments:])
+            flux_biases[v] = flux_biases[v] - lr * sum(
+                mag_history[v][-num_experiments:]
+            )
             flux_bias_history[v].append(flux_biases[v])
 
     if pop_fb:
-        sampling_params['flux_biases'] = flux_biases
-        
+        sampling_params["flux_biases"] = flux_biases
+
     return flux_biases, flux_bias_history, mag_history
 
 
-if __name__=='__main__':
-    
-    print('Functional tests: remove after code review - in place for context')
+if __name__ == "__main__":
 
-    print('Advantage', qubit_freezeout_alphaPhi())
-    alphaPhi = qubit_freezeout_alphaPhi(eff_temp_phi=0.198, flux_associated_variance=1/1024, estimator_variance=1/256, unit_conversion=1.647e-3)
-    print('Advantage2', alphaPhi)
-    
+    print("Functional tests: remove after code review - in place for context")
+
+    print("Advantage", qubit_freezeout_alphaPhi())
+    alphaPhi = qubit_freezeout_alphaPhi(
+        eff_temp_phi=0.198,
+        flux_associated_variance=1 / 1024,
+        estimator_variance=1 / 256,
+        unit_conversion=1.647e-3,
+    )
+    print("Advantage2", alphaPhi)
+
     import matplotlib.pyplot as plt
-    from dwave.system import DWaveSampler
+
     qpu = DWaveSampler()
     qpu = ShimmingMockSampler(topology_shape=[2])
-    print(qpu.properties['chip_id'])
+    print(qpu.properties["chip_id"])
     h = {i: 0 for i in qpu.nodelist}
     J = {e: 0 for e in qpu.edgelist}
-    bqm = dimod.BinaryQuadraticModel('SPIN').from_ising(h, J)
-    learning_schedule = [alphaPhi]*10
-    sampling_params = {'auto_scale': False, 'num_reads': 256}
+    bqm = dimod.BinaryQuadraticModel("SPIN").from_ising(h, J)
+    learning_schedule = [alphaPhi] * 10
+    sampling_params = {"auto_scale": False, "num_reads": 256}
     flux_biases, all_fluxes, all_mags = shim_flux_biases(
-        bqm, sampler=qpu, learning_schedule=learning_schedule, sampling_params=sampling_params)
+        bqm,
+        sampler=qpu,
+        learning_schedule=learning_schedule,
+        sampling_params=sampling_params,
+    )
     mag_array = np.array([mag for mag in all_mags.values()])
     flux_bias_array = np.array([flux for flux in all_fluxes.values()])
-    plt.figure('all_mags')
+    plt.figure("all_mags")
     plt.plot(mag_array.transpose())
-    plt.plot(np.sqrt(np.mean(mag_array**2, axis=0)), linewidth=3, color='black')
-    plt.figure('all_fluxes')
+    plt.plot(np.sqrt(np.mean(mag_array**2, axis=0)), linewidth=3, color="black")
+    plt.figure("all_fluxes")
     plt.plot(flux_bias_array.transpose())
-    plt.plot(np.mean(flux_bias_array, axis=0), linewidth=2, color='black')
-    plt.plot(np.sqrt(np.mean(flux_bias_array**2, axis=0)), linewidth=3, color='black')
+    plt.plot(np.mean(flux_bias_array, axis=0), linewidth=2, color="black")
+    plt.plot(np.sqrt(np.mean(flux_bias_array**2, axis=0)), linewidth=3, color="black")
     plt.xlabel("Shim iteration")
     plt.ylabel("Flux bias ($\\Phi_0$)")
     plt.show()
-   
