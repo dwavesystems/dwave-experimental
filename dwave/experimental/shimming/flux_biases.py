@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# from __future__ import annotations
+from __future__ import annotations
 
-from collections.abc import Mapping  # , Sequence
+# from collections.abc import Mapping, Sequence
 from typing import Any, Optional, Iterable, Callable
 
 import numpy as np
@@ -24,98 +24,10 @@ from dimod.typing import Variable, Bias
 from dwave.system import DWaveSampler
 
 
-__all__ = ["shim_flux_biases", "qubit_freezeout_alphaPhi"]
-
-## FOR TESTING
-from dimod import SampleSet
-from dwave.samplers import SimulatedAnnealingSampler
-from dwave.system.temperatures import fluxbias_to_h
-from dwave.system.testing import MockDWaveSampler
+__all__ = ["shim_flux_biases", "qubit_freezeout_alpha_phi"]
 
 
-class ShimmingMockSampler(MockDWaveSampler):
-    """Replace the MockSampler by an MCMC sampler with sensitivity to flux_biases.
-
-    We modify the MockSampler routine so that the sampling distribution is
-    sensitive to flux_biases (linear fields are modified in proportion to
-    flux_biases). Translation of flux_biases into Ising model linear fields
-    uses a conversion factor appropriate to single-qubit freezeout.
-
-    flux_biases_baseline can be added as a list of length
-    self.properties['num_qubits'].
-    This is zero by default, when non-zero the tutorial routines shim away
-    the offset by analogy with the noise shimming in QPU solvers.
-
-    Irrelevant warning messages on unsupported (QPU) parameters are suppressed.
-
-    Replacing the default MockSampler sampler routine with Block Gibbs we
-    allow a more realistic susceptibility.
-    The default topology is chosen to match defect-free Advantage processor
-    architectures.
-    """
-
-    def __init__(self, flux_biases_baseline: Optional[list[float]] = None, **kwargs):
-        kwargs.setdefault("topology_type", "pegasus")
-        kwargs.setdefault("topology_shape", [16])
-        substitute_sampler = SimulatedAnnealingSampler()
-        substitute_kwargs = {
-            "beta_range": [0, 3],
-            "beta_schedule_type": "linear",
-            "num_sweeps": 100,
-            "randomize_order": True,
-            "proposal_acceptance_criteria": "Gibbs",
-        }
-        super().__init__(
-            substitute_sampler=substitute_sampler,
-            substitute_kwargs=substitute_kwargs,
-            **kwargs,
-        )
-        num_qubits = self.properties["num_qubits"]
-        if flux_biases_baseline is None:
-            self.flux_biases_baseline = [1e-5] * num_qubits
-        else:
-            self.flux_biases_baseline = flux_biases_baseline
-        self.sampler_type = "mock"
-        # Added to suppress warnings (not mocked, but irrelevant to tutorial)
-        self.mocked_parameters.add("flux_drift_compensation")
-        self.mocked_parameters.add("auto_scale")
-        self.mocked_parameters.add("readout_thermalization")
-        self.mocked_parameters.add("annealing_time")
-
-    def sample(self, bqm, **kwargs):
-        """Sample with flux_biases transformed to Ising model linear biases."""
-
-        # Extract flux biases from kwargs (if provided)
-        flux_biases = kwargs.pop("flux_biases", None)
-        if self.flux_biases_baseline is not None:
-            if flux_biases is None:
-                flux_biases = self.flux_biases_baseline
-            else:
-                flux_biases = [
-                    sum(fbs) for fbs in zip(flux_biases, self.flux_biases_baseline)
-                ]
-
-        # Adjust the BQM to include flux biases
-        if flux_biases is None:
-            ss = super().sample(bqm=bqm, **kwargs)
-        else:
-            _bqm = bqm.change_vartype("SPIN", inplace=False)
-            flux_to_h_factor = fluxbias_to_h()
-
-            for v in _bqm.variables:
-                bias = _bqm.get_linear(v)
-                _bqm.set_linear(v, bias + flux_to_h_factor * flux_biases[v])
-
-            ss = super().sample(bqm=_bqm, **kwargs)
-
-            ss.change_vartype(bqm.vartype)
-
-            ss = SampleSet.from_samples_bqm(ss, bqm)  # energy of bqm, not _bqm
-
-        return ss
-
-
-def qubit_freezeout_alphaPhi(
+def qubit_freezeout_alpha_phi(
     eff_temp_phi: float = 0.112,
     flux_associated_variance: float = 1 / 1024,
     estimator_variance: float = 1 / 256,
@@ -162,12 +74,12 @@ def qubit_freezeout_alphaPhi(
         square magnetization.
 
     Example:
-        Determining an alphaPhi appropriate for forward anneal of a weakly
+        Determining an alpha_phi appropriate for forward anneal of a weakly
         coupled system Advantage_system4.1 based on published parameters.
         Note that defaults (by contrast) are determined based on published
         values for Advantage2_system1.3
 
-        >>> alphaPhi = qubit_freezeout_alphaPhi(eff_temp_phi=0.198, flux_associated_variance=1/1024, estimator_variance=1/256, unit_conversion=1.647e-3)
+        >>> alpha_phi = qubit_freezeout_alpha_phi(eff_temp_phi=0.198, flux_associated_variance=1/1024, estimator_variance=1/256, unit_conversion=1.647e-3)
 
     """
     return (
@@ -269,6 +181,8 @@ def shim_flux_biases(
 
     if "flux_biases" in sampling_params:
         flux_biases = sampling_params.pop("flux_biases")
+        if len(flux_biases) != sampler.properties['num_qubits']:
+            raise ValueError('flux_biases length incompatible with the sampler')
         pop_fb = True
     else:
         flux_biases = [0] * sampler.properties["num_qubits"]
@@ -292,13 +206,13 @@ def shim_flux_biases(
     num_experiments = 1 + int(reverseanneal or hnonzero or fbnonzero)
 
     if learning_schedule is None:
-        learning_schedule = [qubit_freezeout_alphaPhi()]
+        learning_schedule = [qubit_freezeout_alpha_phi()]
 
     if convergence_test is None:
         convergence_test = lambda x, y: False
 
     flux_bias_history = {v: [flux_biases[v]] for v in shimmed_variables}
-    mag_history = {v: [] for v in shimmed_variables}
+    mag_history = {v: [] for v in bqm.variables}
 
     for lr in learning_schedule:
         for _ in range(num_experiments):
@@ -317,7 +231,7 @@ def shim_flux_biases(
             all_mags = np.sum(
                 ss.record.sample * ss.record.num_occurrences[:, np.newaxis], axis=0
             ) / np.sum(ss.record.num_occurrences)
-            for idx, v in enumerate(shimmed_variables):
+            for idx, v in enumerate(ss.record.variables):
                 mag_history[v].append(all_mags[idx])
 
         if convergence_test(mag_history, flux_bias_history):
@@ -338,17 +252,17 @@ def shim_flux_biases(
 
 
 if __name__ == "__main__":
-
+    from dwave.experimental.shimming.testing import ShimmingMockSampler
     print("Functional tests: remove after code review - in place for context")
 
-    print("Advantage", qubit_freezeout_alphaPhi())
-    alphaPhi = qubit_freezeout_alphaPhi(
+    print("Advantage", qubit_freezeout_alpha_phi())
+    alpha_phi = qubit_freezeout_alpha_phi(
         eff_temp_phi=0.198,
         flux_associated_variance=1 / 1024,
         estimator_variance=1 / 256,
         unit_conversion=1.647e-3,
     )
-    print("Advantage2", alphaPhi)
+    print("Advantage2", alpha_phi)
 
     import matplotlib.pyplot as plt
 
@@ -358,7 +272,7 @@ if __name__ == "__main__":
     h = {i: 0 for i in qpu.nodelist}
     J = {e: 0 for e in qpu.edgelist}
     bqm = dimod.BinaryQuadraticModel("SPIN").from_ising(h, J)
-    learning_schedule = [alphaPhi] * 10
+    learning_schedule = [alpha_phi] * 10
     sampling_params = {"auto_scale": False, "num_reads": 256}
     flux_biases, all_fluxes, all_mags = shim_flux_biases(
         bqm,

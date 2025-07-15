@@ -200,7 +200,7 @@ class FluxBiases(unittest.TestCase):
                 shimmed_variables=shimmed_variables,
             )
             self.assertNotIn(0, fbh)
-            self.assertTrue(len(learning_schedule), len(fbh[1]))
+            self.assertEqual(len(learning_schedule), len(fbh[1]))
             self.assertTrue(
                 len(learning_schedule), len(mh[1]) // (1 + int(symmetrize_experiments))
             )
