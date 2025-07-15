@@ -140,17 +140,16 @@ class FluxBiases(unittest.TestCase):
         fb, fbh, mh = shim_flux_biases(bqm, sampler, sampling_params=sampling_params)
         self.assertTrue(all(x==y for x,y in zip(fb,sampling_params['flux_biases'])))
         self.assertEqual(sum(x!=val for x in fb), nv)
-        self.assertTrue(nv, len(fbh))
-        self.assertTrue(nv, len(mh))
+        self.assertEqual(nv, len(fbh))
+        self.assertEqual(nv, len(mh))
             
         # Check shimmed_variables selection works
         sampling_params = {'num_reads': 1, 'flux_biases': [val]*sampler.properties['num_qubits']}
-        shimmed_variables = list(range(nv//2))
+        shimmed_variables = list(range(nv)[::2])
         fb, fbh, mh = shim_flux_biases(bqm, sampler, sampling_params=sampling_params, shimmed_variables=shimmed_variables)
         self.assertTrue(all(x==y for x,y in zip(fb,sampling_params['flux_biases'])))
         self.assertEqual(sum(x!=val for x in fb), len(shimmed_variables))
-        self.assertTrue(nv, len(shimmed_variables))
-        self.assertTrue(nv, len(shimmed_variables))
+        self.assertEqual(nv//2, len(shimmed_variables))
         
         # No movement if no updates:
         sampling_params = {'num_reads': 1, 'flux_biases': [val]*sampler.properties['num_qubits']}
@@ -167,7 +166,7 @@ class FluxBiases(unittest.TestCase):
             shimmed_variables=[1]
             learning_schedule=[1, 1/2]
             fb, fbh, mh = shim_flux_biases(bqm, sampler, sampling_params=sampling_params, learning_schedule=learning_schedule, shimmed_variables=shimmed_variables)
-            self.assertTrue(0 not in fbh)
+            self.assertNotIn(0, fbh)
             self.assertTrue(len(learning_schedule), len(fbh[1]))
             self.assertTrue(len(learning_schedule), len(mh[1])//(1+int(symmetrize_experiments)))
             

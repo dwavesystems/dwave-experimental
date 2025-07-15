@@ -55,8 +55,10 @@ class ShimmingMockSampler(MockDWaveSampler):
     """
 
     def __init__(
-        self, topology_type="pegasus", topology_shape=[16], flux_biases_baseline=None
+        self, flux_biases_baseline: Optional[list[float]] = None, **kwargs
     ):
+    kwargs.setdefault("topology_type", "pegasus")
+    kwargs.setdefault("topology_shape", [16])
         substitute_sampler = SimulatedAnnealingSampler()
         substitute_kwargs = {
             "beta_range": [0, 3],
@@ -66,10 +68,9 @@ class ShimmingMockSampler(MockDWaveSampler):
             "proposal_acceptance_criteria": "Gibbs",
         }
         super().__init__(
-            topology_type=topology_type,
-            topology_shape=topology_shape,
             substitute_sampler=substitute_sampler,
             substitute_kwargs=substitute_kwargs,
+            **kwargs
         )
         num_qubits = self.properties["num_qubits"]
         if flux_biases_baseline is None:
@@ -274,6 +275,8 @@ def shim_flux_biases(bqm: dimod.BinaryQuadraticModel,
         if bqm.vartype is dimod.BINARY:
             bqm = bqm.change_vartype(dimod.SPIN, inplace=False)
         hnonzero = any(bqm.linear.values())
+        if hnonzero:
+            bqm = bqm.copy()
         reverseanneal = ('initial_state' in sampling_params)
     else:
         fbnonzero = hnonzero = isnonzero = False
@@ -313,7 +316,7 @@ def shim_flux_biases(bqm: dimod.BinaryQuadraticModel,
             flux_biases[v] = flux_biases[v] - lr*sum(mag_history[v][-num_experiments:])
             flux_bias_history[v].append(flux_biases[v])
 
-    if pop_fb == True:
+    if pop_fb:
         sampling_params['flux_biases'] = flux_biases
         
     return flux_biases, flux_bias_history, mag_history
