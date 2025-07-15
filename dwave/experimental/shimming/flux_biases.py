@@ -140,10 +140,17 @@ def shim_flux_biases(
        sampling_params: Parameters of the DWaveSampler. Note that if sampling_params
            contains flux_biases, these are treated as an initial condition and
            edited in place.
+           num_reads should be appropriately chosen in conjunction with the
+           schedule. Note that, initial_states if provided is assumed to
+           be specified according the Ising model convention (+/-1, and -3 for inactive).
        shimmed_variables: A list of variables to shim, by default all elements in
            bqm.variables.
        learning_schedule: An iterable of gradient descent prefactors. By default, a
-           single step is taken.
+           single step is taken. Experimental-timescale fluctuations in the flux
+           noise (characterized by a 1/f spectrum) as well as sampling error
+           linked to estimator variance, limit the accuracy attainable. Per standard
+           gradient descent approaches one can consider a constant learning rate,
+           or one that decreases with t. See examples.
        convergence_test: A callable taking the history of magnetizations and flux_biases
            as input, returning True to exit the search, and False otherwise. By default,
            all stages specified in the learning_schedule are completed.
@@ -181,8 +188,8 @@ def shim_flux_biases(
 
     if "flux_biases" in sampling_params:
         flux_biases = sampling_params.pop("flux_biases")
-        if len(flux_biases) != sampler.properties['num_qubits']:
-            raise ValueError('flux_biases length incompatible with the sampler')
+        if len(flux_biases) != sampler.properties["num_qubits"]:
+            raise ValueError("flux_biases length incompatible with the sampler")
         pop_fb = True
     else:
         flux_biases = [0] * sampler.properties["num_qubits"]
@@ -217,11 +224,10 @@ def shim_flux_biases(
     for lr in learning_schedule:
         for _ in range(num_experiments):
             if reverseanneal:
-                sampling_params["initial_state"] = [
-                    -i for i in sampling_params["initial_state"]
-                ]
+                for i in bqm.variables:
+                    sampling_params["initial_state"][i] *= -1
             if hnonzero:
-                for i in bqm.linear:
+                for i in bqm.variables:
                     bqm.linear[i] *= -1
             if fbnonzero:
                 for i in unshimmed_variables:
@@ -231,7 +237,7 @@ def shim_flux_biases(
             all_mags = np.sum(
                 ss.record.sample * ss.record.num_occurrences[:, np.newaxis], axis=0
             ) / np.sum(ss.record.num_occurrences)
-            for idx, v in enumerate(ss.record.variables):
+            for idx, v in enumerate(ss.variables):
                 mag_history[v].append(all_mags[idx])
 
         if convergence_test(mag_history, flux_bias_history):
@@ -253,6 +259,7 @@ def shim_flux_biases(
 
 if __name__ == "__main__":
     from dwave.experimental.shimming.testing import ShimmingMockSampler
+
     print("Functional tests: remove after code review - in place for context")
 
     print("Advantage", qubit_freezeout_alpha_phi())

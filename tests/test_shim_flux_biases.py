@@ -19,7 +19,7 @@ from dwave.samplers import SimulatedAnnealingSampler
 from dwave.system.testing import MockDWaveSampler
 
 from dwave.system.temperatures import fluxbias_to_h
-from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alphaPhi
+from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_phi
 
 
 class ShimmingMockSampler(MockDWaveSampler):
@@ -200,13 +200,13 @@ class FluxBiases(unittest.TestCase):
                 shimmed_variables=shimmed_variables,
             )
             self.assertNotIn(0, fbh)
-            self.assertEqual(len(learning_schedule), len(fbh[1]))
+            self.assertEqual(len(learning_schedule) + 1, len(fbh[1]))
             self.assertTrue(
                 len(learning_schedule), len(mh[1]) // (1 + int(symmetrize_experiments))
             )
 
-    def test_qubit_freezeout_alphaPhi(self):
-        x = qubit_freezeout_alphaPhi()
-        y = qubit_freezeout_alphaPhi(2, 1, 1, 1)
+    def test_qubit_freezeout_alpha_phi(self):
+        x = qubit_freezeout_alpha_phi()
+        y = qubit_freezeout_alpha_phi(2, 1, 1, 1)
         self.assertNotEqual(x, y)
         self.assertEqual(1, y)
