@@ -167,11 +167,21 @@ def shim_flux_biases(
         3. A history of magnetizations per shimmed component.
 
     Example:
-        By use of a short geometric schedule, determine flux_biases appropriate
-        for a Larmour precision experiment using fast reverse anneal on devices
-        with such a feature enabled.
-
-
+        See examples/ and tests/ for additional use cases.
+    
+        Shim degenerate qubits at constant learning rate and solver defaults.
+        The learning schedule and num_reads is for demonstration only, and has not been optimized.
+        >>> import numpy as np
+        >>> import dimod
+        >>> from dwave.system import DWaveSampler
+        >>> from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_phi
+        >>> qpu = DWaveSampler()
+        >>> bqm = dimod.BinaryQuadraticModel('SPIN').from_ising({q: 0 for q in qpu.nodelist}, {})
+        >>> alpha_phi = qubit_freezeout_alpha_phi()  # Unoptimized to the experiment, for demonstration purposes.
+        >>> ls = [alpha_phi]*5
+        >>> sp = {'num_reads': 2048, 'auto_scale': False}
+        >>> fb, fb_history, mag_history = shim_flux_biases(bqm, qpu, sampling_params=sp, learning_schedule=ls)
+        >>> print(f'Root mean-square magnetization by iteration:', np.sqrt(np.mean([np.array(v)**2 for v in mag_history.values()], axis=0)))
     """
 
     # Natural candidates for future feature enhancements:
