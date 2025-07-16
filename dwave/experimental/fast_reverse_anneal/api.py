@@ -18,7 +18,7 @@ from typing import Any, Optional
 
 from dwave.cloud import Client
 
-__all__ = ['get_solver_name']
+__all__ = ['get_solver_name', 'get_parameter_ranges']
 
 
 def get_solver_name() -> str:
@@ -31,3 +31,23 @@ def get_solver_name() -> str:
     with Client.from_config() as client:
         solver = client.get_solver(**filter)
         return solver.name
+
+
+def get_parameter_ranges(solver_name: str) -> dict[str, Any]:
+    """Retrieve available fast annealing parameter ranges."""
+
+    with Client.from_config() as client:
+        solver = client.get_solver(name=solver_name)
+
+        # get FRA param ranges
+        x_ret = solver.sample_qubo(
+            {next(iter(solver.edges)): 0},
+            x_get_fast_reverse_anneal_exp_feature_info=True)
+
+        info = x_ret.result().get('x_get_fast_reverse_anneal_exp_feature_info')
+        info = dict(zip(info[::2], info[1::2]))
+
+        return {
+            'x_target_c': info['long-name'],
+            'x_nominal_dwell_time': info['long-name'],
+        }
