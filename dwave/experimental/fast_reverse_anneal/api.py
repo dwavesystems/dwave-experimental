@@ -14,43 +14,81 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
-from dwave.cloud import Client
+from dwave.cloud import Client, Solver
+from dwave.system import DWaveSampler
 
-__all__ = ['get_solver_name', 'get_parameters']
-
-
-def get_solver_name() -> str:
-    """Return the first available solver with fast reverse annealing enabled."""
-
-    # TODO: use feature-based solver selection to get a FRA solver
-    # NOTE: until we can use FBSS for FRA, we use a hard-coded name (prefix)
-    filter = dict(name__regex=r'Advantage2_prototype2.*|Advantage2_research1\..*')
-
-    with Client.from_config() as client:
-        solver = client.get_solver(**filter)
-        return solver.name
+__all__ = ['SOLVER_FILTER', 'get_parameters']
 
 
-def get_parameters(solver_name: str) -> dict[str, Any]:
-    """Retrieve available fast annealing parameters and their expanded info.
+SOLVER_FILTER = dict(name__regex=r'Advantage2_prototype2.*|Advantage2_research1\..*')
+"""Feature-based solver selection filter to return the first available solver
+that supports fast reverse annealing.
 
-    For each parameter available, we return its data type, allowed value limits,
-    if it's required, a default value if it's not required, and a short text
-    description.
+Note: currently SAPI doesn't provide a nice way to filter solvers with prototype
+features (like fast reverse anneal), so we need to defer to a simple pattern
+matching.
+
+Example::
+    from dwave.system import DWaveSampler
+    from dwave.experimental import fast_reverse_anneal as fra
+
+    with DWaveSampler(solver=fra.SOLVER_FILTER) as sampler:
+        sampler.sample(...)
+"""
+
+
+def get_parameters(sampler: Optional[Union[DWaveSampler, Solver]] = None,
+                   ) -> dict[str, Any]:
+    """For a given sampler (or solver), return the available fast annealing
+    parameters and their expanded info.
+
+    Args:
+        sampler:
+            A :class:`~dwave.system.DWaveSampler` sampler that supports the fast
+            reverse anneal (FRA) protocol. Alternatively, a :class:`dwave.cloud.Solver`
+            solver can be provided. If unspecified, :attr:`.SOLVER_FILTER` is
+            used to fetch a FRA-enabled solver.
+
+    Returns:
+        Each parameter available is described with: a data type, value limits,
+        an is-required flag, a default value if it's optional, and a short text
+        description.
+
+    Examples:
+        Use an instantiated :class:`~dwave.system.DWaveSampler` sampler:
+
+        .. code:: python
+            from dwave.system import DWaveSampler
+            from dwave.experimental import fast_reverse_anneal as fra
+
+            with DWaveSampler() as sampler:
+                param_info = fra.get_parameters(sampler)
     """
 
-    with Client.from_config() as client:
-        solver = client.get_solver(name=solver_name)
+    if sampler is None:
+        with Client.from_config() as client:
+            solver = client.get_solver(**SOLVER_FILTER)
+            return get_parameters(solver)
 
-        # get FRA param ranges
-        computation = solver.sample_qubo(
-            {next(iter(solver.edges)): 0},
-            x_get_fast_reverse_anneal_exp_feature_info=True)
+    if hasattr(sampler, 'solver'):
+        solver: Solver = sampler.solver
+    else:
+        solver: Solver = sampler
 
-        raw = computation['x_get_fast_reverse_anneal_exp_feature_info']
-        info = dict(zip(raw[::2], raw[1::2]))
+    # get FRA param ranges
+    computation = solver.sample_qubo(
+        {next(iter(solver.edges)): 0},
+        x_get_fast_reverse_anneal_exp_feature_info=True)
+
+    result = computation.result()
+    try:
+        raw = result['x_get_fast_reverse_anneal_exp_feature_info']
+    except KeyError:
+        raise ValueError(f'Provided sampler ({solver.name}) does not support fast reverse anneal')
+
+    info = dict(zip(raw[::2], raw[1::2]))
 
     # until parameter description is available via SAPI, we hard-code it here
     return {
