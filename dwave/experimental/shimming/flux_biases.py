@@ -117,7 +117,7 @@ def shim_flux_biases(
 
     Symmetry can be broken by the choice of initial condition in reverse
     annealing, non-zero h, or non-zero flux biases over unshimmed
-    fluxes. We can collect data for two experients, where the symmetry
+    fluxes. We can collect data for two experiments, where the symmetry
     breaking is inverted - we can anticipate zero magnetization not per
     experiment but in the experimental average. Shimming based on this
     symmetrized data set is expected to determine a good shim for both
@@ -156,7 +156,7 @@ def shim_flux_biases(
            or non-zero flux_bias (on some unshimmed variables). If any of these are present
            the magnetization is inferred by averaging over two experiments (with symmetry
            breaking elements inverted). We shim so that the average of the symmetrically
-           related experiments has zero magnetizaiton.
+           related experiments has zero magnetization.
 
     Returns:
         A tuple consisting of 3 parts:

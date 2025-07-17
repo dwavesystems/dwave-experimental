@@ -1,0 +1,5 @@
+---
+features:
+  - |
+    Add a flux bias shimming utility function, ``dwave.experimental.shimming.shim_flux_biases``.
+    See `#2 <https://github.com/dwavesystems/dwave-experimental/pull/2>`_.
