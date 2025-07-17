@@ -14,15 +14,12 @@
 
 from __future__ import annotations
 
-# from collections.abc import Mapping, Sequence
 from typing import Any, Optional, Iterable, Callable
 
 import numpy as np
 
 import dimod
 from dimod.typing import Variable, Bias
-from dwave.system import DWaveSampler
-
 
 __all__ = ["shim_flux_biases", "qubit_freezeout_alpha_phi"]
 
@@ -95,12 +92,12 @@ def shim_flux_biases(
     sampler: dimod.Sampler,
     *,
     sampling_params: Optional[dict[str, Any]] = None,
-    shimmed_variables: Iterable[Variable] = None,
-    learning_schedule: Iterable[float] = None,
+    shimmed_variables: Optional[Iterable[Variable]] = None,
+    learning_schedule: Optional[Iterable[float]] = None,
     convergence_test: Optional[Callable] = None,
     symmetrize_experiments: bool = True,
 ) -> tuple[list[Bias], dict, dict]:
-    """Return flux_biases achieving  <s_i> = 0 for symmetry preserving
+    r"""Return flux_biases achieving  <s_i> = 0 for symmetry preserving
     experiments.
 
     Calibration can be improved for specific QPU protocols by modification of
@@ -160,6 +157,7 @@ def shim_flux_biases(
            the magnetization is inferred by averaging over two experiments (with symmetry
            breaking elements inverted). We shim so that the average of the symmetrically
            related experiments has zero magnetizaiton.
+
     Returns:
         A tuple consisting of 3 parts:
         1. flux_biases in a list format suitable as a DWaveSampler argument.

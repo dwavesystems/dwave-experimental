@@ -18,7 +18,7 @@ import dimod
 from dwave.samplers import SteepestDescentSampler
 
 from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_phi
-from dwave.experimental.shimming import ShimmingMockSampler
+from dwave.experimental.shimming.testing import ShimmingMockSampler
 
 
 class FluxBiases(unittest.TestCase):
@@ -46,7 +46,7 @@ class FluxBiases(unittest.TestCase):
             {i: 1 for i in range(nv)}, {}
         )
 
-        sampler = ShimmingMockSampler(substitute_sampler = SteepestDescentSampler(), substitute_sampler_kwargs=None)
+        sampler = ShimmingMockSampler(substitute_sampler=SteepestDescentSampler())
 
         val = 1.1
         sampling_params = {
@@ -87,6 +87,7 @@ class FluxBiases(unittest.TestCase):
         )  # , shimmed_variables, learning_schedule, convergence_test, symmetrize_experiments
         self.assertTrue(all(x == y for x, y in zip(fb, sampling_params["flux_biases"])))
         self.assertTrue(all(x == val for x in fb))
+
         # No movement if converged:
         fb, fbh, mh = shim_flux_biases(
             bqm,

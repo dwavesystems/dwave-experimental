@@ -12,16 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# from __future__ import annotations
+from __future__ import annotations
 
-__all__ = ["ShimmingMockSampler"]
-
-from typing import Any, Optional, Iterable, Callable
+from typing import Optional
 
 import dimod
 from dwave.samplers import SimulatedAnnealingSampler
 from dwave.system.temperatures import fluxbias_to_h
 from dwave.system.testing import MockDWaveSampler
+
+__all__ = ["ShimmingMockSampler"]
 
 
 class ShimmingMockSampler(MockDWaveSampler):
@@ -51,28 +51,22 @@ class ShimmingMockSampler(MockDWaveSampler):
     def __init__(
         self,
         flux_biases_baseline: Optional[list[float]] = None,
-        substitute_sampler: dimod.Sampler = None,
-        substitute_kwargs: dict = None,
-        **kwargs,
+        **kwargs
     ):
-        substitute_sampler = kwargs.pop(
-            "substitute_sampler", SimulatedAnnealingSampler()
-        )
-        substitute_kwargs = kwargs.pop(
-            "substitute_kwargs",
-            {
-                "beta_range": [0, 3],
-                "beta_schedule_type": "linear",
-                "num_sweeps": 100,
-                "randomize_order": True,
-                "proposal_acceptance_criteria": "Gibbs",
-            },
-        )
-        super().__init__(
-            substitute_sampler=substitute_sampler,
-            substitute_kwargs=substitute_kwargs,
-            **kwargs,
-        )
+        kwargs.setdefault("topology_type", "zephyr")
+        kwargs.setdefault("topology_shape", [6, 4])
+
+        kwargs.setdefault("substitute_sampler", SimulatedAnnealingSampler())
+        kwargs.setdefault("substitute_kwargs", {
+            "beta_range": [0, 3],
+            "beta_schedule_type": "linear",
+            "num_sweeps": 100,
+            "randomize_order": True,
+            "proposal_acceptance_criteria": "Gibbs",
+        })
+
+        super().__init__(**kwargs)
+
         num_qubits = self.properties["num_qubits"]
         if flux_biases_baseline is None:
             self.flux_biases_baseline = [1e-5] * num_qubits
