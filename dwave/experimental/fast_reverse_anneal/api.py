@@ -18,7 +18,7 @@ from typing import Any, Optional
 
 from dwave.cloud import Client
 
-__all__ = ['get_solver_name', 'get_parameter_ranges']
+__all__ = ['get_solver_name', 'get_parameters']
 
 
 def get_solver_name() -> str:
@@ -33,21 +33,42 @@ def get_solver_name() -> str:
         return solver.name
 
 
-def get_parameter_ranges(solver_name: str) -> dict[str, Any]:
-    """Retrieve available fast annealing parameter ranges."""
+def get_parameters(solver_name: str) -> dict[str, Any]:
+    """Retrieve available fast annealing parameters and their expanded info.
+
+    For each parameter available, we return its data type, allowed value limits,
+    if it's required, a default value if it's not required, and a short text
+    description.
+    """
 
     with Client.from_config() as client:
         solver = client.get_solver(name=solver_name)
 
         # get FRA param ranges
-        x_ret = solver.sample_qubo(
+        computation = solver.sample_qubo(
             {next(iter(solver.edges)): 0},
             x_get_fast_reverse_anneal_exp_feature_info=True)
 
-        info = x_ret.result().get('x_get_fast_reverse_anneal_exp_feature_info')
-        info = dict(zip(info[::2], info[1::2]))
+        raw = computation['x_get_fast_reverse_anneal_exp_feature_info']
+        info = dict(zip(raw[::2], raw[1::2]))
 
-        return {
-            'x_target_c': info['long-name'],
-            'x_nominal_dwell_time': info['long-name'],
-        }
+    # until parameter description is available via SAPI, we hard-code it here
+    return {
+        "x_target_c": {
+            "type": "float",
+            "required": True,
+            "limits": {
+                "range": info["fastReverseAnnealTargetCRange"],
+            },
+            "description": "The lowest value of the normalized control bias, `c(s)`, during a fast reverse annealing.",
+        },
+        "x_nominal_pause_time": {
+            "type": "float",
+            "required": False,
+            "default": 0.0,
+            "limits": {
+                "set": info["fastReverseAnnealNominalPauseTimeValues"],
+            },
+            "description": "Sets the pause duration for fast-reverse-annealing schedules.",
+        },
+    }
