@@ -2,12 +2,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import dimod
-from dwave.experimental.shimming import shim_flux_biases
-from dwave.system import DWaveSampler
-from minorminer.subgraph import find_subgraph
-from dwave.experimental.shimming import shim_flux_biases
 from hybrid.decomposers import make_origin_embeddings
 from dwave.embedding import embed_bqm
+from dwave.system import DWaveSampler
+
+from dwave.experimental.shimming import shim_flux_biases
+
 
 print("Creates a large cubic spin glass, shim to restore symmetry in fast annealing.")
 
@@ -28,7 +28,7 @@ edge_list = [
 ]
 
 # Define a spin glass with random couplings, using extended J-range (-2) chains
-source_bqm = dimod.BinaryQuadraticModel("SPIN").from_ising(
+source_bqm = dimod.BQM.from_ising(
     h={},
     J={e: -(2 * np.random.random() - 1) for e in edge_list},
 )
@@ -79,6 +79,5 @@ plt.figure("all_fluxes")
 plt.plot(flux_array.transpose())
 plt.xlabel("Shim iteration")
 plt.ylabel("Flux bias ($\\Phi_0$)")
-# plt.legend(fb_history.keys(), title="Qubit index")
 plt.savefig("DwaveExperimentalFlux.png")
 plt.show()

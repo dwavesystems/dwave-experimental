@@ -169,22 +169,25 @@ def shim_flux_biases(
     
         Shim degenerate qubits at constant learning rate and solver defaults.
         The learning schedule and num_reads is for demonstration only, and has not been optimized.
+
         >>> import numpy as np
         >>> import dimod
         >>> from dwave.system import DWaveSampler
         >>> from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_phi
+        ...
         >>> qpu = DWaveSampler()
-        >>> bqm = dimod.BinaryQuadraticModel('SPIN').from_ising({q: 0 for q in qpu.nodelist}, {})
+        >>> bqm = dimod.BQM.from_ising({q: 0 for q in qpu.nodelist}, {})
         >>> alpha_phi = qubit_freezeout_alpha_phi()  # Unoptimized to the experiment, for demonstration purposes.
         >>> ls = [alpha_phi]*5
         >>> sp = {'num_reads': 2048, 'auto_scale': False}
         >>> fb, fb_history, mag_history = shim_flux_biases(bqm, qpu, sampling_params=sp, learning_schedule=ls)
+        ...
         >>> print(f'Root mean-square magnetization by iteration:', np.sqrt(np.mean([np.array(v)**2 for v in mag_history.values()], axis=0)))
     """
 
     # Natural candidates for future feature enhancements:
     # - Use standard stochastic gradient descent methods, such as ADAM, perhaps with
-    # hypergradient descent to elminate learning rate choice inefficiencies.
+    # hypergradient descent to eliminate learning rate choice inefficiencies.
     # - Allow shimming of linear combinations of fluxes, e.g. to control for a
     # known (or desired) correlation structure.
     # Note: the purpose of shimming should not be to learn parameters of general
@@ -263,4 +266,3 @@ def shim_flux_biases(
         sampling_params["flux_biases"] = flux_biases
 
     return flux_biases, flux_bias_history, mag_history
-

@@ -1,0 +1,5 @@
+-e ..
+
+matplotlib
+
+dwave-hybrid>=0.6.12

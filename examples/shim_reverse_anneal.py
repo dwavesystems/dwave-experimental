@@ -2,29 +2,28 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import dimod
-from dwave.experimental.shimming import shim_flux_biases
-from dwave.system.testing import MockDWaveSampler
 from dwave.system import DWaveSampler
 from minorminer.subgraph import find_subgraph
+
 from dwave.experimental.shimming import shim_flux_biases
+
 
 print(
     "Creates a small ferromagnetic problem and shims such that the expected magnetization is 0 averaging over all up and all down initial conditions"
 )
 
-# Change to 'Advantage2_research1.1' upon release, when available use
-# feature-based search to default the solver.
-qpu = DWaveSampler(solver="Advantage2_prototype2_x_internal")
+# when available, use feature-based search to default the solver.
+qpu = DWaveSampler(solver=dict(name__regex=r'Advantage2_prototype2.*|Advantage2_research1\..*'))
 
 # Embedding for a ring of length L
 loop_length = 4
 edge_list = [(i, (i + 1) % loop_length) for i in range(loop_length)]  # A loop
 embedding = find_subgraph(edge_list, qpu.edgelist)
 if len(embedding) != loop_length:
-    raise RunTimeError("A {loop_length} loop cannot be embedded on the solver")
+    raise RuntimeError("A {loop_length} loop cannot be embedded on the solver")
 
 # Define a ferromagnetic Ising model over programmable qubits and couplers
-bqm = dimod.BinaryQuadraticModel("SPIN").from_ising(
+bqm = dimod.BQM.from_ising(
     h={q: 0 for q in embedding.values()},
     J={(embedding[v1], embedding[v2]): -1 for v1, v2 in edge_list},
 )
