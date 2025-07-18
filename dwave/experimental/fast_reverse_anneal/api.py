@@ -14,12 +14,13 @@
 
 from __future__ import annotations
 
+from functools import cache
 from typing import Any, Optional, Union
 
 from dwave.cloud import Client, Solver
 from dwave.system import DWaveSampler
 
-__all__ = ['SOLVER_FILTER', 'get_parameters']
+__all__ = ['SOLVER_FILTER', 'get_solver_name', 'get_parameters']
 
 
 SOLVER_FILTER = dict(name__regex=r'Advantage2_prototype2.*|Advantage2_research1\..*')
@@ -39,7 +40,18 @@ Example::
 """
 
 
-def get_parameters(sampler: Optional[Union[DWaveSampler, Solver]] = None,
+@cache
+def get_solver_name() -> str:
+    """Find a solver that support fast reverse anneal and return its name.
+
+    Note: the result is memoized, so we query the API only on first call.
+    """
+    with Client.from_config() as client:
+        solver = client.get_solver(**SOLVER_FILTER)
+        return solver.name
+
+
+def get_parameters(sampler: Optional[Union[DWaveSampler, Solver, str]] = None,
                    ) -> dict[str, Any]:
     """For a given sampler (or solver), return the available fast annealing
     parameters and their expanded info.
@@ -48,8 +60,8 @@ def get_parameters(sampler: Optional[Union[DWaveSampler, Solver]] = None,
         sampler:
             A :class:`~dwave.system.DWaveSampler` sampler that supports the fast
             reverse anneal (FRA) protocol. Alternatively, a :class:`dwave.cloud.Solver`
-            solver can be provided. If unspecified, :attr:`.SOLVER_FILTER` is
-            used to fetch a FRA-enabled solver.
+            solver can be provided, or a solver name. If unspecified,
+            :attr:`.SOLVER_FILTER` is used to fetch a FRA-enabled solver.
 
     Returns:
         Each parameter available is described with: a data type, value limits,
@@ -67,9 +79,15 @@ def get_parameters(sampler: Optional[Union[DWaveSampler, Solver]] = None,
                 param_info = fra.get_parameters(sampler)
     """
 
-    if sampler is None:
+    # inelegant, but convenient extensions
+    if sampler is None or isinstance(sampler, str):
+        if isinstance(sampler, str):
+            filter = dict(name=sampler)
+        else:
+            filter = SOLVER_FILTER
+
         with Client.from_config() as client:
-            solver = client.get_solver(**SOLVER_FILTER)
+            solver = client.get_solver(**filter)
             return get_parameters(solver)
 
     if hasattr(sampler, 'solver'):
