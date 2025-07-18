@@ -76,8 +76,13 @@ class LiveSmokeTests(unittest.TestCase):
         # make sure solver name is not cached, so the next test is not affected
         get_solver_name.cache_clear()
 
-    def test_get_parameters(self):
+    def test_get_parameters_from_sampler(self):
         params = get_parameters(self.sampler)
+        self.assertIn('x_target_c', params)
+        self.assertIn('x_nominal_pause_time', params)
+
+    def test_get_parameters_from_name(self):
+        params = get_parameters(get_solver_name())
         self.assertIn('x_target_c', params)
         self.assertIn('x_nominal_pause_time', params)
 
