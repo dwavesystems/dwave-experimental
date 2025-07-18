@@ -1,0 +1,6 @@
+---
+features:
+  - |
+    Add ``dwave.experimental.fast_reverse_anneal`` submodule with a utility
+    function to fetch available annealing parameters and their extended type
+    information (such as allowed values, etc).
