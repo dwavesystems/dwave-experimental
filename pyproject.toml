@@ -38,6 +38,9 @@ version = {attr = "dwave.experimental.__version__"}
 [tool.setuptools.packages.find]
 include = ["dwave.*"]
 
+[tool.setuptools.package-data]
+"*" = ["data/*.json"]
+
 [tool.coverage.run]
 omit = ["tests/*"]
 source = ["dwave/experimental"]
