@@ -18,9 +18,13 @@ import json
 from importlib.resources import files
 from typing import Optional
 
+import numpy
+import numpy.typing
+import matplotlib.pyplot
+
 from .api import get_solver_name
 
-__all__ = ['load_schedules']
+__all__ = ['load_schedules', 'linex', 'c_vs_t', 'plot_schedule']
 
 
 def load_schedules(solver_name: Optional[str] = None) -> dict[float, dict[str, float]]:
@@ -43,3 +47,60 @@ def load_schedules(solver_name: Optional[str] = None) -> dict[float, dict[str, f
     family = schedules[solver_name]['params']
     # reformat for easier access
     return {s['nominal_pause_time']: s for s in family}
+
+
+def linex(t: numpy.typing.ArrayLike,
+          c0: float,
+          c2: float,
+          t_min: float,
+          a: float,
+          ) -> numpy.typing.ArrayLike:
+    """Linear-exponential (linex) function used to approximate a
+    fast-reverse-annealing schedule.
+    """
+    return c0 + 2*c2/a**2*(numpy.exp(a*(t - t_min)) - a*(t - t_min) - 1)
+
+
+def c_vs_t(t: numpy.typing.ArrayLike,
+           target_c: float,
+           nominal_pause_time: float = 0.0,
+           upper_bound: float = 1.0,
+           schedules: Optional[dict[str, float]] = None,
+           ) -> numpy.typing.ArrayLike:
+    """Time-dependence of the normalized control bias c(s) in linear-exponential
+    fast-reverse-anneal waveforms
+    """
+    if schedules is None:
+        schedules = load_schedules()
+
+    schedule = schedules[nominal_pause_time]
+    c2, a, t_min = schedule["c2"], schedule["a"], schedule["t_min"]
+
+    # subtracting -0.25*nominal_pause_time helps in reducing the s=1 padding when upper_bound=1.0.
+    return numpy.minimum(linex(1.025 - t - 0.25*nominal_pause_time, target_c, c2, t_min, a), upper_bound)
+
+
+def plot_schedule(t: numpy.typing.ArrayLike,
+                  target_c: float,
+                  nominal_pause_time: float,
+                  schedules: Optional[dict[str, float]] = None,
+                  figure: Optional[matplotlib.pyplot.Figure] = None,
+                  ) -> matplotlib.pyplot.Figure:
+    """Plot the approximate fast reverse schedule for a given ``target_c`` and
+    ``nominal_pause_time``, using time grid ``t``, optionally adding to figure
+    ``fig``.
+    """
+
+    if figure is None:
+        figure = matplotlib.pyplot.figure()
+    ax = figure.gca()
+
+    c = c_vs_t(t, target_c=target_c, nominal_pause_time=nominal_pause_time, schedules=schedules)
+
+    ax.plot(t, c, label=nominal_pause_time)
+    ax.set_xlabel("t [$\\mu s$]")
+    ax.set_ylabel("c(s)")
+    ax.set_title(f"Predicted fast-reverse-anneal waveforms, target_c = {target_c:.2f}")
+    ax.legend(title="Nominal pause duration [$\\mu s$]")
+
+    return figure

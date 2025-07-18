@@ -26,6 +26,7 @@ dependencies = [
     "dimod>=0.12.20,<0.13",
     "dwave-cloud-client>=0.13.6,<0.14",
     "dwave-system>=1.32.0,<2",
+    "matplotlib>=3",
 ]
 
 [project.urls]
