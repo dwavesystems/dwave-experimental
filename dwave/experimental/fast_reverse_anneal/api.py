@@ -14,12 +14,13 @@
 
 from __future__ import annotations
 
+from functools import cache
 from typing import Any, Optional, Union
 
 from dwave.cloud import Client, Solver
 from dwave.system import DWaveSampler
 
-__all__ = ['SOLVER_FILTER', 'get_parameters']
+__all__ = ['SOLVER_FILTER', 'get_solver_name', 'get_parameters']
 
 
 SOLVER_FILTER = dict(name__regex=r'Advantage2_prototype2.*|Advantage2_research1\..*')
@@ -37,6 +38,17 @@ Example::
     with DWaveSampler(solver=fra.SOLVER_FILTER) as sampler:
         sampler.sample(...)
 """
+
+
+@cache
+def get_solver_name() -> str:
+    """Find a solver that support fast reverse anneal and return its name.
+
+    Note: the result is memoized, so we query the API only on first call.
+    """
+    with Client.from_config() as client:
+        solver = client.get_solver(**SOLVER_FILTER)
+        return solver.name
 
 
 def get_parameters(sampler: Optional[Union[DWaveSampler, Solver]] = None,

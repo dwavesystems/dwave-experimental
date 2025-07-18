@@ -12,13 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
 import unittest
 import unittest.mock
 
-from dwave.experimental.fast_reverse_anneal import get_parameters
+from dwave.system import DWaveSampler
+from dwave.experimental.fast_reverse_anneal import (
+    get_parameters, get_solver_name, SOLVER_FILTER,
+)
 
 
 class FRA(unittest.TestCase):
+
+    def tearDown(self):
+        # make sure solver name is not cached, so the next test is not affected
+        get_solver_name.cache_clear()
 
     def test_sampler_params(self):
         x_target_c_range = [0, 1]
@@ -38,3 +46,14 @@ class FRA(unittest.TestCase):
 
             self.assertIn('x_nominal_pause_time', p)
             self.assertEqual(p['x_nominal_pause_time']['limits']['set'], x_nominal_pause_time_values)
+
+    @unittest.mock.patch('dwave.experimental.fast_reverse_anneal.api.Client')
+    def test_default_solver_name(self, client):
+        class Solver:
+            name = "mock-solver"
+
+        client.from_config.return_value.__enter__.return_value.get_solver.return_value = Solver()
+
+        solver_name = get_solver_name()
+
+        self.assertEqual(solver_name, Solver.name)
