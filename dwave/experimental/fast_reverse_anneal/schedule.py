@@ -35,6 +35,10 @@ def load_schedules(solver_name: Optional[str] = None) -> dict[float, dict[str, f
         solver_name:
             Name of a QPU solver that supports fast reverse annealing.
             If unspecified, the default solver is used.
+
+    Note:
+        When ``solver_name`` is not specified, a call to SAPI has to be made to
+        determine the default (fast reverse anneal) solver.
     """
     if solver_name is None:
         solver_name = get_solver_name()
@@ -82,7 +86,7 @@ def c_vs_t(t: numpy.typing.ArrayLike,
 
 def plot_schedule(t: numpy.typing.ArrayLike,
                   target_c: float,
-                  nominal_pause_time: float,
+                  nominal_pause_time: float = 0.0,
                   schedules: Optional[dict[str, float]] = None,
                   figure: Optional[matplotlib.pyplot.Figure] = None,
                   ) -> matplotlib.pyplot.Figure:

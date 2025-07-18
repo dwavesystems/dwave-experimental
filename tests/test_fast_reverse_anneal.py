@@ -12,13 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import re
 import unittest
 import unittest.mock
+from importlib.resources import files
+
+import numpy
 
 from dwave.system import DWaveSampler
 from dwave.experimental.fast_reverse_anneal import (
     get_parameters, get_solver_name, SOLVER_FILTER,
+    load_schedules, c_vs_t, plot_schedule,
 )
 
 
@@ -57,6 +62,24 @@ class FRA(unittest.TestCase):
         solver_name = get_solver_name()
 
         self.assertEqual(solver_name, Solver.name)
+
+    def test_schedules_smoke(self):
+        fra = files('dwave.experimental.fast_reverse_anneal')
+        schedules = json.loads(fra.joinpath('data/schedules.json').read_bytes())
+        self.assertGreater(len(schedules.keys()), 0)
+
+        with self.subTest('load_schedules'):
+            solver_name = schedules.popitem()[0]
+            schedules = load_schedules(solver_name=solver_name)
+            self.assertIsInstance(schedules, dict)
+
+        with self.subTest('c_vs_t'):
+            t = numpy.array([0, 0.1, 0.2])
+            c = c_vs_t(t, target_c=0, schedules=schedules)
+            self.assertEqual(len(c), len(t))
+
+        with self.subTest('plot_schedule'):
+            plot_schedule(t, target_c=0, schedules=schedules)
 
 
 class LiveSmokeTests(unittest.TestCase):
