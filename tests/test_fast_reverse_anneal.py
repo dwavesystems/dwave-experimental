@@ -57,3 +57,30 @@ class FRA(unittest.TestCase):
         solver_name = get_solver_name()
 
         self.assertEqual(solver_name, Solver.name)
+
+
+class LiveSmokeTests(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            cls.sampler = DWaveSampler(solver=SOLVER_FILTER)
+        except:
+            raise unittest.SkipTest('Fast reverse annealing solver not available.')
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.sampler.close()
+
+    def tearDown(self):
+        # make sure solver name is not cached, so the next test is not affected
+        get_solver_name.cache_clear()
+
+    def test_get_parameters(self):
+        params = get_parameters(self.sampler)
+        self.assertIn('x_target_c', params)
+        self.assertIn('x_nominal_pause_time', params)
+
+    def test_solver_selection(self):
+        name = get_solver_name()
+        self.assertIsNotNone(re.match(SOLVER_FILTER['name__regex'], name))
