@@ -44,7 +44,7 @@ def main(
 
     Args:
         solver: name of the solver, or dictionary of characteristics.
-        L0: length of the loop.
+        loop_length: length of the loop.
         num_iters: number of gradient descent steps.
         coupling_strength: coupling strength on the cubic lattice.
         annealing_time: annealing_time in microseconds
@@ -131,11 +131,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--solver_name",
         type=str,
-        help="option to specify QPU solver",
+        help="Option to specify QPU solver, by default=None",
         default=None,
     )
     parser.add_argument(
-        "--num_iters", type=int, help="number of gradient descent steps", default=10
+        "--num_iters",
+        type=int,
+        help="Number of gradient descent steps, by default 10. A geometrically decaying learning rate is used 1/num_steps.",
+        default=10,
     )
     parser.add_argument(
         "--coupling_strength",

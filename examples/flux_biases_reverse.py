@@ -42,7 +42,6 @@ def main(
 
     Args:
         solver: name of the solver, or dictionary of characteristics.
-        L0: length of the loop.
         num_iters: number of gradient descent steps.
         coupling_strength: coupling strength on the loop.
         x_target_c: schedule target point for reverse anneal.
@@ -133,26 +132,28 @@ if __name__ == "__main__":
     parser.add_argument(
         "--solver_name",
         type=str,
-        help="option to specify QPU solver",
+        help="Option to specify QPU solver, by default an experimental system supporting fast reverse anneal",
         default=dict(name__regex=r"Advantage2_prototype2.*|Advantage2_research1\..*"),
     )
-    parser.add_argument("--loop_length", type=int, help="length of the loop", default=4)
+    parser.add_argument(
+        "--loop_length", type=int, help="Length of the loop, by default 4", default=4
+    )
     parser.add_argument(
         "--num_iters",
         type=int,
-        help="number of gradient descent steps, by default 10",
+        help="Number of gradient descent steps, by default 10. A geometrically decaying learning rate is used 1/num_steps",
         default=10,
     )
     parser.add_argument(
         "--x_target_c",
         type=float,
-        help="Reverse anneal point x_target_c, should be early enough for magnetization not to be polarized by the initial condition. 0.25 by default.",
+        help="Reverse anneal point x_target_c, should be early enough for magnetization not to be polarized by the initial condition, by default 0.25",
         default=0.25,
     )
     parser.add_argument(
         "--coupling_strength",
         type=float,
-        help="Coupling strength on the ring. -1 (ferromagnetic) by default.",
+        help="Coupling strength on the ring, by default -1 (ferromagnetic)",
         default=-1,
     )
     args = parser.parse_args()
