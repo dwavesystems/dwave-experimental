@@ -49,7 +49,7 @@ def main(
         coupling_strength: coupling strength on the cubic lattice.
         annealing_time: annealing_time in microseconds
     """
-    qpu = DWaveSampler()
+    qpu = DWaveSampler(solver=solver)
     if annealing_time is None:
         qpu.properties["fast_anneal_time_range"][0]
     # Find a set of chains sufficient to embed a cubic lattice at full yield,
@@ -67,7 +67,7 @@ def main(
     # Define a spin glass with random couplings, using extended J-range (-2) chains
     source_bqm = dimod.BQM.from_ising(
         h={},
-        J={e: -(2 * np.random.random() - 1) for e in edge_list},
+        J={e: coupling_strength * (2 * np.random.random() - 1) for e in edge_list},
     )
     bqm = embed_bqm(source_bqm, embedding, qpu.adjacency, chain_strength=2)
 
@@ -143,7 +143,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--coupling_strength",
         type=float,
-        help="Coupling strength on the cubic lattice. -1 (ferromagnetic) by default.",
+        help="Coupling strength on the cubic lattice, couplers are random +/-coupling_strength, but default the maximum programmable scale (1).",
         default=-1,
     )
     parser.add_argument(

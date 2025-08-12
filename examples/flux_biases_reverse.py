@@ -27,6 +27,7 @@ from dwave.system import DWaveSampler
 from minorminer.subgraph import find_subgraph
 
 from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_phi
+from dwave.experimental.fast_reverse_anneal.api import get_solver_name
 
 
 def main(
@@ -48,9 +49,7 @@ def main(
     """
 
     # when available, use feature-based search to default the solver.
-    qpu = DWaveSampler(
-        solver=dict(name__regex=r"Advantage2_prototype2.*|Advantage2_research1\..*")
-    )
+    qpu = DWaveSampler(solver=solver)
 
     # Embedding for a ring of length L
     edge_list = [(i, (i + 1) % loop_length) for i in range(loop_length)]  # A loop
@@ -133,7 +132,7 @@ if __name__ == "__main__":
         "--solver_name",
         type=str,
         help="Option to specify QPU solver, by default an experimental system supporting fast reverse anneal",
-        default=dict(name__regex=r"Advantage2_prototype2.*|Advantage2_research1\..*"),
+        default=get_solver_name(),
     )
     parser.add_argument(
         "--loop_length", type=int, help="Length of the loop, by default 4", default=4
