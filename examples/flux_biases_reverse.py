@@ -50,7 +50,8 @@ def main(
         coupling_strength: coupling strength on the loop.
         x_target_c: schedule target point for reverse anneal.
         x_target_c_updates: a list of x_target_c to average over.
-        use_hypergradient: use the adaptive learning rate
+        use_hypergradient: use the adaptive learning rate. If False,
+            a fixed geometric decay is used.
         beta_hypergradient: adaptive learning rate parameter
     """
 
@@ -198,6 +199,18 @@ if __name__ == "__main__":
         type=float,
         help="Coupling strength on the ring, by default -1 (ferromagnetic)",
         default=-1,
+    )
+    parser.add_argument(
+        "--use_hypergradient",
+        type=bool,
+        help="Enables hypergradient descent optimization instead of the default learning schedule.",
+        default=True,
+    )
+    parser.add_argument(
+        "--beta_hypergradient",
+        type=float,
+        help="Specifies a custom multiplicative hyperparameter beta",
+        default=0.4,
     )
     parser.add_argument(
         "--use_hypergradient",

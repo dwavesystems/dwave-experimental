@@ -49,9 +49,10 @@ def main(
         loop_length: length of the loop.
         num_iters: number of gradient descent steps.
         coupling_strength: coupling strength on the cubic lattice.
-        annealing_time: annealing_time in microseconds
-        use_hypergradient: use the adaptive learning rate
-        beta_hypergradient: adaptive learning rate parameter
+        annealing_time: annealing_time in microseconds.
+        use_hypergradient: use the adaptive learning rate. If False,
+            a fixed geometric decay is used.
+        beta_hypergradient: adaptive learning rate parameter.
     """
     qpu = DWaveSampler(solver=solver)
     if annealing_time is None:
@@ -171,7 +172,6 @@ if __name__ == "__main__":
         default=0.4,
     )
     args = parser.parse_args()
-
     main(
         solver=args.solver_name,
         num_iters=args.num_iters,

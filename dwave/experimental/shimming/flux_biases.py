@@ -277,6 +277,7 @@ def shim_flux_biases(
 
             for idx, v in enumerate(ss.variables):
                 mag_history[v].append(all_mags[idx])
+                magnetizations[v] = all_mags[idx]
 
         if convergence_test(mag_history, flux_bias_history):
             # The data is not used to update the flux_biases
