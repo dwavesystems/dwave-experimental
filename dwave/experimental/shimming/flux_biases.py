@@ -96,6 +96,8 @@ def shim_flux_biases(
     learning_schedule: Optional[Iterable[float]] = None,
     convergence_test: Optional[Callable] = None,
     symmetrize_experiments: bool = True,
+    use_hypergradient: bool = True,
+    beta_hypergradient: float = 0.4,
 ) -> tuple[list[Bias], dict, dict]:
     r"""Return flux_biases achieving  <s_i> = 0 for symmetry preserving
     experiments.
@@ -232,7 +234,9 @@ def shim_flux_biases(
     flux_bias_history = {v: [flux_biases[v]] for v in shimmed_variables}
     mag_history = {v: [] for v in bqm.variables}
 
-    for lr in learning_schedule:
+    alpha = learning_schedule[0] / 1
+
+    for iteration, lr in enumerate(learning_schedule):
         for _ in range(num_experiments):
             if reverseanneal:
                 for i in bqm.variables:
@@ -245,21 +249,32 @@ def shim_flux_biases(
                     flux_biases[i] *= -1
 
             ss = sampler.sample(bqm, flux_biases=flux_biases, **sampling_params)
-            all_mags = np.sum(
-                ss.record.sample * ss.record.num_occurrences[:, np.newaxis], axis=0
-            ) / np.sum(ss.record.num_occurrences)
+            # all_mags = np.sum(
+            #     ss.record.sample * ss.record.num_occurrences[:, np.newaxis], axis=0
+            # ) / np.sum(ss.record.num_occurrences)
+            all_mags = ss.record.sample.sum(axis=0) / len(ss.record)
+
+            magnetizations = np.zeros(sampler.properties["num_qubits"], dtype=float)
             for idx, v in enumerate(ss.variables):
                 mag_history[v].append(all_mags[idx])
+                magnetizations[v] = all_mags[idx]
 
         if convergence_test(mag_history, flux_bias_history):
             # The data is not used to update the flux_biases
             # This can be included as part of the test evaluation (if required)
             break
 
+        if iteration > 0:
+            alpha *= (1 + beta_hypergradient * np.dot(magnetizations, last_mags)/(np.linalg.norm(magnetizations) * np.linalg.norm(last_mags)) )
+        
+        last_mags = magnetizations
+
         for v in shimmed_variables:
-            flux_biases[v] = flux_biases[v] - lr * sum(
-                mag_history[v][-num_experiments:]
-            )
+            if use_hypergradient:
+                flux_biases[v] -= alpha * sum(mag_history[v][-num_experiments:])
+            else:
+                flux_biases[v] -= lr * sum(mag_history[v][-num_experiments:])
+
             flux_bias_history[v].append(flux_biases[v])
 
     if pop_fb:

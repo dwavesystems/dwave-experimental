@@ -11,7 +11,7 @@ from dwave.system import DWaveSampler
 from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_phi
 
 
-def main(num_iters):
+def main(num_iters, use_hypergradient, beta_hypergradient):
     """Refine the calibration of a large spin glass.
 
     See also the calibration refinement tutorial  <https://doi.org/10.3389/fcomp.2023.1238988>
@@ -19,7 +19,7 @@ def main(num_iters):
     Args:
         num_iters: number of gradient descent steps.
     """
-    qpu = DWaveSampler()
+    qpu = DWaveSampler(profile="defaults")
 
     # Find a set of chains sufficient to embed a cubic lattice at full yield,
     # adapt (by vacancies) to tolerate missing qubits in the target QPU.
@@ -100,6 +100,21 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num_iters", type=int, help="number of gradient descent steps", default=10
     )
+    parser.add_argument(
+        "--use_hypergradient",
+        type=bool,
+        help="Enables hypergradient descent optimization instead of the default learning schedule.",
+        default=True,
+    )
+    parser.add_argument(
+        "--beta_hypergradient",
+        type=float,
+        help="Specifies a custom multiplicative hyperparameter beta",
+        default=0.4,
+    )
     args = parser.parse_args()
 
-    main(num_iters=args.num_iters)
+    main(num_iters=args.num_iters,
+        use_hypergradient=args.use_hypergradient,
+        beta_hypergradient=args.beta_hypergradient,      
+         )

@@ -10,7 +10,7 @@ from minorminer.subgraph import find_subgraph
 from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_phi
 
 
-def main(solver, loop_length, num_iters, x_target_c):
+def main(solver, loop_length, num_iters, x_target_c, use_hypergradient, beta_hypergradient):
     """Refine the calibration of a ferromagnetic loop.
 
 
@@ -23,7 +23,8 @@ def main(solver, loop_length, num_iters, x_target_c):
 
     # when available, use feature-based search to default the solver.
     qpu = DWaveSampler(
-        solver=dict(name__regex=r"Advantage2_prototype2.*|Advantage2_research1\..*")
+        profile="defaults",
+        solver=dict(name__regex=r"Advantage2_prototype2.*|Advantage2_research1\..*"),
     )
 
     # Embedding for a ring of length L
@@ -64,6 +65,8 @@ def main(solver, loop_length, num_iters, x_target_c):
         sampler=qpu,
         sampling_params=sampling_params,
         learning_schedule=learning_schedule,
+        use_hypergradient=use_hypergradient,
+        beta_hypergradient=beta_hypergradient,
     )
 
     mag_array = np.array(list(mag_history.values()))
@@ -122,6 +125,18 @@ if __name__ == "__main__":
         help="Reverse anneal point x_target_c, should be early enough for magnetization not to be polarized by the initial condition. 0.25 by default.",
         default=0.25,
     )
+    parser.add_argument(
+        "--use_hypergradient",
+        type=bool,
+        help="Enables hypergradient descent optimization instead of the default learning schedule.",
+        default=True,
+    )
+    parser.add_argument(
+        "--beta_hypergradient",
+        type=float,
+        help="Specifies a custom multiplicative hyperparameter beta",
+        default=0.4,
+    )
     args = parser.parse_args()
 
     main(
@@ -129,4 +144,6 @@ if __name__ == "__main__":
         loop_length=args.loop_length,
         num_iters=args.num_iters,
         x_target_c=args.x_target_c,
+        use_hypergradient=args.use_hypergradient,
+        beta_hypergradient=args.beta_hypergradient,
     )
