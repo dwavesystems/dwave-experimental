@@ -1,4 +1,23 @@
+# Copyright 2025 D-Wave
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""
+An example to demonstrate simple calibration refinement of flux_biases for
+fast reverse anneal applied to a 1D coupled ring. 
+"""
+
 import argparse
+from typing import Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,15 +29,23 @@ from minorminer.subgraph import find_subgraph
 from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_phi
 
 
-def main(solver, loop_length, num_iters, x_target_c):
+def main(
+    solver: Union[None, dict, str],
+    loop_length: int,
+    num_iters: int,
+    coupling_strength: float,
+    x_target_c: float,
+):
     """Refine the calibration of a ferromagnetic loop.
 
+    See also the calibration refinement tutorial  <https://doi.org/10.3389/fcomp.2023.1238988>
 
-    See also: https://doi.org/10.3389/fcomp.2023.1238988
     Args:
         solver: name of the solver, or dictionary of characteristics.
         L0: length of the loop.
         num_iters: number of gradient descent steps.
+        coupling_strength: coupling strength on the loop.
+        x_target_c: schedule target point for reverse anneal.
     """
 
     # when available, use feature-based search to default the solver.
@@ -35,7 +62,7 @@ def main(solver, loop_length, num_iters, x_target_c):
     # Define a ferromagnetic Ising model over programmable qubits and couplers
     bqm = dimod.BQM.from_ising(
         h={q: 0 for q in embedding.values()},
-        J={(embedding[v1], embedding[v2]): -1 for v1, v2 in edge_list},
+        J={(embedding[v1], embedding[v2]): coupling_strength for v1, v2 in edge_list},
     )
 
     # Set up solver parameters for a fast reverse anneal experiment.
@@ -122,11 +149,18 @@ if __name__ == "__main__":
         help="Reverse anneal point x_target_c, should be early enough for magnetization not to be polarized by the initial condition. 0.25 by default.",
         default=0.25,
     )
+    parser.add_argument(
+        "--coupling_strength",
+        type=float,
+        help="Coupling strength on the ring. -1 (ferromagnetic) by default.",
+        default=-1,
+    )
     args = parser.parse_args()
 
     main(
         solver=args.solver_name,
         loop_length=args.loop_length,
         num_iters=args.num_iters,
+        coupling_strength=args.coupling_strength,
         x_target_c=args.x_target_c,
     )

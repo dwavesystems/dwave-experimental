@@ -1,4 +1,25 @@
+# Copyright 2025 D-Wave
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""
+An example to demonstrate simple calibration refinement of flux_biases for
+fast (forward) anneal applied to a full scale simple-cubic spin-glass problem
+with 2-qubit embedding at maximum (extended range) chain strength. 
+"""
+
+
 import argparse
+from typing import Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,16 +32,26 @@ from dwave.system import DWaveSampler
 from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_phi
 
 
-def main(num_iters):
+def main(
+    solver: Union[None, dict, str],
+    num_iters: int,
+    coupling_strength: float = -1,
+    annealing_time: Union[None, float] = None,
+):
     """Refine the calibration of a large spin glass.
 
     See also the calibration refinement tutorial  <https://doi.org/10.3389/fcomp.2023.1238988>
 
     Args:
+        solver: name of the solver, or dictionary of characteristics.
+        L0: length of the loop.
         num_iters: number of gradient descent steps.
+        coupling_strength: coupling strength on the cubic lattice.
+        annealing_time: annealing_time in microseconds
     """
     qpu = DWaveSampler()
-
+    if annealing_time is None:
+        qpu.properties["fast_anneal_time_range"][0]
     # Find a set of chains sufficient to embed a cubic lattice at full yield,
     # adapt (by vacancies) to tolerate missing qubits in the target QPU.
     embedding = make_origin_embeddings(qpu_sampler=qpu, lattice_type="cubic")[0]
@@ -49,7 +80,7 @@ def main(num_iters):
         num_reads=1024,
         fast_anneal=True,
         auto_scale=False,
-        annealing_time=qpu.properties["fast_anneal_time_range"][0],
+        annealing_time=annealing_time,
     )
 
     # A geometric decay is sufficient for a bulk low-frequency correction.
@@ -98,8 +129,31 @@ if __name__ == "__main__":
         description="A fast anneal calibration refinement example"
     )
     parser.add_argument(
+        "--solver_name",
+        type=str,
+        help="option to specify QPU solver",
+        default=None,
+    )
+    parser.add_argument(
         "--num_iters", type=int, help="number of gradient descent steps", default=10
+    )
+    parser.add_argument(
+        "--coupling_strength",
+        type=float,
+        help="Coupling strength on the cubic lattice. -1 (ferromagnetic) by default.",
+        default=-1,
+    )
+    parser.add_argument(
+        "--annealing_time",
+        type=float,
+        help="annealing_time in microseconds. Smallest valuable supported by default.",
+        default=None,
     )
     args = parser.parse_args()
 
-    main(num_iters=args.num_iters)
+    main(
+        solver=args.solver_name,
+        num_iters=args.num_iters,
+        coupling_strength=args.coupling_strength,
+        annealing_time=args.annealing_time,
+    )
