@@ -255,6 +255,7 @@ def shim_flux_biases(
     mag_history = {v: [] for v in bqm.variables}
 
     alpha = learning_schedule[0] / 1
+    alpha_history = []
 
     for iteration, lr in enumerate(learning_schedule):
         for _ in range(num_experiments):
@@ -286,7 +287,7 @@ def shim_flux_biases(
 
         if iteration > 0:
             alpha *= (1 + beta_hypergradient * np.dot(magnetizations, last_mags)/(np.linalg.norm(magnetizations) * np.linalg.norm(last_mags)) )
-        
+            alpha_history.append(alpha)
         last_mags = magnetizations
 
         for v in shimmed_variables:
