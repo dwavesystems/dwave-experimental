@@ -248,16 +248,16 @@ def shim_flux_biases(
     if learning_schedule is None:
         learning_schedule = [qubit_freezeout_alpha_phi()]
 
+    num_steps = len(learning_schedule)
+
     if convergence_test is None:
         convergence_test = lambda x, y: False
 
     flux_bias_history = {v: [flux_biases[v]] for v in shimmed_variables}
     mag_history = {v: [] for v in bqm.variables}
 
-    alpha = learning_schedule[0] / 1
-    alpha_history = []
-
-    for iteration, lr in enumerate(learning_schedule):
+    alpha = learning_schedule[0]  # learning rate.
+    for iteration in range(num_steps):
         for _ in range(num_experiments):
             if reverseanneal:
                 for i in bqm.variables:
@@ -270,25 +270,29 @@ def shim_flux_biases(
                     flux_biases[i] *= -1
 
             ss = sampler.sample(bqm, flux_biases=flux_biases, **sampling_params)
-            # all_mags = np.sum(
-            #     ss.record.sample * ss.record.num_occurrences[:, np.newaxis], axis=0
-            # ) / np.sum(ss.record.num_occurrences)
-            all_mags = ss.record.sample.sum(axis=0) / len(ss.record)
+            all_mags = np.sum(
+                ss.record.sample * ss.record.num_occurrences[:, np.newaxis], axis=0
+            ) / np.sum(ss.record.num_occurrences)
 
-            magnetizations = np.zeros(sampler.properties["num_qubits"], dtype=float)
             for idx, v in enumerate(ss.variables):
                 mag_history[v].append(all_mags[idx])
-                magnetizations[v] = all_mags[idx]
 
         if convergence_test(mag_history, flux_bias_history):
             # The data is not used to update the flux_biases
             # This can be included as part of the test evaluation (if required)
             break
 
-        if iteration > 0:
-            alpha *= (1 + beta_hypergradient * np.dot(magnetizations, last_mags)/(np.linalg.norm(magnetizations) * np.linalg.norm(last_mags)) )
-            alpha_history.append(alpha)
-        last_mags = magnetizations
+        if use_hypergradient:
+            magnetizations = np.array(
+                [np.mean(mag_history[v][-num_experiments:]) for v in shimmed_variables]
+            )
+            if iteration > 0:
+                alpha *= 1 + beta_hypergradient * np.dot(magnetizations, last_mags) / (
+                    np.linalg.norm(magnetizations) * np.linalg.norm(last_mags)
+                )
+            last_mags = magnetizations
+        elif iteration < num_steps - 1:
+            alpha = learning_schedule[num_steps + 1]
 
         for v in shimmed_variables:
             if use_hypergradient:
