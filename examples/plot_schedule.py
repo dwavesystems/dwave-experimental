@@ -33,14 +33,15 @@ print("Schedules:")
 pprint(schedules)
 
 
-t = numpy.arange(0.0, 0.06, 1e-4)
+t = numpy.arange(0.95, 1.03, 1e-4)
 nominal_pause_times = params['x_nominal_pause_time']['limits']['set']
 
 target_c = 0.5
 fig = None
 for nominal_pause_time in nominal_pause_times:
-    fig = fra.plot_schedule(t, target_c, nominal_pause_time,
-                            schedules=schedules, figure=fig)
+    fig = fra.plot_schedule(
+        t, target_c=target_c, nominal_pause_time=nominal_pause_time,
+        schedules=schedules, figure=fig)
 
 filename = f'schedules for {target_c=}.png'
 fig.savefig(filename)

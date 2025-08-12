@@ -66,13 +66,15 @@ def load_schedules(solver_name: Optional[str] = None) -> dict[float, dict[str, f
     return {s['nominal_pause_time']: s for s in family}
 
 
-def linex(t: numpy.typing.ArrayLike,
-          c0: float,
-          c2: float,
-          t_min: float,
-          a: float,
-          ) -> numpy.typing.ArrayLike:
-    """Linear-exponential (linex) function used to approximate a
+def linex(
+    t: numpy.typing.ArrayLike,
+    *,
+    c0: float,
+    c2: float,
+    a: float,
+    t_min: float,
+) -> numpy.typing.ArrayLike:
+    r"""Linear-exponential (linex) function used to approximate a
     fast-reverse-annealing schedule.
 
     Fast-reverse-annealing schedule can be approximated with the following
@@ -85,22 +87,23 @@ def linex(t: numpy.typing.ArrayLike,
         t: Discrete time (in microseconds), given as a scalar or an array.
         c0: Offset coefficient.
         c2: Scale coefficient.
-        t_min: Time offset coefficient.
         a: Rate coefficient.
+        t_min: Time offset coefficient.
 
     Returns:
         The linear-exponential function evaluated at ``t``.
-
     """
     return c0 + 2*c2/a**2*(numpy.exp(a*(t - t_min)) - a*(t - t_min) - 1)
 
 
-def c_vs_t(t: numpy.typing.ArrayLike,
-           target_c: float,
-           nominal_pause_time: float = 0.0,
-           upper_bound: float = 1.0,
-           schedules: Optional[dict[str, float]] = None,
-           ) -> numpy.typing.ArrayLike:
+def c_vs_t(
+    t: numpy.typing.ArrayLike,
+    *,
+    target_c: float,
+    nominal_pause_time: float = 0.0,
+    upper_bound: float = 1.0,
+    schedules: Optional[dict[str, float]] = None,
+) -> numpy.typing.ArrayLike:
     """Time-dependence of the normalized control bias c(s) in linear-exponential
     fast-reverse-anneal waveforms.
 
@@ -115,10 +118,10 @@ def c_vs_t(t: numpy.typing.ArrayLike,
         upper_bound:
             Waveform's upper bound.
         schedules:
-            Family of schedules parameters, as returned by :meth:`.load_schedules`.
+            Schedule family parameters, as returned by :meth:`.load_schedules`.
 
     Returns:
-        Schedule waveform evaluated at ``t``.
+        Schedule waveform approximation evaluated at ``t``.
 
     """
     if schedules is None:
@@ -127,16 +130,17 @@ def c_vs_t(t: numpy.typing.ArrayLike,
     schedule = schedules[nominal_pause_time]
     c2, a, t_min = schedule["c2"], schedule["a"], schedule["t_min"]
 
-    # subtracting -0.25*nominal_pause_time helps in reducing the s=1 padding when upper_bound=1.0.
-    return numpy.minimum(linex(1.025 - t - 0.25*nominal_pause_time, target_c, c2, t_min, a), upper_bound)
+    return numpy.minimum(linex(t, c0=target_c, c2=c2, a=a, t_min=t_min), upper_bound)
 
 
-def plot_schedule(t: numpy.typing.ArrayLike,
-                  target_c: float,
-                  nominal_pause_time: float = 0.0,
-                  schedules: Optional[dict[str, float]] = None,
-                  figure: Optional[matplotlib.pyplot.Figure] = None,
-                  ) -> matplotlib.pyplot.Figure:
+def plot_schedule(
+    t: numpy.typing.ArrayLike,
+    *,
+    target_c: float,
+    nominal_pause_time: float = 0.0,
+    schedules: Optional[dict[str, float]] = None,
+    figure: Optional[matplotlib.pyplot.Figure] = None,
+) -> matplotlib.pyplot.Figure:
     """Plot the approximate fast reverse schedule for a given ``target_c`` and
     ``nominal_pause_time``, using time grid ``t``, optionally adding to figure
     ``fig``.
@@ -146,11 +150,13 @@ def plot_schedule(t: numpy.typing.ArrayLike,
         import matplotlib.pyplot as plt
         from dwave.experimental.fast_reverse_anneal import plot_schedule
 
-        t = numpy.arange(0.0, 0.06, 1e-4)
+        t = numpy.arange(0.95, 1.03, 1e-4)
         fig = plot_schedule(t, target_c=0.0)
         plt.show()
 
+    See also: ``examples/plot_schedule.py``.
     """
+
     if figure is None:
         figure = matplotlib.pyplot.figure()
     ax = figure.gca()
