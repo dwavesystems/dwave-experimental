@@ -30,12 +30,15 @@ from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_
 from dwave.experimental.fast_reverse_anneal import SOLVER_FILTER
 
 
+<<<<<<< HEAD
 def main(
     solver: Union[None, dict, str],
     loop_length: int,
     num_iters: int,
     coupling_strength: float,
     x_target_c: float,
+    use_hypergradient: bool,
+    beta_hypergradient: float,    
 ):
     """Refine the calibration of a ferromagnetic loop.
 
@@ -46,10 +49,21 @@ def main(
         num_iters: number of gradient descent steps.
         coupling_strength: coupling strength on the loop.
         x_target_c: schedule target point for reverse anneal.
+        use_hypergradient: whether to use an adaptive learning rate. If False,
+            a fixed geometric decay is used.
+        beta_hypergradient: parameter controlling the adaptive learning rate.
+
     """
 
     # when available, use feature-based search to default the solver.
+<<<<<<< HEAD
     qpu = DWaveSampler(solver=solver)
+=======
+    qpu = DWaveSampler(
+        profile="defaults",
+        solver=dict(name__regex=r"Advantage2_prototype2.*|Advantage2_research1\..*"),
+    )
+>>>>>>> d2d4243 (Added hypergradient descent to flux_biases.py and modified examples accordingly)
 
     # Embedding for a ring of length L
     edge_list = [(i, (i + 1) % loop_length) for i in range(loop_length)]  # A loop
@@ -89,6 +103,8 @@ def main(
         sampler=qpu,
         sampling_params=sampling_params,
         learning_schedule=learning_schedule,
+        use_hypergradient=use_hypergradient,
+        beta_hypergradient=beta_hypergradient,
     )
 
     mag_array = np.array(list(mag_history.values()))
@@ -150,10 +166,23 @@ if __name__ == "__main__":
         default=0.25,
     )
     parser.add_argument(
+<<<<<<< HEAD
         "--coupling_strength",
         type=float,
         help="Coupling strength on the ring, by default -1 (ferromagnetic)",
         default=-1,
+=======
+        "--use_hypergradient",
+        type=bool,
+        help="Enables hypergradient descent optimization instead of the default learning schedule.",
+        default=True,
+    )
+    parser.add_argument(
+        "--beta_hypergradient",
+        type=float,
+        help="Specifies a custom multiplicative hyperparameter beta",
+        default=0.4,
+>>>>>>> d2d4243 (Added hypergradient descent to flux_biases.py and modified examples accordingly)
     )
     args = parser.parse_args()
 
@@ -163,4 +192,6 @@ if __name__ == "__main__":
         num_iters=args.num_iters,
         coupling_strength=args.coupling_strength,
         x_target_c=args.x_target_c,
+        use_hypergradient=args.use_hypergradient,
+        beta_hypergradient=args.beta_hypergradient,
     )

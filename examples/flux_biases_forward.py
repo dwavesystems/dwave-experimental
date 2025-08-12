@@ -32,11 +32,14 @@ from dwave.system import DWaveSampler
 from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_phi
 
 
+<<<<<<< HEAD
 def main(
     solver: Union[None, dict, str],
     num_iters: int,
     coupling_strength: float = -1,
     annealing_time: Union[None, float] = None,
+    use_hypergradient: bool = True,
+    beta_hypergradient: float = 0.4,
 ):
     """Refine the calibration of a large spin glass.
 
@@ -47,11 +50,15 @@ def main(
         loop_length: length of the loop.
         num_iters: number of gradient descent steps.
         coupling_strength: coupling strength on the cubic lattice.
-        annealing_time: annealing_time in microseconds
+        annealing_time: annealing_time in microseconds.
+        use_hypergradient: whether to use an adaptive learning rate. If False,
+            a fixed geometric decay is used.
+        beta_hypergradient: parameter controlling the adaptive learning rate.
     """
     qpu = DWaveSampler(solver=solver)
     if annealing_time is None:
         qpu.properties["fast_anneal_time_range"][0]
+
     # Find a set of chains sufficient to embed a cubic lattice at full yield,
     # adapt (by vacancies) to tolerate missing qubits in the target QPU.
     embedding = make_origin_embeddings(qpu_sampler=qpu, lattice_type="cubic")[0]
@@ -152,11 +159,24 @@ if __name__ == "__main__":
         help="annealing_time in microseconds. Smallest valuable supported by default.",
         default=None,
     )
+    parser.add_argument(
+        "--use_hypergradient",
+        type=bool,
+        help="Enables hypergradient descent optimization instead of the default learning schedule.",
+        default=True,
+    )
+    parser.add_argument(
+        "--beta_hypergradient",
+        type=float,
+        help="Specifies a custom multiplicative hyperparameter beta",
+        default=0.4,
+    )
     args = parser.parse_args()
-
     main(
         solver=args.solver_name,
         num_iters=args.num_iters,
         coupling_strength=args.coupling_strength,
         annealing_time=args.annealing_time,
+        use_hypergradient=args.use_hypergradient,
+        beta_hypergradient=args.beta_hypergradient,      
     )
