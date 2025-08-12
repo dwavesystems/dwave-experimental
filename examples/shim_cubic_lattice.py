@@ -14,6 +14,8 @@ from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_
 def main(num_iters):
     """Refine the calibration of a large spin glass.
 
+    See also the calibration refinement tutorial  <https://doi.org/10.3389/fcomp.2023.1238988>
+
     Args:
         num_iters: number of gradient descent steps.
     """
@@ -36,20 +38,22 @@ def main(num_iters):
         h={},
         J={e: -(2 * np.random.random() - 1) for e in edge_list},
     )
-
     bqm = embed_bqm(source_bqm, embedding, qpu.adjacency, chain_strength=2)
 
-    # Set up solver parameters for a fast reverse anneal experiment
-    learning_schedule = qubit_freezeout_alpha_phi() / np.arange(1, num_iters + 1)
-    # learning_schedule = (
-    #     4e-5 * 3 / np.arange(3, 22)
-    # )  # Not optimized, but likely sufficient for a signal in Advantage/Advantage2 generation processors.
+    # Set up solver parameters for a forward anneal experiment.
+    # A regime with weak correlations allows greater efficiency, and might be
+    # smoothly extraplated to more strongly correlated regimes.
+    # The calibration refinement is expected to be a smooth function for the
+    # programmed Hamiltonian and sampling parameters.
     sampling_params = dict(
         num_reads=1024,
         fast_anneal=True,
         auto_scale=False,
         annealing_time=qpu.properties["fast_anneal_time_range"][0],
     )
+
+    # A geometric decay is sufficient for a bulk low-frequency correction.
+    learning_schedule = qubit_freezeout_alpha_phi() / np.arange(1, num_iters + 1)
 
     # Find flux biases that restore average magnetization, ideally this cancels
     # the impact of low-frequency environment fluxes coupling into the qubit body
@@ -78,13 +82,13 @@ def main(num_iters):
     plt.legend()
     plt.xlabel("Magnetization")
     plt.ylabel("Cumulative Distribution Functino")
-    plt.savefig("DwaveExperimentalMag.png")
+    plt.savefig("DwaveExperimentalMagForward.png")
 
     plt.figure("all_fluxes")
     plt.plot(flux_array.transpose())
     plt.xlabel("Shim iteration")
     plt.ylabel("Flux bias ($\\Phi_0$)")
-    plt.savefig("DwaveExperimentalFlux.png")
+    plt.savefig("DwaveExperimentalFluxForward.png")
     plt.show()
 
 

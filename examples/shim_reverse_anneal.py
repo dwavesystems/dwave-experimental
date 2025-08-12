@@ -10,9 +10,11 @@ from minorminer.subgraph import find_subgraph
 from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_phi
 
 
-def main(solver, loop_length, num_iters):
+def main(solver, loop_length, num_iters, x_target_c):
     """Refine the calibration of a ferromagnetic loop.
 
+
+    See also: https://doi.org/10.3389/fcomp.2023.1238988
     Args:
         solver: name of the solver, or dictionary of characteristics.
         L0: length of the loop.
@@ -36,22 +38,24 @@ def main(solver, loop_length, num_iters):
         J={(embedding[v1], embedding[v2]): -1 for v1, v2 in edge_list},
     )
 
-    # Set up solver parameters for a fast reverse anneal experiment, in a regime
-    # with weak correlations (small target_c sufficient).
-    # A geometric decay is chosen
-    learning_schedule = qubit_freezeout_alpha_phi() / np.arange(1, num_iters + 1)
-    initial_state = 3 * np.ones(qpu.properties["num_qubits"])  # 3 denotes inactive
-    for q in embedding.values():
-        initial_state[q] = 1
+    # Set up solver parameters for a fast reverse anneal experiment.
+    # A regime with weak correlations allows greater efficiency, and might be
+    # smoothly extraplated to more strongly correlated regimes (small target_c
+    # allows for sufficiently weak dependence on the initial condition).
+    # The calibration refinement is expected to be a smooth function for the
+    # programmed Hamiltonian and sampling parameters.
     sampling_params = dict(
         num_reads=1024,
         reinitialize_state=True,
-        x_target_c=0.25,
+        x_target_c=x_target_c,
         x_nominal_pause_time=0.0,
         anneal_schedule=[[0, 1], [1, 1]],
         auto_scale=False,
-        initial_state=initial_state,
+        initial_state={q: 1 for q in embedding.values()},
     )
+
+    # A geometric decay is sufficient for a bulk low-frequency correction.
+    learning_schedule = qubit_freezeout_alpha_phi() / np.arange(1, num_iters + 1)
 
     # Find flux biases that restore average magnetization, ideally this cancels
     # the impact of low-frequency environment fluxes coupling into the qubit body
@@ -80,17 +84,17 @@ def main(solver, loop_length, num_iters):
             color="black",
             label="Experiment average" if k == 0 else None,
         )
-    plt.xlabel("Shim iteration")
+    plt.xlabel("Number of gradient descent steps")
     plt.ylabel("Magnetization")
     plt.legend()
-    plt.savefig("DwaveExperimentalMag.png")
+    plt.savefig("DwaveExperimentalMagReverse.png")
 
     plt.figure("all_fluxes")
     plt.plot(flux_array.transpose())
-    plt.xlabel("Shim iteration")
+    plt.xlabel("Number of gradient descent steps")
     plt.ylabel("Flux bias ($\\Phi_0$)")
     plt.legend(fb_history.keys(), title="Qubit index")
-    plt.savefig("DwaveExperimentalFlux.png")
+    plt.savefig("DwaveExperimentalFluxReverse.png")
     plt.show()
 
 
@@ -107,7 +111,16 @@ if __name__ == "__main__":
     )
     parser.add_argument("--loop_length", type=int, help="length of the loop", default=4)
     parser.add_argument(
-        "--num_iters", type=int, help="number of gradient descent steps", default=10
+        "--num_iters",
+        type=int,
+        help="number of gradient descent steps, by default 10",
+        default=10,
+    )
+    parser.add_argument(
+        "--x_target_c",
+        type=float,
+        help="Reverse anneal point x_target_c, should be early enough for magnetization not to be polarized by the initial condition. 0.25 by default.",
+        default=0.25,
     )
     args = parser.parse_args()
 
@@ -115,4 +128,5 @@ if __name__ == "__main__":
         solver=args.solver_name,
         loop_length=args.loop_length,
         num_iters=args.num_iters,
+        x_target_c=args.x_target_c,
     )
