@@ -36,9 +36,22 @@ def load_schedules(solver_name: Optional[str] = None) -> dict[float, dict[str, f
             Name of a QPU solver that supports fast reverse annealing.
             If unspecified, the default solver is used.
 
+    Returns:
+        A dict mapping allowed ``nominal_pause_time`` values to a schedule
+        approximation curve (linear-exponential) parameters dict. For example:
+
+        {0.0: {'a': 51.04360118925347,
+               'c2': 9821.41471886313,
+               'nominal_pause_time': 0.0,
+               't_min': 1.0115890689350606},
+         ...}
+
+         See :meth:`.linex` for parameters description.
+
     Note:
         When ``solver_name`` is not specified, a call to SAPI has to be made to
         determine the default (fast reverse anneal) solver.
+
     """
     if solver_name is None:
         solver_name = get_solver_name()
@@ -61,6 +74,23 @@ def linex(t: numpy.typing.ArrayLike,
           ) -> numpy.typing.ArrayLike:
     """Linear-exponential (linex) function used to approximate a
     fast-reverse-annealing schedule.
+
+    Fast-reverse-annealing schedule can be approximated with the following
+    linear exponential function:
+
+    .. math::
+        f(t) = c_0 + \frac{2 c_2}{a^2} \left(e^{a(t - t_{\min})} - a(t - t_{\min}) - 1\right)
+
+    Args:
+        t: Discrete time (in microseconds), given as a scalar or an array.
+        c0: Offset coefficient.
+        c2: Scale coefficient.
+        t_min: Time offset coefficient.
+        a: Rate coefficient.
+
+    Returns:
+        The linear-exponential function evaluated at ``t``.
+
     """
     return c0 + 2*c2/a**2*(numpy.exp(a*(t - t_min)) - a*(t - t_min) - 1)
 
@@ -72,7 +102,24 @@ def c_vs_t(t: numpy.typing.ArrayLike,
            schedules: Optional[dict[str, float]] = None,
            ) -> numpy.typing.ArrayLike:
     """Time-dependence of the normalized control bias c(s) in linear-exponential
-    fast-reverse-anneal waveforms
+    fast-reverse-anneal waveforms.
+
+    Args:
+        t:
+            Discrete time (in microseconds), given as a scalar or an array.
+        target_c:
+            The lowest value of the normalized control bias, `c(s)`, reached
+            during a fast reverse annealing.
+        nominal_pause_time:
+            Pause duration, in microseconds, for the fast-reverse-annealing schedule.
+        upper_bound:
+            Waveform's upper bound.
+        schedules:
+            Family of schedules parameters, as returned by :meth:`.load_schedules`.
+
+    Returns:
+        Schedule waveform evaluated at ``t``.
+
     """
     if schedules is None:
         schedules = load_schedules()
@@ -93,8 +140,17 @@ def plot_schedule(t: numpy.typing.ArrayLike,
     """Plot the approximate fast reverse schedule for a given ``target_c`` and
     ``nominal_pause_time``, using time grid ``t``, optionally adding to figure
     ``fig``.
-    """
 
+    Example::
+        import numpy
+        import matplotlib.pyplot as plt
+        from dwave.experimental.fast_reverse_anneal import plot_schedule
+
+        t = numpy.arange(0.0, 0.06, 1e-4)
+        fig = plot_schedule(t, target_c=0.0)
+        plt.show()
+
+    """
     if figure is None:
         figure = matplotlib.pyplot.figure()
     ax = figure.gca()

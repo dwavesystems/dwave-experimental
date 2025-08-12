@@ -42,9 +42,9 @@ Example::
 
 @cache
 def get_solver_name() -> str:
-    """Find a solver that support fast reverse anneal and return its name.
+    """Return the name of a solver that supports fast reverse anneal.
 
-    Note: the result is memoized, so we query the API only on first call.
+    Note: the result is memoized, so the API is queried only on first call.
     """
     with Client.from_config() as client:
         solver = client.get_solver(**SOLVER_FILTER)
@@ -116,7 +116,10 @@ def get_parameters(sampler: Optional[Union[DWaveSampler, Solver, str]] = None,
             "limits": {
                 "range": info["fastReverseAnnealTargetCRange"],
             },
-            "description": "The lowest value of the normalized control bias, `c(s)`, during a fast reverse annealing.",
+            "description": (
+                "The lowest value of the normalized control bias, `c(s)`, "
+                "reached during a fast reverse annealing."
+            ),
         },
         "x_nominal_pause_time": {
             "type": "float",
@@ -125,6 +128,9 @@ def get_parameters(sampler: Optional[Union[DWaveSampler, Solver, str]] = None,
             "limits": {
                 "set": info["fastReverseAnnealNominalPauseTimeValues"],
             },
-            "description": "Sets the pause duration for fast-reverse-annealing schedules.",
+            "description": (
+                "Sets the pause duration, in microseconds, "
+                "for fast-reverse-annealing schedules."
+            ),
         },
     }
