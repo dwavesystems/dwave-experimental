@@ -32,7 +32,6 @@ from dwave.system import DWaveSampler
 from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_phi
 
 
-<<<<<<< HEAD
 def main(
     solver: Union[None, dict, str],
     num_iters: int,
@@ -57,7 +56,7 @@ def main(
     """
     qpu = DWaveSampler(solver=solver)
     if annealing_time is None:
-        qpu.properties["fast_anneal_time_range"][0]
+        annealing_time = qpu.properties["fast_anneal_time_range"][0]
 
     # Find a set of chains sufficient to embed a cubic lattice at full yield,
     # adapt (by vacancies) to tolerate missing qubits in the target QPU.
