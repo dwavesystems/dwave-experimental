@@ -178,5 +178,5 @@ if __name__ == "__main__":
         coupling_strength=args.coupling_strength,
         annealing_time=args.annealing_time,
         use_hypergradient=args.use_hypergradient,
-        beta_hypergradient=args.beta_hypergradient,      
+        beta_hypergradient=args.beta_hypergradient,
     )
