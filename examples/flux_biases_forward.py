@@ -99,6 +99,8 @@ def main(
         sampler=qpu,
         sampling_params=sampling_params,
         learning_schedule=learning_schedule,
+        use_hypergradient=use_hypergradient,
+        beta_hypergradient=beta_hypergradient,
     )
 
     mag_array = np.array(list(mag_history.values()))
@@ -177,5 +179,5 @@ if __name__ == "__main__":
         coupling_strength=args.coupling_strength,
         annealing_time=args.annealing_time,
         use_hypergradient=args.use_hypergradient,
-        beta_hypergradient=args.beta_hypergradient,      
+        beta_hypergradient=args.beta_hypergradient,
     )

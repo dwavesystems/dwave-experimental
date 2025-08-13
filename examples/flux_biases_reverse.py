@@ -37,7 +37,7 @@ def main(
     coupling_strength: float,
     x_target_c: float,
     use_hypergradient: bool,
-    beta_hypergradient: float,    
+    beta_hypergradient: float,
 ):
     """Refine the calibration of a ferromagnetic loop.
 
@@ -94,6 +94,9 @@ def main(
         bqm=bqm,
         sampler=qpu,
         sampling_params=sampling_params,
+        learning_schedule=learning_schedule,
+        use_hypergradient=use_hypergradient,
+        beta_hypergradient=beta_hypergradient,
     )
 
     mag_array = np.array(list(mag_history.values()))
