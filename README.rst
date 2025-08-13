@@ -4,6 +4,18 @@ dwave-experimental
 
 Ocean utilities to support advanced QPU prototype features.
 
+Installation
+------------
+
+To install the latest version from source (available on GitHub in
+`dwavesystems/dwave-experimental`_ repo):
+
+.. code-block:: bash
+
+    pip install git+https://github.com/dwavesystems/dwave-experimental.git
+
+.. _`dwavesystems/dwave-experimental`: https://github.com/dwavesystems/dwave-experimental
+
 License
 -------
 
