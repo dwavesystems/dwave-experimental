@@ -99,7 +99,6 @@ def shim_flux_biases(
     beta_hypergradient: float = 0.4,
     num_steps: int = 10,
     alpha: float = None,
-
 ) -> tuple[list[Bias], dict, dict]:
     r"""Return flux_biases achieving  <s_i> = 0 for symmetry preserving
     experiments.
@@ -118,6 +117,11 @@ def shim_flux_biases(
     :\math:`\Phi(t+1) \leftarrow Phi(t) - L(t) (<s> - m)`. Where
     L(t) is an iteration-dependent map, <s> is the expected magnetization, m
     is the target magnetization and Phi are the programmed flux biases.
+
+    By default L(t) is uniform with respect to programmed qubits, and
+    determined by a hypergradient descent method <https://doi.org/10.48550/arXiv.1703.04782>.
+    The learning rate can alternatively be provided as a list, in which
+    case the hypergradient method is not used.
 
     Symmetry can be broken by the choice of initial condition in reverse
     annealing, non-zero h, or non-zero flux biases over unshimmed
@@ -146,12 +150,9 @@ def shim_flux_biases(
            be specified according the Ising model convention (+/-1, and -3 for inactive).
        shimmed_variables: A list of variables to shim, by default all elements in
            bqm.variables.
-       learning_schedule: An iterable of gradient descent prefactors. By default, a
-           single step is taken. Experimental-timescale fluctuations in the flux
-           noise (characterized by a 1/f spectrum) as well as sampling error
-           linked to estimator variance, limit the accuracy attainable. Per standard
-           gradient descent approaches one can consider a constant learning rate,
-           or one that decreases with t. See examples.
+       learning_schedule: An iterable of gradient descent prefactors. When this
+           is not provided the prefactors are determined by a hypergradient descent
+           method parameterized by `alpha`, `beta_hypergradient` and `num_steps`.
        convergence_test: A callable taking the history of magnetizations and flux_biases
            as input, returning True to exit the search, and False otherwise. By default,
            all stages specified in the learning_schedule are completed.
@@ -161,7 +162,14 @@ def shim_flux_biases(
            the magnetization is inferred by averaging over two experiments (with symmetry
            breaking elements inverted). We shim so that the average of the symmetrically
            related experiments has zero magnetization.
-
+        beta_hypergradient: A parameter control the learning rate evolution for the
+            hypergradient descent method. A choice customized to the annealing protocol
+            and processor may improve performance.
+        num_steps: When learning_schedule is not specified, this determines the number of
+            steps taken by the hypergradient descent method. By default 10 is used.
+        alpha: The initial learning rate for the hypergradient descent method. By default
+            this is initialised using `qubit_freezeout_alpha_phi`. A choice customized to
+            the annealing protocol and processor may improve performance.
     Returns:
         A tuple consisting of 3 parts:
         1. flux_biases in a list format suitable as a DWaveSampler argument.
@@ -268,12 +276,18 @@ def shim_flux_biases(
                 [np.mean(mag_history[v][-num_experiments:]) for v in shimmed_variables]
             )
             if iteration > 0:
-                if np.linalg.norm(magnetizations) == 0 or np.linalg.norm(last_mags) == 0:
+                if (
+                    np.linalg.norm(magnetizations) == 0
+                    or np.linalg.norm(last_mags) == 0
+                ):
+                    # When magnetization norms are zero the paper method is ill defined.
+                    # One could choose to convergence test to exit at zero magnetization
+                    # as an alternative.
                     alpha *= 1 - beta_hypergradient
                 else:
-                    alpha *= 1 + beta_hypergradient * np.dot(magnetizations, last_mags) / (
-                        np.linalg.norm(magnetizations) * np.linalg.norm(last_mags)
-                    )
+                    alpha *= 1 + beta_hypergradient * np.dot(
+                        magnetizations, last_mags
+                    ) / (np.linalg.norm(magnetizations) * np.linalg.norm(last_mags))
             last_mags = magnetizations
         elif iteration < num_steps - 1:
             alpha = learning_schedule[iteration + 1]

@@ -33,9 +33,10 @@ from dwave.experimental.fast_reverse_anneal import SOLVER_FILTER
 def main(
     solver: Union[None, dict, str],
     loop_length: int,
-    num_iters: int,
+    num_steps: int,
     coupling_strength: float,
     x_target_c: float,
+    x_nominal_pause_time: float,
     use_hypergradient: bool,
     beta_hypergradient: float,
 ):
@@ -45,9 +46,10 @@ def main(
 
     Args:
         solver: name of the solver, or dictionary of characteristics.
-        num_iters: number of gradient descent steps.
+        num_steps: number of gradient descent steps.
         coupling_strength: coupling strength on the loop.
         x_target_c: schedule target point for reverse anneal.
+        x_nominal_pause_time: pause time at target point for reverse anneal.
         use_hypergradient: whether to use an adaptive learning rate. If False,
             a fixed geometric decay is used.
         beta_hypergradient: parameter controlling the adaptive learning rate.
@@ -79,14 +81,18 @@ def main(
         num_reads=1024,
         reinitialize_state=True,
         x_target_c=x_target_c,
-        x_nominal_pause_time=0.0,
+        x_nominal_pause_time=x_nominal_pause_time,
         anneal_schedule=[[0, 1], [1, 1]],
         auto_scale=False,
         initial_state={q: 1 for q in embedding.values()},
     )
 
-    # A geometric decay is sufficient for a bulk low-frequency correction.
-    learning_schedule = qubit_freezeout_alpha_phi() / np.arange(1, num_iters + 1)
+    alpha = qubit_freezeout_alpha_phi()
+    if use_hypergradient:
+        # A geometric decay is sufficient for a bulk low-frequency correction.
+        learning_schedule = alpha / np.arange(1, num_steps + 1)
+    else:
+        learning_schedule = None
 
     # Find flux biases that restore average magnetization, ideally this cancels
     # the impact of low-frequency environment fluxes coupling into the qubit body
@@ -95,8 +101,9 @@ def main(
         sampler=qpu,
         sampling_params=sampling_params,
         learning_schedule=learning_schedule,
-        use_hypergradient=use_hypergradient,
         beta_hypergradient=beta_hypergradient,
+        num_steps=num_steps,
+        alpha=alpha,
     )
 
     mag_array = np.array(list(mag_history.values()))
@@ -146,7 +153,7 @@ if __name__ == "__main__":
         "--loop_length", type=int, help="Length of the loop, by default 4", default=4
     )
     parser.add_argument(
-        "--num_iters",
+        "--num_steps",
         type=int,
         help="Number of gradient descent steps, by default 10. A geometrically decaying learning rate is used 1/num_steps",
         default=10,
@@ -156,6 +163,12 @@ if __name__ == "__main__":
         type=float,
         help="Reverse anneal point x_target_c, should be early enough for magnetization not to be polarized by the initial condition. 0.25 by default.",
         default=0.25,
+    )
+    parser.add_argument(
+        "--x_nominal_pause_time",
+        type=float,
+        help="Reverse anneal dwell time.",
+        default=0.0,
     )
     parser.add_argument(
         "--coupling_strength",
@@ -180,9 +193,10 @@ if __name__ == "__main__":
     main(
         solver=args.solver_name,
         loop_length=args.loop_length,
-        num_iters=args.num_iters,
+        num_steps=args.num_steps,
         coupling_strength=args.coupling_strength,
         x_target_c=args.x_target_c,
+        x_nominal_pause_time=args.x_nominal_pause_time,
         use_hypergradient=args.use_hypergradient,
         beta_hypergradient=args.beta_hypergradient,
     )
