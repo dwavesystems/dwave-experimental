@@ -96,8 +96,10 @@ def shim_flux_biases(
     learning_schedule: Optional[Iterable[float]] = None,
     convergence_test: Optional[Callable] = None,
     symmetrize_experiments: bool = True,
-    use_hypergradient: bool = True,
     beta_hypergradient: float = 0.4,
+    num_steps: int = 10,
+    alpha: float = None,
+
 ) -> tuple[list[Bias], dict, dict]:
     r"""Return flux_biases achieving  <s_i> = 0 for symmetry preserving
     experiments.
@@ -225,10 +227,10 @@ def shim_flux_biases(
         fbnonzero = hnonzero = reverseanneal = False
     num_experiments = 1 + int(reverseanneal or hnonzero or fbnonzero)
 
-    if learning_schedule is None:
-        learning_schedule = [qubit_freezeout_alpha_phi()]
-
-    num_steps = len(learning_schedule)
+    if learning_schedule is not None:
+        num_steps = len(learning_schedule)
+    elif alpha is None:
+        alpha = qubit_freezeout_alpha_phi()
 
     if convergence_test is None:
         convergence_test = lambda x, y: False
@@ -236,7 +238,6 @@ def shim_flux_biases(
     flux_bias_history = {v: [flux_biases[v]] for v in shimmed_variables}
     mag_history = {v: [] for v in bqm.variables}
 
-    alpha = learning_schedule[0]  # learning rate.
     for iteration in range(num_steps):
         for _ in range(num_experiments):
             if reverseanneal:
@@ -262,21 +263,23 @@ def shim_flux_biases(
             # This can be included as part of the test evaluation (if required)
             break
 
-        if use_hypergradient:
+        if learning_schedule is None:
             magnetizations = np.array(
                 [np.mean(mag_history[v][-num_experiments:]) for v in shimmed_variables]
             )
             if iteration > 0:
-                alpha *= 1 + beta_hypergradient * np.dot(magnetizations, last_mags) / (
-                    np.linalg.norm(magnetizations) * np.linalg.norm(last_mags)
-                )
+                if np.linalg.norm(magnetizations) == 0 or np.linalg.norm(last_mags) == 0:
+                    alpha *= 1 - beta_hypergradient
+                else:
+                    alpha *= 1 + beta_hypergradient * np.dot(magnetizations, last_mags) / (
+                        np.linalg.norm(magnetizations) * np.linalg.norm(last_mags)
+                    )
             last_mags = magnetizations
         elif iteration < num_steps - 1:
-            alpha = learning_schedule[num_steps + 1]
+            alpha = learning_schedule[iteration + 1]
 
         for v in shimmed_variables:
             flux_biases[v] -= alpha * sum(mag_history[v][-num_experiments:])
-
             flux_bias_history[v].append(flux_biases[v])
 
     if pop_fb:

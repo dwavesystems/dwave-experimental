@@ -64,9 +64,6 @@ def main(solver, loop_length, num_iters, x_target_c, use_hypergradient, beta_hyp
         bqm=bqm,
         sampler=qpu,
         sampling_params=sampling_params,
-        learning_schedule=learning_schedule,
-        use_hypergradient=use_hypergradient,
-        beta_hypergradient=beta_hypergradient,
     )
 
     mag_array = np.array(list(mag_history.values()))
@@ -123,7 +120,7 @@ if __name__ == "__main__":
         "--x_target_c",
         type=float,
         help="Reverse anneal point x_target_c, should be early enough for magnetization not to be polarized by the initial condition. 0.25 by default.",
-        default=0.25,
+        default=0.35,
     )
     parser.add_argument(
         "--use_hypergradient",
