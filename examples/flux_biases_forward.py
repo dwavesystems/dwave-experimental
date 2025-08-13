@@ -51,7 +51,7 @@ def main(
     """
     qpu = DWaveSampler(solver=solver)
     if annealing_time is None:
-        qpu.properties["fast_anneal_time_range"][0]
+        annealing_time = qpu.properties["fast_anneal_time_range"][0]
     # Find a set of chains sufficient to embed a cubic lattice at full yield,
     # adapt (by vacancies) to tolerate missing qubits in the target QPU.
     embedding = make_origin_embeddings(qpu_sampler=qpu, lattice_type="cubic")[0]
