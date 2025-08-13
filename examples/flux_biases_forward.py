@@ -34,7 +34,7 @@ from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_
 
 def main(
     solver: Union[None, dict, str],
-    num_iters: int,
+    num_steps: int,
     coupling_strength: float = -1,
     annealing_time: Union[None, float] = None,
     use_hypergradient: bool = False,
@@ -47,7 +47,7 @@ def main(
     Args:
         solver: name of the solver, or dictionary of characteristics.
         loop_length: length of the loop.
-        num_iters: number of gradient descent steps.
+        num_steps: number of gradient descent steps.
         coupling_strength: coupling strength on the cubic lattice.
         annealing_time: annealing_time in microseconds.
         use_hypergradient: use the adaptive learning rate. If False,
@@ -87,9 +87,12 @@ def main(
         auto_scale=False,
         annealing_time=annealing_time,
     )
-
-    # A geometric decay is sufficient for a bulk low-frequency correction.
-    learning_schedule = qubit_freezeout_alpha_phi() / np.arange(1, num_iters + 1)
+    alpha = qubit_freezeout_alpha_phi()
+    if use_hypergradient:
+        # A geometric decay is sufficient for a bulk low-frequency correction.
+        learning_schedule = alpha / np.arange(1, num_steps + 1)
+    else:
+        learning_schedule = None
 
     # Find flux biases that restore average magnetization, ideally this cancels
     # the impact of low-frequency environment fluxes coupling into the qubit body
@@ -98,8 +101,9 @@ def main(
         sampler=qpu,
         sampling_params=sampling_params,
         learning_schedule=learning_schedule,
-        use_hypergradient=use_hypergradient,
         beta_hypergradient=beta_hypergradient,
+        num_steps=num_steps,
+        alpha=alpha,
     )
 
     mag_array = np.array(list(mag_history.values()))
@@ -142,7 +146,7 @@ if __name__ == "__main__":
         default=None,
     )
     parser.add_argument(
-        "--num_iters",
+        "--num_steps",
         type=int,
         help="Number of gradient descent steps, by default 10. A geometrically decaying learning rate is used 1/num_steps.",
         default=10,
@@ -174,7 +178,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     main(
         solver=args.solver_name,
-        num_iters=args.num_iters,
+        num_steps=args.num_steps,
         coupling_strength=args.coupling_strength,
         annealing_time=args.annealing_time,
         use_hypergradient=args.use_hypergradient,
