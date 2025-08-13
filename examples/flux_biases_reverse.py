@@ -30,7 +30,6 @@ from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_
 from dwave.experimental.fast_reverse_anneal import SOLVER_FILTER
 
 
-<<<<<<< HEAD
 def main(
     solver: Union[None, dict, str],
     loop_length: int,
@@ -56,14 +55,7 @@ def main(
     """
 
     # when available, use feature-based search to default the solver.
-<<<<<<< HEAD
     qpu = DWaveSampler(solver=solver)
-=======
-    qpu = DWaveSampler(
-        profile="defaults",
-        solver=dict(name__regex=r"Advantage2_prototype2.*|Advantage2_research1\..*"),
-    )
->>>>>>> d2d4243 (Added hypergradient descent to flux_biases.py and modified examples accordingly)
 
     # Embedding for a ring of length L
     edge_list = [(i, (i + 1) % loop_length) for i in range(loop_length)]  # A loop
@@ -102,9 +94,6 @@ def main(
         bqm=bqm,
         sampler=qpu,
         sampling_params=sampling_params,
-        learning_schedule=learning_schedule,
-        use_hypergradient=use_hypergradient,
-        beta_hypergradient=beta_hypergradient,
     )
 
     mag_array = np.array(list(mag_history.values()))
@@ -162,16 +151,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "--x_target_c",
         type=float,
-        help="Reverse anneal point x_target_c, should be early enough for magnetization not to be polarized by the initial condition, by default 0.25",
+        help="Reverse anneal point x_target_c, should be early enough for magnetization not to be polarized by the initial condition. 0.25 by default.",
         default=0.25,
     )
     parser.add_argument(
-<<<<<<< HEAD
         "--coupling_strength",
         type=float,
         help="Coupling strength on the ring, by default -1 (ferromagnetic)",
         default=-1,
-=======
+    )
+    parser.add_argument(
         "--use_hypergradient",
         type=bool,
         help="Enables hypergradient descent optimization instead of the default learning schedule.",
@@ -182,7 +171,6 @@ if __name__ == "__main__":
         type=float,
         help="Specifies a custom multiplicative hyperparameter beta",
         default=0.4,
->>>>>>> d2d4243 (Added hypergradient descent to flux_biases.py and modified examples accordingly)
     )
     args = parser.parse_args()
 
