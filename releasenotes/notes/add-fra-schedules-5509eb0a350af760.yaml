@@ -1,0 +1,4 @@
+---
+features:
+  - |
+    Add fast reverse anneal solver schedules and utility plotting functions.

@@ -2,6 +2,7 @@
 dimod==0.12.20
 dwave-cloud-client==0.13.6
 dwave-system==1.32.0
+matplotlib==3.9.4   # last to support 3.9
 
 # dev requirements
 reno==4.1.0

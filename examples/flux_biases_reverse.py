@@ -1,4 +1,23 @@
+# Copyright 2025 D-Wave
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""
+An example to demonstrate simple calibration refinement of flux_biases for
+fast reverse anneal applied to a 1D coupled ring. 
+"""
+
 import argparse
+from typing import Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -8,24 +27,37 @@ from dwave.system import DWaveSampler
 from minorminer.subgraph import find_subgraph
 
 from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_phi
+from dwave.experimental.fast_reverse_anneal import SOLVER_FILTER
 
 
-def main(solver, loop_length, num_iters, x_target_c, use_hypergradient, beta_hypergradient):
+def main(
+    solver: Union[None, dict, str],
+    loop_length: int,
+    num_steps: int,
+    coupling_strength: float,
+    x_target_c: float,
+    x_nominal_pause_time: float,
+    use_hypergradient: bool,
+    beta_hypergradient: float,
+):
     """Refine the calibration of a ferromagnetic loop.
 
+    See also the calibration refinement tutorial  <https://doi.org/10.3389/fcomp.2023.1238988>
 
-    See also: https://doi.org/10.3389/fcomp.2023.1238988
     Args:
         solver: name of the solver, or dictionary of characteristics.
-        L0: length of the loop.
-        num_iters: number of gradient descent steps.
+        num_steps: number of gradient descent steps.
+        coupling_strength: coupling strength on the loop.
+        x_target_c: schedule target point for reverse anneal.
+        x_nominal_pause_time: pause time at target point for reverse anneal.
+        use_hypergradient: whether to use an adaptive learning rate. If False,
+            a fixed geometric decay is used.
+        beta_hypergradient: parameter controlling the adaptive learning rate.
+
     """
 
     # when available, use feature-based search to default the solver.
-    qpu = DWaveSampler(
-        profile="defaults",
-        solver=dict(name__regex=r"Advantage2_prototype2.*|Advantage2_research1\..*"),
-    )
+    qpu = DWaveSampler(solver=solver)
 
     # Embedding for a ring of length L
     edge_list = [(i, (i + 1) % loop_length) for i in range(loop_length)]  # A loop
@@ -36,7 +68,7 @@ def main(solver, loop_length, num_iters, x_target_c, use_hypergradient, beta_hyp
     # Define a ferromagnetic Ising model over programmable qubits and couplers
     bqm = dimod.BQM.from_ising(
         h={q: 0 for q in embedding.values()},
-        J={(embedding[v1], embedding[v2]): -1 for v1, v2 in edge_list},
+        J={(embedding[v1], embedding[v2]): coupling_strength for v1, v2 in edge_list},
     )
 
     # Set up solver parameters for a fast reverse anneal experiment.
@@ -49,14 +81,18 @@ def main(solver, loop_length, num_iters, x_target_c, use_hypergradient, beta_hyp
         num_reads=1024,
         reinitialize_state=True,
         x_target_c=x_target_c,
-        x_nominal_pause_time=0.0,
+        x_nominal_pause_time=x_nominal_pause_time,
         anneal_schedule=[[0, 1], [1, 1]],
         auto_scale=False,
         initial_state={q: 1 for q in embedding.values()},
     )
 
-    # A geometric decay is sufficient for a bulk low-frequency correction.
-    learning_schedule = qubit_freezeout_alpha_phi() / np.arange(1, num_iters + 1)
+    alpha = qubit_freezeout_alpha_phi()
+    if use_hypergradient:
+        # A geometric decay is sufficient for a bulk low-frequency correction.
+        learning_schedule = alpha / np.arange(1, num_steps + 1)
+    else:
+        learning_schedule = None
 
     # Find flux biases that restore average magnetization, ideally this cancels
     # the impact of low-frequency environment fluxes coupling into the qubit body
@@ -64,6 +100,10 @@ def main(solver, loop_length, num_iters, x_target_c, use_hypergradient, beta_hyp
         bqm=bqm,
         sampler=qpu,
         sampling_params=sampling_params,
+        learning_schedule=learning_schedule,
+        beta_hypergradient=beta_hypergradient,
+        num_steps=num_steps,
+        alpha=alpha,
     )
 
     mag_array = np.array(list(mag_history.values()))
@@ -106,21 +146,35 @@ if __name__ == "__main__":
     parser.add_argument(
         "--solver_name",
         type=str,
-        help="option to specify QPU solver",
-        default=dict(name__regex=r"Advantage2_prototype2.*|Advantage2_research1\..*"),
+        help="Option to specify QPU solver, by default an experimental system supporting fast reverse anneal",
+        default=SOLVER_FILTER,
     )
-    parser.add_argument("--loop_length", type=int, help="length of the loop", default=4)
     parser.add_argument(
-        "--num_iters",
+        "--loop_length", type=int, help="Length of the loop, by default 4", default=4
+    )
+    parser.add_argument(
+        "--num_steps",
         type=int,
-        help="number of gradient descent steps, by default 10",
+        help="Number of gradient descent steps, by default 10. A geometrically decaying learning rate is used 1/num_steps",
         default=10,
     )
     parser.add_argument(
         "--x_target_c",
         type=float,
         help="Reverse anneal point x_target_c, should be early enough for magnetization not to be polarized by the initial condition. 0.25 by default.",
-        default=0.35,
+        default=0.25,
+    )
+    parser.add_argument(
+        "--x_nominal_pause_time",
+        type=float,
+        help="Reverse anneal dwell time.",
+        default=0.0,
+    )
+    parser.add_argument(
+        "--coupling_strength",
+        type=float,
+        help="Coupling strength on the ring, by default -1 (ferromagnetic)",
+        default=-1,
     )
     parser.add_argument(
         "--use_hypergradient",
@@ -139,8 +193,10 @@ if __name__ == "__main__":
     main(
         solver=args.solver_name,
         loop_length=args.loop_length,
-        num_iters=args.num_iters,
+        num_steps=args.num_steps,
+        coupling_strength=args.coupling_strength,
         x_target_c=args.x_target_c,
+        x_nominal_pause_time=args.x_nominal_pause_time,
         use_hypergradient=args.use_hypergradient,
         beta_hypergradient=args.beta_hypergradient,
     )

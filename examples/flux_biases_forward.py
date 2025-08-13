@@ -1,4 +1,25 @@
+# Copyright 2025 D-Wave
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""
+An example to demonstrate simple calibration refinement of flux_biases for
+fast (forward) anneal applied to a full scale simple-cubic spin-glass problem
+with 2-qubit embedding at maximum (extended range) chain strength. 
+"""
+
+
 import argparse
+from typing import Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,15 +32,31 @@ from dwave.system import DWaveSampler
 from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_phi
 
 
-def main(num_iters, use_hypergradient, beta_hypergradient):
+def main(
+    solver: Union[None, dict, str],
+    num_steps: int,
+    coupling_strength: float = -1,
+    annealing_time: Union[None, float] = None,
+    use_hypergradient: bool = True,
+    beta_hypergradient: float = 0.4,
+):
     """Refine the calibration of a large spin glass.
 
     See also the calibration refinement tutorial  <https://doi.org/10.3389/fcomp.2023.1238988>
 
     Args:
-        num_iters: number of gradient descent steps.
+        solver: name of the solver, or dictionary of characteristics.
+        loop_length: length of the loop.
+        num_steps: number of gradient descent steps.
+        coupling_strength: coupling strength on the cubic lattice.
+        annealing_time: annealing_time in microseconds.
+        use_hypergradient: whether to use an adaptive learning rate. If False,
+            a fixed geometric decay is used.
+        beta_hypergradient: parameter controlling the adaptive learning rate.
     """
-    qpu = DWaveSampler(profile="defaults")
+    qpu = DWaveSampler(solver=solver)
+    if annealing_time is None:
+        annealing_time = qpu.properties["fast_anneal_time_range"][0]
 
     # Find a set of chains sufficient to embed a cubic lattice at full yield,
     # adapt (by vacancies) to tolerate missing qubits in the target QPU.
@@ -36,7 +73,7 @@ def main(num_iters, use_hypergradient, beta_hypergradient):
     # Define a spin glass with random couplings, using extended J-range (-2) chains
     source_bqm = dimod.BQM.from_ising(
         h={},
-        J={e: -(2 * np.random.random() - 1) for e in edge_list},
+        J={e: coupling_strength * (2 * np.random.random() - 1) for e in edge_list},
     )
     bqm = embed_bqm(source_bqm, embedding, qpu.adjacency, chain_strength=2)
 
@@ -49,11 +86,14 @@ def main(num_iters, use_hypergradient, beta_hypergradient):
         num_reads=1024,
         fast_anneal=True,
         auto_scale=False,
-        annealing_time=qpu.properties["fast_anneal_time_range"][0],
+        annealing_time=annealing_time,
     )
-
-    # A geometric decay is sufficient for a bulk low-frequency correction.
-    learning_schedule = qubit_freezeout_alpha_phi() / np.arange(1, num_iters + 1)
+    alpha = qubit_freezeout_alpha_phi()
+    if use_hypergradient:
+        # A geometric decay is sufficient for a bulk low-frequency correction.
+        learning_schedule = alpha / np.arange(1, num_steps + 1)
+    else:
+        learning_schedule = None
 
     # Find flux biases that restore average magnetization, ideally this cancels
     # the impact of low-frequency environment fluxes coupling into the qubit body
@@ -62,6 +102,9 @@ def main(num_iters, use_hypergradient, beta_hypergradient):
         sampler=qpu,
         sampling_params=sampling_params,
         learning_schedule=learning_schedule,
+        beta_hypergradient=beta_hypergradient,
+        num_steps=num_steps,
+        alpha=alpha,
     )
 
     mag_array = np.array(list(mag_history.values()))
@@ -98,7 +141,28 @@ if __name__ == "__main__":
         description="A fast anneal calibration refinement example"
     )
     parser.add_argument(
-        "--num_iters", type=int, help="number of gradient descent steps", default=10
+        "--solver_name",
+        type=str,
+        help="Option to specify QPU solver, by default=None",
+        default=None,
+    )
+    parser.add_argument(
+        "--num_steps",
+        type=int,
+        help="Number of gradient descent steps, by default 10. A geometrically decaying learning rate is used 1/num_steps.",
+        default=10,
+    )
+    parser.add_argument(
+        "--coupling_strength",
+        type=float,
+        help="Coupling strength on the cubic lattice, couplers are random +/-coupling_strength, but default the maximum programmable scale (1).",
+        default=-1,
+    )
+    parser.add_argument(
+        "--annealing_time",
+        type=float,
+        help="annealing_time in microseconds. Smallest valuable supported by default.",
+        default=None,
     )
     parser.add_argument(
         "--use_hypergradient",
@@ -113,8 +177,11 @@ if __name__ == "__main__":
         default=0.4,
     )
     args = parser.parse_args()
-
-    main(num_iters=args.num_iters,
+    main(
+        solver=args.solver_name,
+        num_steps=args.num_steps,
+        coupling_strength=args.coupling_strength,
+        annealing_time=args.annealing_time,
         use_hypergradient=args.use_hypergradient,
-        beta_hypergradient=args.beta_hypergradient,      
-         )
+        beta_hypergradient=args.beta_hypergradient,
+    )
