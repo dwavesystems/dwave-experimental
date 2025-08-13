@@ -252,8 +252,6 @@ def shim_flux_biases(
     elif alpha is None:
         alpha = qubit_freezeout_alpha_phi()
 
-    num_steps = len(learning_schedule)
-
     if convergence_test is None:
         convergence_test = lambda x, y: False
 

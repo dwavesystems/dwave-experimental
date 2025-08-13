@@ -212,18 +212,6 @@ if __name__ == "__main__":
         help="Specifies a custom multiplicative hyperparameter beta",
         default=0.4,
     )
-    parser.add_argument(
-        "--use_hypergradient",
-        type=bool,
-        help="Enables hypergradient descent optimization instead of the default learning schedule.",
-        default=True,
-    )
-    parser.add_argument(
-        "--beta_hypergradient",
-        type=float,
-        help="Specifies a custom multiplicative hyperparameter beta",
-        default=0.4,
-    )
     args = parser.parse_args()
     if args.x_target_c_average:
         # The target_c regime is experimentally dependent, it must
