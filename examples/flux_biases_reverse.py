@@ -214,13 +214,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--use_hypergradient",
         type=bool,
-        help="Enables hypergradient descent optimization instead of the default learning schedule.",
+        help="Enables hypergradient descent optimization instead of a fixed geometric decay",
         default=True,
     )
     parser.add_argument(
         "--beta_hypergradient",
         type=float,
-        help="Specifies a custom multiplicative hyperparameter beta",
+        help="Specifies the adaptive learning rate hyperparameter beta",
         default=0.4,
     )
     args = parser.parse_args()

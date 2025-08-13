@@ -100,7 +100,7 @@ def shim_flux_biases(
     use_hypergradient: bool = True,
     beta_hypergradient: float = 0.4,
     num_steps: int = 10,
-    alpha: float = None,
+    alpha: Optional[float] = None,
 ) -> tuple[list[Bias], dict, dict]:
     r"""Return flux_biases achieving  <s_i> = 0 for symmetry preserving
     experiments.
@@ -140,6 +140,9 @@ def shim_flux_biases(
     function of annealing parameters such as annealing time, anneal schedule, and
     Hamiltonian parameters. Shims inferred in smoothly related models can be used
     as approximations (or initial conditions) for searches in related models.
+
+    If the provided learning rate or learning schedule is too large, it is
+    possible to exceed the bounds of allowed values for the flux bias offsets.
 
     Args:
        bqm: A dimod binary quadratic model.
