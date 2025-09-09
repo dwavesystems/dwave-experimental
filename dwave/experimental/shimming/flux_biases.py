@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from typing import Any, Optional, Iterable, Callable
+from itertools import product
 
 import numpy as np
 
@@ -96,6 +97,7 @@ def shim_flux_biases(
     learning_schedule: Optional[Iterable[float]] = None,
     convergence_test: Optional[Callable] = None,
     symmetrize_experiments: bool = True,
+    sampling_params_updates: Optional[list] = None,
 ) -> tuple[list[Bias], dict, dict]:
     r"""Return flux_biases achieving  <s_i> = 0 for symmetry preserving
     experiments.
@@ -157,6 +159,12 @@ def shim_flux_biases(
            the magnetization is inferred by averaging over two experiments (with symmetry
            breaking elements inverted). We shim so that the average of the symmetrically
            related experiments has zero magnetization.
+       sampling_params_updates: Where averaging across many experiments is required a
+           list of updates can be provided. Each element in the list is a dictionary that
+           updates sampling_params. The experiments are averaged to determine the magnetization
+           usedin shimming. If sampling_params_ensemble includes flux_biases, care
+           should be taken when used in combination with `symmetrize_experiments=True` and
+           only unshimmed variables should be modified. See repositoty examples/ for use cases.
 
     Returns:
         A tuple consisting of 3 parts:
@@ -223,6 +231,10 @@ def shim_flux_biases(
         fbnonzero = hnonzero = reverseanneal = False
     num_experiments = 1 + int(reverseanneal or hnonzero or fbnonzero)
 
+    if sampling_params_updates is None:
+        # By default, a single experimental setting:
+        sampling_params_updates = [{}]
+
     if learning_schedule is None:
         learning_schedule = [qubit_freezeout_alpha_phi()]
 
@@ -233,7 +245,7 @@ def shim_flux_biases(
     mag_history = {v: [] for v in bqm.variables}
 
     for lr in learning_schedule:
-        for _ in range(num_experiments):
+        for _, spu in product(range(num_experiments), sampling_params_updates):
             if reverseanneal:
                 for i in bqm.variables:
                     sampling_params["initial_state"][i] *= -1
@@ -243,8 +255,11 @@ def shim_flux_biases(
             if fbnonzero:
                 for i in unshimmed_variables:
                     flux_biases[i] *= -1
-
+            sampling_params.update(spu)
             ss = sampler.sample(bqm, flux_biases=flux_biases, **sampling_params)
+            # Possible feature enhancement: it may make sense to process asynchronously.
+            # I.e. loop all job submissions, then loop magnetization calculations, assuming
+            # the update list is not too long (for sake of memory).
             all_mags = np.sum(
                 ss.record.sample * ss.record.num_occurrences[:, np.newaxis], axis=0
             ) / np.sum(ss.record.num_occurrences)
@@ -258,7 +273,7 @@ def shim_flux_biases(
 
         for v in shimmed_variables:
             flux_biases[v] = flux_biases[v] - lr * sum(
-                mag_history[v][-num_experiments:]
+                mag_history[v][-num_experiments*len(sampling_params_updates):]
             )
             flux_bias_history[v].append(flux_biases[v])
 
