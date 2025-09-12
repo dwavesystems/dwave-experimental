@@ -41,17 +41,23 @@ Example::
 
 
 @cache
-def get_solver_name() -> str:
+def get_solver_name(profile: Optional[Union[None, str]]=None) -> str:
     """Return the name of a solver that supports fast reverse anneal.
+
+    Args:
+        profile:
+            Client configuration profile name to use to obtain a QPU solver that supports fast 
+            reverse annealing. For interpretation, see :func:`~dwave.cloud.config.load_config`. 
 
     Note: the result is memoized, so the API is queried only on first call.
     """
-    with Client.from_config() as client:
+    with Client.from_config(profile=profile) as client:
         solver = client.get_solver(**SOLVER_FILTER)
         return solver.name
 
 
 def get_parameters(sampler: Optional[Union[DWaveSampler, Solver, str]] = None,
+                   profile: Optional[Union[None, str]]=None
                    ) -> dict[str, Any]:
     """For a given sampler (or solver), return the available fast annealing
     parameters and their expanded info.
@@ -62,6 +68,11 @@ def get_parameters(sampler: Optional[Union[DWaveSampler, Solver, str]] = None,
             reverse anneal (FRA) protocol. Alternatively, a :class:`dwave.cloud.Solver`
             solver can be provided, or a solver name. If unspecified,
             :attr:`.SOLVER_FILTER` is used to fetch a FRA-enabled solver.
+        profile:
+            The client configuration profile name to use to obtain a 
+            :class:`~dwave.system.DWaveSampler` sampler that supports fast reverse 
+            annealing if it is not already specified with the `sampler` argument.   
+            For interpretation, see :func:`~dwave.cloud.config.load_config`.     
 
     Returns:
         Each parameter available is described with: a data type, value limits,
@@ -86,7 +97,7 @@ def get_parameters(sampler: Optional[Union[DWaveSampler, Solver, str]] = None,
         else:
             filter = SOLVER_FILTER
 
-        with Client.from_config() as client:
+        with Client.from_config(profile=profile) as client:
             solver = client.get_solver(**filter)
             return get_parameters(solver)
 
