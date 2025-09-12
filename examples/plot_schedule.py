@@ -16,33 +16,86 @@
 ``nominal_pause_time`` value), for a specific ``target_c``.
 """
 
+import argparse
+from typing import Union
+
 from pprint import pprint
 import numpy
 from dwave.experimental import fast_reverse_anneal as fra
 
 
-solver_name = fra.get_solver_name()
-print("Solver:", solver_name)
+def main(
+    solver: Union[None, dict, str],
+    profile: Union[None, str],
+    x_target_c: float
+):
+    """Plot a family of fast reverse anneal schedules for a solver
 
-params = fra.get_parameters(solver_name)
-print("Parameters:")
-pprint(params)
+    One curve is plotted for each calibrated ``nominal_pause_time``, for a specific ``target_c``.
 
-schedules = fra.load_schedules(solver_name)
-print("Schedules:")
-pprint(schedules)
+    Args:
+        solver: Name of the solver, or dictionary of characteristics.
+        profile: 
+            Client configuration profile name to use to obtain parameters and schedules from a solver 
+            that supports fast reverse annealing if none is specified with the `solver` argument. 
+            For interpretation, see :func:`~dwave.cloud.config.load_config`.     
+        x_target_c: 
+            The lowest value of the normalized control bias, c(s), attained during the fast 
+            reverse anneal. This parameter sets the reversal distance of the reverse anneal.
+    """
+    solver_name = fra.get_solver_name(profile=profile)
+    print("Solver:", solver_name)
+
+    params = fra.get_parameters(solver_name, profile=profile)
+    print("Parameters:")
+    pprint(params)
+
+    schedules = fra.load_schedules(solver_name, profile=profile)
+    print("Schedules:")
+    pprint(schedules)
 
 
-t = numpy.arange(0.95, 1.03, 1e-4)
-nominal_pause_times = params['x_nominal_pause_time']['limits']['set']
+    t = numpy.arange(0.95, 1.03, 1e-4)
+    nominal_pause_times = params['x_nominal_pause_time']['limits']['set']
 
-target_c = 0.5
-fig = None
-for nominal_pause_time in nominal_pause_times:
-    fig = fra.plot_schedule(
-        t, target_c=target_c, nominal_pause_time=nominal_pause_time,
-        schedules=schedules, figure=fig)
+    target_c = x_target_c
+    fig = None
+    for nominal_pause_time in nominal_pause_times:
+        fig = fra.plot_schedule(
+            t, target_c=target_c, nominal_pause_time=nominal_pause_time,
+            schedules=schedules, figure=fig)
 
-filename = f'schedules for {target_c=}.png'
-fig.savefig(filename)
-print(f'Figure saved to: {filename}')
+    filename = f'schedules for {target_c=}.png'
+    fig.savefig(filename)
+    print(f'Figure saved to: {filename}')
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(
+        description="An example for plotting a family of fast reverse anneal schedules"
+    )
+    parser.add_argument(
+        "--solver_name",
+        type=str,
+        help="Option to specify QPU solver, by default=None",
+        default=None,
+    )
+    parser.add_argument(
+        "--profile",
+        type=str,
+        help="Client configuration profile name to use to connect to the QPU solver, by default=None",
+        default=None,
+    )
+    parser.add_argument(
+        "--x_target_c",
+        type=float,
+        help="Reverse anneal target point x_target_c, by default 0.25",
+        default=0.25,
+    )
+    args = parser.parse_args()
+
+    main(
+        solver=args.solver_name,
+        profile=args.profile,
+        x_target_c=args.x_target_c
+    )
