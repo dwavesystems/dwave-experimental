@@ -178,7 +178,7 @@ if __name__ == "__main__":
         default=0.25,
     )
     parser.add_argument(
-        "--notebook_x_target_c_average",
+        "--x_target_c_average",
         type=bool,
         help="Use an average over x_target_c in 0.2 to 0.3 for a fixed initial condition",
         default=False,
@@ -190,7 +190,7 @@ if __name__ == "__main__":
         default=-1,
     )
     args = parser.parse_args()
-    if args.notebook_x_target_c_average:
+    if args.x_target_c_average:
         x_target_c_updates = np.arange(0.25, 0.4, 0.05)
     else:
         x_target_c_updates = None

@@ -162,8 +162,8 @@ def shim_flux_biases(
        sampling_params_updates: Where averaging across many experiments is required a
            list of updates can be provided. Each element in the list is a dictionary that
            updates sampling_params. The experiments are averaged to determine the magnetization
-           usedin shimming. If sampling_params_ensemble includes flux_biases, care
-           should be taken when used in combination with `symmetrize_experiments=True` and
+           used in shimming. If ``sampling_params_updates`` includes ``flux_biases``, care
+           should be taken when used in combination with ``symmetrize_experiments=True`` and
            only unshimmed variables should be modified. See repositoty examples/ for use cases.
 
     Returns:
