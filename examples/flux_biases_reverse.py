@@ -32,6 +32,7 @@ from dwave.experimental.fast_reverse_anneal import SOLVER_FILTER
 
 def main(
     solver: Union[None, dict, str],
+    profile: Union[None, str],
     loop_length: int,
     num_iters: int,
     coupling_strength: float,
@@ -42,14 +43,20 @@ def main(
     See also the calibration refinement tutorial  <https://doi.org/10.3389/fcomp.2023.1238988>
 
     Args:
-        solver: name of the solver, or dictionary of characteristics.
+        solver: Name of the solver, or dictionary of characteristics.
+        profile: 
+            Client configuration profile name to use to connect to a solver that supports 
+            fast reverse annealing if none is specified with the `solver` argument. 
+            For interpretation, see :func:`~dwave.cloud.config.load_config`.   
         num_iters: number of gradient descent steps.
         coupling_strength: coupling strength on the loop.
-        x_target_c: schedule target point for reverse anneal.
+        x_target_c: 
+            The lowest value of the normalized control bias, c(s), attained during the fast 
+            reverse anneal. This parameter sets the reversal distance of the reverse anneal.
     """
 
     # when available, use feature-based search to default the solver.
-    qpu = DWaveSampler(solver=solver)
+    qpu = DWaveSampler(solver=solver, profile=profile)
 
     # Embedding for a ring of length L
     edge_list = [(i, (i + 1) % loop_length) for i in range(loop_length)]  # A loop
@@ -135,6 +142,12 @@ if __name__ == "__main__":
         default=SOLVER_FILTER,
     )
     parser.add_argument(
+        "--profile",
+        type=str,
+        help="Client configuration profile name to use to connect to the QPU solver, by default=None",
+        default=None,
+    )
+    parser.add_argument(
         "--loop_length", type=int, help="Length of the loop, by default 4", default=4
     )
     parser.add_argument(
@@ -146,7 +159,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--x_target_c",
         type=float,
-        help="Reverse anneal point x_target_c, should be early enough for magnetization not to be polarized by the initial condition, by default 0.25",
+        help="Reverse anneal target point x_target_c, should be low enough for magnetization not to be polarized by the initial condition, by default 0.25",
         default=0.25,
     )
     parser.add_argument(
@@ -159,6 +172,7 @@ if __name__ == "__main__":
 
     main(
         solver=args.solver_name,
+        profile=args.profile,
         loop_length=args.loop_length,
         num_iters=args.num_iters,
         coupling_strength=args.coupling_strength,

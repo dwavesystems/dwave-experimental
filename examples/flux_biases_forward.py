@@ -34,6 +34,7 @@ from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_
 
 def main(
     solver: Union[None, dict, str],
+    profile: Union[None, str],
     num_iters: int,
     coupling_strength: float = -1,
     annealing_time: Union[None, float] = None,
@@ -43,13 +44,17 @@ def main(
     See also the calibration refinement tutorial  <https://doi.org/10.3389/fcomp.2023.1238988>
 
     Args:
-        solver: name of the solver, or dictionary of characteristics.
-        loop_length: length of the loop.
-        num_iters: number of gradient descent steps.
-        coupling_strength: coupling strength on the cubic lattice.
+        solver: Name of the solver, or dictionary of characteristics.
+        profile: 
+            Client configuration profile name to use to connect to a solver that supports 
+            fast reverse annealing if none is specified with the `solver` argument. 
+            For interpretation, see :func:`~dwave.cloud.config.load_config`.     
+        loop_length: Length of the loop.
+        num_iters: Number of gradient descent steps.
+        coupling_strength: Coupling strength on the cubic lattice.
         annealing_time: annealing_time in microseconds
     """
-    qpu = DWaveSampler(solver=solver)
+    qpu = DWaveSampler(solver=solver, profile=profile)
     if annealing_time is None:
         annealing_time = qpu.properties["fast_anneal_time_range"][0]
     # Find a set of chains sufficient to embed a cubic lattice at full yield,
@@ -112,7 +117,7 @@ def main(
     )
     plt.legend()
     plt.xlabel("Magnetization")
-    plt.ylabel("Cumulative Distribution Functino")
+    plt.ylabel("Cumulative Distribution Function")
     plt.savefig("DwaveExperimentalMagForward.png")
 
     plt.figure("all_fluxes")
@@ -132,6 +137,12 @@ if __name__ == "__main__":
         "--solver_name",
         type=str,
         help="Option to specify QPU solver, by default=None",
+        default=None,
+    )
+    parser.add_argument(
+        "--profile",
+        type=str,
+        help="Client configuration profile name to use to connect to the QPU solver, by default=None",
         default=None,
     )
     parser.add_argument(
@@ -156,6 +167,7 @@ if __name__ == "__main__":
 
     main(
         solver=args.solver_name,
+        profile=args.profile,
         num_iters=args.num_iters,
         coupling_strength=args.coupling_strength,
         annealing_time=args.annealing_time,
