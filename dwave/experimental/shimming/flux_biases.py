@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 from typing import Any, Optional, Iterable, Callable
-from itertools import product
 
 import numpy as np
 
@@ -234,7 +233,13 @@ def shim_flux_biases(
     if sampling_params_updates is None:
         # By default, a single experimental setting:
         sampling_params_updates = [{}]
-
+    else:
+        # Although there are scenarios where some flux_biases are
+        # set whilst others are shimmed, support for this is beyond
+        # the scope of this function.
+        if any('flux_biases' in sp for sp in sampling_params_updates):
+            raise ValueError('flux_biases should not be explicitely set'
+                             'within sampling_params_updates.')
     if learning_schedule is None:
         learning_schedule = [qubit_freezeout_alpha_phi()]
 
@@ -245,26 +250,27 @@ def shim_flux_biases(
     mag_history = {v: [] for v in bqm.variables}
 
     for lr in learning_schedule:
-        for _, spu in product(range(num_experiments), sampling_params_updates):
-            if reverseanneal:
-                for i in bqm.variables:
-                    sampling_params["initial_state"][i] *= -1
-            if hnonzero:
-                for i in bqm.variables:
-                    bqm.linear[i] *= -1
-            if fbnonzero:
-                for i in unshimmed_variables:
-                    flux_biases[i] *= -1
+        for spu in sampling_params_updates:
             sampling_params.update(spu)
-            ss = sampler.sample(bqm, flux_biases=flux_biases, **sampling_params)
-            # Possible feature enhancement: it may make sense to process asynchronously.
-            # I.e. loop all job submissions, then loop magnetization calculations, assuming
-            # the update list is not too long (for sake of memory).
-            all_mags = np.sum(
-                ss.record.sample * ss.record.num_occurrences[:, np.newaxis], axis=0
-            ) / np.sum(ss.record.num_occurrences)
-            for idx, v in enumerate(ss.variables):
-                mag_history[v].append(all_mags[idx])
+            for _ in range(num_experiments):
+                if reverseanneal:
+                    for i in bqm.variables:
+                        sampling_params["initial_state"][i] *= -1
+                if hnonzero:
+                    for i in bqm.variables:
+                        bqm.linear[i] *= -1
+                if fbnonzero:
+                    for i in unshimmed_variables:
+                        flux_biases[i] *= -1
+                ss = sampler.sample(bqm, flux_biases=flux_biases, **sampling_params)
+                # Possible feature enhancement: it may make sense to process asynchronously.
+                # I.e. loop all job submissions, then loop magnetization calculations, assuming
+                # the update list is not too long (for sake of memory).
+                all_mags = np.sum(
+                    ss.record.sample * ss.record.num_occurrences[:, np.newaxis], axis=0
+                ) / np.sum(ss.record.num_occurrences)
+                for idx, v in enumerate(ss.variables):
+                    mag_history[v].append(all_mags[idx])
 
         if convergence_test(mag_history, flux_bias_history):
             # The data is not used to update the flux_biases
