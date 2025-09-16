@@ -1,0 +1,5 @@
+---
+features:
+  - |
+    Allow shimming to zero magnetization for a set of programmings differing by
+    sampling_params.
