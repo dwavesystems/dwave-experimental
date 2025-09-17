@@ -90,7 +90,11 @@ def main(
         symmetrize_experiments = True
 
     # A geometric decay is sufficient for a bulk low-frequency correction.
-    learning_schedule = qubit_freezeout_alpha_phi() / np.arange(1, num_iters + 1)
+    # Note that, qubit_freezeout_alpha_phi can be tuned as a function of
+    # solver specific properties (MAFM and B(s)).
+    # Tuning of the prefactor can enhance rate of convergence, large values
+    # can result in overshooting or divergence.
+    learning_schedule = 0.1 * qubit_freezeout_alpha_phi() / np.arange(1, num_iters + 1)
 
     # Find flux biases that restore average magnetization, ideally this cancels
     # the impact of low-frequency environment fluxes coupling into the qubit body
@@ -174,13 +178,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--x_target_c",
         type=float,
-        help="Reverse anneal point x_target_c, should be early enough for magnetization not to be polarized by the initial condition, by default 0.25",
-        default=0.25,
+        help="Reverse anneal point x_target_c, should be early enough for magnetization not to be polarized by the initial condition, by default 0.22",
+        default=0.22,
     )
     parser.add_argument(
         "--x_target_c_average",
         type=bool,
-        help="Use an average over x_target_c in 0.2 to 0.3 for a fixed initial condition",
+        help="Use an average over x_target_c in 0.2 to 0.22 for a fixed initial condition",
         default=False,
     )
     parser.add_argument(
@@ -191,7 +195,10 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     if args.x_target_c_average:
-        x_target_c_updates = np.arange(0.25, 0.4, 0.05)
+        # The target_c regime is experimentally dependent, it must
+        # be early enough and broad enough for the sign on the
+        # initial_condition to contributed negligibly.
+        x_target_c_updates = np.arange(0.2, 0.22, 0.001)
     else:
         x_target_c_updates = None
 

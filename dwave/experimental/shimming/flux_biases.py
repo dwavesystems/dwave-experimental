@@ -160,10 +160,11 @@ def shim_flux_biases(
            related experiments has zero magnetization.
        sampling_params_updates: Where averaging across many experiments is required a
            list of updates can be provided. Each element in the list is a dictionary that
-           updates sampling_params. The experiments are averaged to determine the magnetization
-           used in shimming. If ``sampling_params_updates`` includes ``flux_biases``, care
-           should be taken when used in combination with ``symmetrize_experiments=True`` and
-           only unshimmed variables should be modified. See repositoty examples/ for use cases.
+           updates sampling_params. The experiments are averaged over the provided sampling
+           parameter updates to determine the magnetization used in shimming. Note that the
+           original value of the sampling parameter to be updated will be ignored.
+           If ``flux_biases`` should not be amongst the updated parameters.
+           See repository examples/ for use cases.
 
     Returns:
         A tuple consisting of 3 parts:
@@ -173,7 +174,7 @@ def shim_flux_biases(
 
     Example:
         See examples/ and tests/ for additional use cases.
-    
+
         Shim degenerate qubits at constant learning rate and solver defaults.
         The learning schedule and num_reads is for demonstration only, and has not been optimized.
 
@@ -237,9 +238,11 @@ def shim_flux_biases(
         # Although there are scenarios where some flux_biases are
         # set whilst others are shimmed, support for this is beyond
         # the scope of this function.
-        if any('flux_biases' in sp for sp in sampling_params_updates):
-            raise ValueError('flux_biases should not be explicitely set'
-                             'within sampling_params_updates.')
+        if any("flux_biases" in sp for sp in sampling_params_updates):
+            raise ValueError(
+                "flux_biases should not be explicitely set"
+                "within sampling_params_updates."
+            )
     if learning_schedule is None:
         learning_schedule = [qubit_freezeout_alpha_phi()]
 
@@ -279,7 +282,7 @@ def shim_flux_biases(
 
         for v in shimmed_variables:
             flux_biases[v] = flux_biases[v] - lr * sum(
-                mag_history[v][-num_experiments*len(sampling_params_updates):]
+                mag_history[v][-num_experiments * len(sampling_params_updates) :]
             )
             flux_bias_history[v].append(flux_biases[v])
 
