@@ -23,7 +23,7 @@ from pprint import pprint
 import numpy
 import matplotlib.pyplot as plt
 from dwave.experimental import fast_reverse_anneal as fra
-
+from dwave.cloud import Client
 
 def main(
     solver: Union[None, dict, str],
@@ -39,7 +39,11 @@ def main(
             The lowest value of the normalized control bias, c(s), attained during the fast 
             reverse anneal. This parameter sets the reversal distance of the reverse anneal.
     """
-    solver_name = fra.get_solver_name()
+    if solver:
+        with Client.from_config(solver=solver) as client:
+            solver_name = client.get_solver().name
+    else:
+        solver_name = fra.get_solver_name()
     print("Solver:", solver_name)
 
     params = fra.get_parameters(solver_name)
