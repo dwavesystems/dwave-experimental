@@ -21,12 +21,12 @@ from typing import Union
 
 from pprint import pprint
 import numpy
+import matplotlib.pyplot as plt
 from dwave.experimental import fast_reverse_anneal as fra
 
 
 def main(
     solver: Union[None, dict, str],
-    profile: Union[None, str],
     x_target_c: float
 ):
     """Plot a family of fast reverse anneal schedules for a solver
@@ -35,22 +35,18 @@ def main(
 
     Args:
         solver: Name of the solver, or dictionary of characteristics.
-        profile: 
-            Client configuration profile name to use to obtain parameters and schedules from a solver 
-            that supports fast reverse annealing if none is specified with the `solver` argument. 
-            For interpretation, see :func:`~dwave.cloud.config.load_config`.     
         x_target_c: 
             The lowest value of the normalized control bias, c(s), attained during the fast 
             reverse anneal. This parameter sets the reversal distance of the reverse anneal.
     """
-    solver_name = fra.get_solver_name(profile=profile)
+    solver_name = fra.get_solver_name()
     print("Solver:", solver_name)
 
-    params = fra.get_parameters(solver_name, profile=profile)
+    params = fra.get_parameters(solver_name)
     print("Parameters:")
     pprint(params)
 
-    schedules = fra.load_schedules(solver_name, profile=profile)
+    schedules = fra.load_schedules(solver_name)
     print("Schedules:")
     pprint(schedules)
 
@@ -68,6 +64,7 @@ def main(
     filename = f'schedules for {target_c=}.png'
     fig.savefig(filename)
     print(f'Figure saved to: {filename}')
+    plt.show()
 
 if __name__ == "__main__":
 
@@ -81,12 +78,6 @@ if __name__ == "__main__":
         default=None,
     )
     parser.add_argument(
-        "--profile",
-        type=str,
-        help="Client configuration profile name to use to connect to the QPU solver, by default=None",
-        default=None,
-    )
-    parser.add_argument(
         "--x_target_c",
         type=float,
         help="Reverse anneal target point x_target_c, by default 0.25",
@@ -96,6 +87,5 @@ if __name__ == "__main__":
 
     main(
         solver=args.solver_name,
-        profile=args.profile,
         x_target_c=args.x_target_c
     )

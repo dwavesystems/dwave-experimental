@@ -27,9 +27,7 @@ from .api import get_solver_name
 __all__ = ['load_schedules', 'linex', 'c_vs_t', 'plot_schedule']
 
 
-def load_schedules(solver_name: Optional[str] = None,
-                   profile: Optional[Union[None, str]]=None
-                   ) -> dict[float, dict[str, float]]:
+def load_schedules(solver_name: Optional[str] = None) -> dict[float, dict[str, float]]:
     """Return per-solver approximation parameters for a family of fast reverse
     annealing schedules.
 
@@ -37,11 +35,6 @@ def load_schedules(solver_name: Optional[str] = None,
         solver_name:
             Name of a QPU solver that supports fast reverse annealing.
             If unspecified, the default solver is used.
-        profile:
-            DWave configuration profile name to use for getting a QPU solver that 
-            supports fast reverse annealing if none is specified with the 
-            `solver_name` argument. If unspecified, the default profile is used.
-            For interpretation, see :func:`~dwave.cloud.config.load_config`.     
 
     Returns:
         A dict mapping allowed ``nominal_pause_time`` values to a schedule
@@ -61,7 +54,7 @@ def load_schedules(solver_name: Optional[str] = None,
 
     """
     if solver_name is None:
-        solver_name = get_solver_name(profile=profile)
+        solver_name = get_solver_name()
 
     fra = files('dwave.experimental.fast_reverse_anneal')
     schedules = json.loads(fra.joinpath('data/schedules.json').read_bytes())
@@ -110,7 +103,6 @@ def c_vs_t(
     nominal_pause_time: float = 0.0,
     upper_bound: float = 1.0,
     schedules: Optional[dict[str, float]] = None,
-    profile: Optional[Union[None, str]]=None
 ) -> numpy.typing.ArrayLike:
     """Time-dependence of the normalized control bias c(s) in linear-exponential
     fast-reverse-anneal waveforms.
@@ -127,18 +119,13 @@ def c_vs_t(
             Waveform's upper bound.
         schedules:
             Schedule family parameters, as returned by :meth:`.load_schedules`.
-        profile:
-            Client configuration profile name to use for getting schedules from a QPU 
-            solver that supports fast reverse annealing if none are specified with the 
-            `schedules` argument. If unspecified, the default profile is used. For 
-            interpretation, see :func:`~dwave.cloud.config.load_config`.     
 
     Returns:
         Schedule waveform approximation evaluated at ``t``.
 
     """
     if schedules is None:
-        schedules = load_schedules(profile=profile)
+        schedules = load_schedules()
 
     schedule = schedules[nominal_pause_time]
     c2, a, t_min = schedule["c2"], schedule["a"], schedule["t_min"]
