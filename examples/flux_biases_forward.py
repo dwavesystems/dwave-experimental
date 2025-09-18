@@ -37,7 +37,7 @@ def main(
     num_steps: int,
     coupling_strength: float = -1,
     annealing_time: Union[None, float] = None,
-    use_hypergradient: bool = False,
+    use_hypergradient: bool = True,
     beta_hypergradient: float = 0.4,
 ):
     """Refine the calibration of a large spin glass.
@@ -50,7 +50,7 @@ def main(
         num_steps: number of gradient descent steps.
         coupling_strength: coupling strength on the cubic lattice.
         annealing_time: annealing_time in microseconds.
-        use_hypergradient: use the adaptive learning rate. If False,
+        use_hypergradient: use the adaptive learning rate. If set to False,
             a fixed geometric decay is used.
         beta_hypergradient: adaptive learning rate parameter.
     """
@@ -90,10 +90,10 @@ def main(
     alpha = qubit_freezeout_alpha_phi()
     if use_hypergradient:
         # A geometric decay is sufficient for a bulk low-frequency correction.
-        learning_schedule = alpha / np.arange(1, num_steps + 1)
-    else:
         learning_schedule = None
-
+    else:
+        learning_schedule = alpha / np.arange(1, num_steps + 1)
+    
     # Find flux biases that restore average magnetization, ideally this cancels
     # the impact of low-frequency environment fluxes coupling into the qubit body
     flux_biases, fb_history, mag_history = shim_flux_biases(

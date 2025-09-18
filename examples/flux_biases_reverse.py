@@ -38,7 +38,7 @@ def main(
     x_target_c: float,
     x_target_c_updates: Optional[list] = None,
     x_nominal_pause_time: float,
-    use_hypergradient: bool = False,
+    use_hypergradient: bool = True,
     beta_hypergradient: float = 0.4,
 ):
     """Refine the calibration of a ferromagnetic loop.
@@ -54,7 +54,8 @@ def main(
         use_hypergradient: use the adaptive learning rate. If False,
             a fixed geometric decay is used.
         x_nominal_pause_time: pause time at target point for reverse anneal.
-        use_hypergradient: whether to use an adaptive learning rate. If False,
+        use_hypergradient: use the adaptive learning rate. If set to False,
+            a fixed geometric decay is used.
         beta_hypergradient: adaptive learning rate parameter
     """
 
@@ -97,13 +98,13 @@ def main(
         sampling_params_updates = None
         symmetrize_experiments = True
 
-    alpha = qubit_freezeout_alpha_phi()
+    alpha = 0.1*qubit_freezeout_alpha_phi()
     if use_hypergradient:
         # A geometric decay is sufficient for a bulk low-frequency correction.
-        learning_schedule = alpha / np.arange(1, num_steps + 1)
-    else:
         learning_schedule = None
-
+    else:
+        learning_schedule = alpha / np.arange(1, num_steps + 1)
+    
     # Find flux biases that restore average magnetization, ideally this cancels
     # the impact of low-frequency environment fluxes coupling into the qubit body
     flux_biases, fb_history, mag_history = shim_flux_biases(
