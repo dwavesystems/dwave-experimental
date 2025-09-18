@@ -37,6 +37,8 @@ def main(
     num_iters: int,
     coupling_strength: float = -1,
     annealing_time: Union[None, float] = None,
+    use_hypergradient: bool = False,
+    beta_hypergradient: float = 0.4,
 ):
     """Refine the calibration of a large spin glass.
 
@@ -48,6 +50,8 @@ def main(
         num_iters: number of gradient descent steps.
         coupling_strength: coupling strength on the cubic lattice.
         annealing_time: annealing_time in microseconds
+        use_hypergradient: use the adaptive learning rate
+        beta_hypergradient: adaptive learning rate parameter
     """
     qpu = DWaveSampler(solver=solver)
     if annealing_time is None:
@@ -93,6 +97,8 @@ def main(
         sampler=qpu,
         sampling_params=sampling_params,
         learning_schedule=learning_schedule,
+        use_hypergradient=use_hypergradient,
+        beta_hypergradient=beta_hypergradient,
     )
 
     mag_array = np.array(list(mag_history.values()))
@@ -152,6 +158,18 @@ if __name__ == "__main__":
         help="annealing_time in microseconds. Smallest valuable supported by default.",
         default=None,
     )
+    parser.add_argument(
+        "--use_hypergradient",
+        type=bool,
+        help="Enables hypergradient descent optimization instead of the default learning schedule.",
+        default=True,
+    )
+    parser.add_argument(
+        "--beta_hypergradient",
+        type=float,
+        help="Specifies a custom multiplicative hyperparameter beta",
+        default=0.4,
+    )
     args = parser.parse_args()
 
     main(
@@ -159,4 +177,6 @@ if __name__ == "__main__":
         num_iters=args.num_iters,
         coupling_strength=args.coupling_strength,
         annealing_time=args.annealing_time,
+        use_hypergradient=args.use_hypergradient,
+        beta_hypergradient=args.beta_hypergradient,      
     )

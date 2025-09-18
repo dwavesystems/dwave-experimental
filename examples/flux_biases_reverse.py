@@ -37,6 +37,8 @@ def main(
     coupling_strength: float,
     x_target_c: float,
     x_target_c_updates: Optional[list] = None,
+    use_hypergradient: bool = False,
+    beta_hypergradient: float = 0.4,
 ):
     """Refine the calibration of a ferromagnetic loop.
 
@@ -48,6 +50,8 @@ def main(
         coupling_strength: coupling strength on the loop.
         x_target_c: schedule target point for reverse anneal.
         x_target_c_updates: a list of x_target_c to average over.
+        use_hypergradient: use the adaptive learning rate
+        beta_hypergradient: adaptive learning rate parameter
     """
 
     # when available, use feature-based search to default the solver.
@@ -104,7 +108,9 @@ def main(
         sampling_params=sampling_params,
         learning_schedule=learning_schedule,
         sampling_params_updates=sampling_params_updates,
-        symmetrize_experiments=True,
+        symmetrize_experiments=symmetrize_experiments,
+        use_hypergradient=use_hypergradient,
+        beta_hypergradient=beta_hypergradient,
     )
 
     mag_array = np.array(list(mag_history.values()))
@@ -193,6 +199,18 @@ if __name__ == "__main__":
         help="Coupling strength on the ring, by default -1 (ferromagnetic)",
         default=-1,
     )
+    parser.add_argument(
+        "--use_hypergradient",
+        type=bool,
+        help="Enables hypergradient descent optimization instead of the default learning schedule.",
+        default=True,
+    )
+    parser.add_argument(
+        "--beta_hypergradient",
+        type=float,
+        help="Specifies a custom multiplicative hyperparameter beta",
+        default=0.4,
+    )
     args = parser.parse_args()
     if args.x_target_c_average:
         # The target_c regime is experimentally dependent, it must
@@ -209,4 +227,6 @@ if __name__ == "__main__":
         coupling_strength=args.coupling_strength,
         x_target_c=args.x_target_c,
         x_target_c_updates=x_target_c_updates,
+        use_hypergradient=args.use_hypergradient,
+        beta_hypergradient=args.beta_hypergradient,
     )
