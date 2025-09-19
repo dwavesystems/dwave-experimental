@@ -37,7 +37,7 @@ def main(
     coupling_strength: float,
     x_target_c: float,
     x_target_c_updates: Optional[list] = None,
-    x_nominal_pause_time: float,
+    x_nominal_pause_time: float = 0.0,
     use_hypergradient: bool = True,
     beta_hypergradient: float = 0.4,
 ):

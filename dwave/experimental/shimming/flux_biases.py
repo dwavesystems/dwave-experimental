@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import math
 from __future__ import annotations
+
+import math
 from typing import Any, Optional, Iterable, Callable
 
 import numpy as np
@@ -178,14 +179,14 @@ def shim_flux_biases(
             hypergradient descent method. A choice customized to the annealing protocol
             and processor may improve performance. This parameter is ignored if
             ``learning_schedule` is specified. A value in the range (0,1) is
-            required. 
+            required.
         num_steps: This parameter is inferred from the learning_schedule when
             this is specified, otherwise it determines the number of
             steps taken by the hypergradient descent method with 10 as the default.
         alpha: The initial learning rate for the hypergradient descent method. By default
             this is initialised using `qubit_freezeout_alpha_phi`. A choice customized to
             the annealing protocol and processor may improve performance. This
-            parameter is ignored if ``learning_schedule` is specified. The 
+            parameter is ignored if ``learning_schedule` is specified. The
             learning rate should be a positive real value. A typical scale can
             be determined using ``qubit_freezeout_alpha_phi``, which provides
             a default.
@@ -271,9 +272,9 @@ def shim_flux_biases(
     elif alpha is None:
         alpha = qubit_freezeout_alpha_phi()
         if not (0 < beta_hypergradient < 1):
-            raise ValueError('beta_hypergradient should be in the (0,1) interval')
+            raise ValueError("beta_hypergradient should be in the (0,1) interval")
         if not (alpha > 0):
-            raise ValueError('alpha should be positively valued')
+            raise ValueError("alpha should be positively valued")
 
     if convergence_test is None:
         convergence_test = lambda x, y: False
@@ -311,16 +312,17 @@ def shim_flux_biases(
                 [np.mean(mag_history[v][-num_experiments:]) for v in shimmed_variables]
             )
             if iteration > 0:
-                norm = (np.linalg.norm(magnetizations) * np.linalg.norm(last_mags))
+                norm = np.linalg.norm(magnetizations) * np.linalg.norm(last_mags)
                 if math.isclose(norm, 0):
                     # When magnetization norms are zero the paper method is ill defined.
                     # One could choose to convergence test to exit at zero magnetization
                     # as an alternative.
                     alpha *= 1 - beta_hypergradient
                 else:
-                    alpha *= 1 + beta_hypergradient * np.dot(
-                        magnetizations, last_mags
-                    ) / norm
+                    alpha *= (
+                        1
+                        + beta_hypergradient * np.dot(magnetizations, last_mags) / norm
+                    )
             last_mags = magnetizations
         elif iteration < num_steps - 1:
             alpha = learning_schedule[iteration + 1]
