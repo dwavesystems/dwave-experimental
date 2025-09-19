@@ -14,8 +14,11 @@
 
 import unittest
 import unittest.mock
+import math
+
 import dimod
 from dwave.samplers import SteepestDescentSampler
+from itertools import product
 
 from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_phi
 from dwave.experimental.shimming.testing import ShimmingMockSampler
@@ -38,7 +41,6 @@ class FluxBiases(unittest.TestCase):
         self.assertIsInstance(mh, dict)
         self.assertSetEqual(set(mh.keys()), set(fbh.keys()))
         self.assertSetEqual(set(mh.keys()), set(bqm.variables))
-
 
     def test_flux_params(self):
         """Check parameters in = parameters out for empty learning_schedule or convergence test"""
@@ -117,20 +119,54 @@ class FluxBiases(unittest.TestCase):
             )
             # Experimental average, 3 or 6 magnetizations:
             shimmed_variables = [1, 2]
-            sampling_params_updates = [{'num_reads': 4}, {}, {'num_reads': 1}]
+            sampling_params_updates = [{"num_reads": 4}, {}, {"num_reads": 1}]
             fb, fbh, mh = shim_flux_biases(
                 bqm,
                 sampler,
                 sampling_params=sampling_params,
                 learning_schedule=learning_schedule,
                 shimmed_variables=shimmed_variables,
-                sampling_params_updates=sampling_params_updates
+                sampling_params_updates=sampling_params_updates,
             )
             self.assertNotIn(0, fbh)
             self.assertEqual(len(learning_schedule) + 1, len(fbh[1]))
             self.assertTrue(
-                len(learning_schedule), len(mh[1]) // ((1 + int(symmetrize_experiments))*3)
+                len(learning_schedule),
+                len(mh[1]) // ((1 + int(symmetrize_experiments)) * 3),
             )
+        # Check num_steps:
+        for num_steps in [0, 4]:
+            bqm = dimod.BinaryQuadraticModel("SPIN").from_ising({0: 1}, {})
+
+            flux_biases, fbh, mh = shim_flux_biases(bqm, sampler, num_steps=num_steps)
+            self.assertEqual(len(fbh[0]), num_steps + 1)
+            self.assertEqual(len(mh[0]), num_steps * 2)
+        # Check beta, alpha:
+        res = []
+
+        for alpha, beta_hypergradient in product([1e-6, 1e-7], [0.45, 0.004]):
+            flux_biases0, fbh, mh = shim_flux_biases(
+                bqm,
+                sampler,
+                beta_hypergradient=beta_hypergradient,
+                alpha=alpha,
+                symmetrize_experiments=False,
+            )
+            self.assertTrue(all(m == -1.0 for m in mh[0]))
+            # No agreement due to update difference
+            for r in res:
+                self.assertFalse(all(math.isclose(a, b) for a, b in zip(fbh[0], r)))
+            res.append(fbh[0])
+
+        # Agreement (sampler is deterministic)
+        _, fbh, _ = shim_flux_biases(
+            bqm,
+            sampler,
+            beta_hypergradient=beta_hypergradient,
+            alpha=alpha,
+            symmetrize_experiments=False,
+        )
+        self.assertTrue(all(math.isclose(a, b) for a, b in zip(fbh[0], res[-1])))
 
     def test_qubit_freezeout_alpha_phi(self):
         x = qubit_freezeout_alpha_phi()
