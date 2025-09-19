@@ -98,7 +98,6 @@ def shim_flux_biases(
     convergence_test: Optional[Callable] = None,
     symmetrize_experiments: bool = True,
     sampling_params_updates: Optional[list] = None,
-    use_hypergradient: bool = True,
     beta_hypergradient: float = 0.4,
     num_steps: int = 10,
     alpha: Optional[float] = None,
@@ -244,7 +243,7 @@ def shim_flux_biases(
     else:
         if len(shimmed_variables) == 0:
             raise ValueError("shimmed_variables should not be empty")
-        elif not set(shimmed_variables).subset(bqm.variables):
+        elif not set(shimmed_variables).issubset(bqm.variables):
             raise ValueError("Invalid shimmed variables")
 
     if symmetrize_experiments:
@@ -272,7 +271,8 @@ def shim_flux_biases(
                 "flux_biases should not be explicitely set"
                 "within sampling_params_updates."
             )
-    if learning_schedule is not None:
+    use_hypergradient = (learning_schedule is None)
+    if not use_hypergradient:
         num_steps = len(learning_schedule)
     elif alpha is None:
         alpha = qubit_freezeout_alpha_phi()
@@ -336,7 +336,7 @@ def shim_flux_biases(
             if use_hypergradient:
                 flux_biases[v] -= alpha * sum(mag_history[v][-num_experiments:])
             else:
-                flux_biases[v] -= lr * sum(mag_history[v][-num_experiments:])
+                flux_biases[v] -= alpha * sum(mag_history[v][-num_experiments:])
             flux_bias_history[v].append(flux_biases[v])
 
     if pop_fb:
