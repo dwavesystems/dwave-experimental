@@ -289,6 +289,8 @@ def shim_flux_biases(
     flux_bias_history = {v: [flux_biases[v]] for v in shimmed_variables}
     mag_history = {v: [] for v in bqm.variables}
     for step in range(num_steps):
+        # Possible feature enhancement for intermediate num_experiments:
+        # following loops are parallelizable, call sample() asyncrhonously.
         for spu in sampling_params_updates:
             sampling_params.update(spu)
             for _ in range(num_signed_experiments):

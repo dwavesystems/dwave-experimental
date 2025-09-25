@@ -115,10 +115,11 @@ class FluxBiases(unittest.TestCase):
             )
             self.assertNotIn(0, fbh)
             self.assertEqual(len(learning_schedule) + 1, len(fbh[1]))
-            self.assertEqual(
-                len(learning_schedule)*(1 + int(symmetrize_experiments)), len(mh[1]))
+            num_signed_experiments = 1 + int(symmetrize_experiments)
+            self.assertEqual(len(learning_schedule)*num_signed_experiments, len(mh[1]))
             shimmed_variables = [1, 2]
             sampling_params_updates = [{"num_reads": 4}, {}, {"num_reads": 1}]
+            num_experiments = len(sampling_params_updates) * num_signed_experiments
             fb, fbh, mh = shim_flux_biases(
                 bqm,
                 sampler,
@@ -126,12 +127,13 @@ class FluxBiases(unittest.TestCase):
                 learning_schedule=learning_schedule,
                 shimmed_variables=shimmed_variables,
                 sampling_params_updates=sampling_params_updates,
+                symmetrize_experiments=symmetrize_experiments,
             )
             self.assertNotIn(0, fbh)
             self.assertEqual(len(learning_schedule) + 1, len(fbh[1]))
-            self.assertTrue(
-                len(learning_schedule),
-                len(mh[1]) // ((1 + int(symmetrize_experiments)) * 3),
+            self.assertEqual(
+                len(learning_schedule) * num_experiments,
+                len(mh[1]),
             )
         # Check num_steps:
         for num_steps in [0, 4]:
