@@ -51,8 +51,6 @@ def main(
         coupling_strength: coupling strength on the loop.
         x_target_c: schedule target point for reverse anneal.
         x_target_c_updates: a list of x_target_c to average over.
-        use_hypergradient: use the adaptive learning rate. If False,
-            a fixed geometric decay is used.
         x_nominal_pause_time: pause time at target point for reverse anneal.
         use_hypergradient: use the adaptive learning rate. If set to False,
             a fixed geometric decay is used.
@@ -114,7 +112,6 @@ def main(
         learning_schedule=learning_schedule,
         sampling_params_updates=sampling_params_updates,
         symmetrize_experiments=symmetrize_experiments,
-        use_hypergradient=use_hypergradient,
         beta_hypergradient=beta_hypergradient,
         num_steps=num_steps,
         alpha=alpha,

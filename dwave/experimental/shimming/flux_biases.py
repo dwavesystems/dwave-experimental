@@ -257,7 +257,7 @@ def shim_flux_biases(
         reverseanneal = "initial_state" in sampling_params
     else:
         fbnonzero = hnonzero = reverseanneal = False
-    num_experiments = 1 + int(reverseanneal or hnonzero or fbnonzero)
+    num_signed_experiments = 1 + int(reverseanneal or hnonzero or fbnonzero)
 
     if sampling_params_updates is None:
         # By default, a single experimental setting:
@@ -271,6 +271,8 @@ def shim_flux_biases(
                 "flux_biases should not be explicitely set"
                 "within sampling_params_updates."
             )
+    num_experiments = num_signed_experiments*len(sampling_params_updates)
+
     use_hypergradient = (learning_schedule is None)
     if not use_hypergradient:
         num_steps = len(learning_schedule)
@@ -286,26 +288,27 @@ def shim_flux_biases(
 
     flux_bias_history = {v: [flux_biases[v]] for v in shimmed_variables}
     mag_history = {v: [] for v in bqm.variables}
+    for step in range(num_steps):
+        for spu in sampling_params_updates:
+            sampling_params.update(spu)
+            for _ in range(num_signed_experiments):
+                if reverseanneal:
+                    for i in bqm.variables:
+                        sampling_params["initial_state"][i] *= -1
+                if hnonzero:
+                    for i in bqm.variables:
+                        bqm.linear[i] *= -1
+                if fbnonzero:
+                    for i in unshimmed_variables:
+                        flux_biases[i] *= -1
 
-    for iteration in range(num_steps):
-        for _ in range(num_experiments):
-            if reverseanneal:
-                for i in bqm.variables:
-                    sampling_params["initial_state"][i] *= -1
-            if hnonzero:
-                for i in bqm.variables:
-                    bqm.linear[i] *= -1
-            if fbnonzero:
-                for i in unshimmed_variables:
-                    flux_biases[i] *= -1
+                ss = sampler.sample(bqm, flux_biases=flux_biases, **sampling_params)
+                all_mags = np.sum(
+                    ss.record.sample * ss.record.num_occurrences[:, np.newaxis], axis=0
+                ) / np.sum(ss.record.num_occurrences)
 
-            ss = sampler.sample(bqm, flux_biases=flux_biases, **sampling_params)
-            all_mags = np.sum(
-                ss.record.sample * ss.record.num_occurrences[:, np.newaxis], axis=0
-            ) / np.sum(ss.record.num_occurrences)
-
-            for idx, v in enumerate(ss.variables):
-                mag_history[v].append(all_mags[idx])
+                for idx, v in enumerate(ss.variables):
+                    mag_history[v].append(all_mags[idx])
 
         if convergence_test(mag_history, flux_bias_history):
             # The data is not used to update the flux_biases
@@ -316,7 +319,7 @@ def shim_flux_biases(
             magnetizations = np.array(
                 [np.mean(mag_history[v][-num_experiments:]) for v in shimmed_variables]
             )
-            if iteration > 0:
+            if step > 0:
                 norm = np.linalg.norm(magnetizations) * np.linalg.norm(last_mags)
                 if math.isclose(norm, 0):
                     # When magnetization norms are zero the paper method is ill defined.
@@ -329,8 +332,8 @@ def shim_flux_biases(
                         + beta_hypergradient * np.dot(magnetizations, last_mags) / norm
                     )
             last_mags = magnetizations
-        elif iteration < num_steps - 1:
-            alpha = learning_schedule[iteration + 1]
+        else:
+            alpha = learning_schedule[step]
 
         for v in shimmed_variables:
             if use_hypergradient:

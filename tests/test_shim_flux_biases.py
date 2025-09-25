@@ -111,13 +111,12 @@ class FluxBiases(unittest.TestCase):
                 sampling_params=sampling_params,
                 learning_schedule=learning_schedule,
                 shimmed_variables=shimmed_variables,
+                symmetrize_experiments=symmetrize_experiments,
             )
             self.assertNotIn(0, fbh)
             self.assertEqual(len(learning_schedule) + 1, len(fbh[1]))
-            self.assertTrue(
-                len(learning_schedule), len(mh[1]) // (1 + int(symmetrize_experiments))
-            )
-            # Experimental average, 3 or 6 magnetizations:
+            self.assertEqual(
+                len(learning_schedule)*(1 + int(symmetrize_experiments)), len(mh[1]))
             shimmed_variables = [1, 2]
             sampling_params_updates = [{"num_reads": 4}, {}, {"num_reads": 1}]
             fb, fbh, mh = shim_flux_biases(
