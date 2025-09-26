@@ -339,10 +339,7 @@ def shim_flux_biases(
             alpha = learning_schedule[step]
 
         for v in shimmed_variables:
-            if use_hypergradient:
-                flux_biases[v] -= alpha * sum(mag_history[v][-num_experiments:])
-            else:
-                flux_biases[v] -= alpha * sum(mag_history[v][-num_experiments:])
+            flux_biases[v] -= alpha * sum(mag_history[v][-num_experiments:])
             flux_bias_history[v].append(flux_biases[v])
 
     if pop_fb:
