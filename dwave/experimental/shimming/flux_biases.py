@@ -276,8 +276,9 @@ def shim_flux_biases(
     use_hypergradient = (learning_schedule is None)
     if not use_hypergradient:
         num_steps = len(learning_schedule)
-    elif alpha is None:
-        alpha = qubit_freezeout_alpha_phi()
+    else:
+        if alpha is None:
+            alpha = qubit_freezeout_alpha_phi()
         if not (0 < beta_hypergradient < 1):
             raise ValueError("beta_hypergradient should be in the (0,1) interval")
         if not (alpha > 0):
@@ -317,7 +318,7 @@ def shim_flux_biases(
             # This can be included as part of the test evaluation (if required)
             break
 
-        if learning_schedule is None:
+        if use_hypergradient:
             magnetizations = np.array(
                 [np.mean(mag_history[v][-num_experiments:]) for v in shimmed_variables]
             )
