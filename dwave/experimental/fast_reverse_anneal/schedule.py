@@ -40,10 +40,10 @@ def load_schedules(solver_name: Optional[str] = None) -> dict[float, dict[str, f
         A dict mapping allowed ``nominal_pause_time`` values to a schedule
         approximation curve (linear-exponential) parameters dict. For example:
 
-        {0.0: {'a': 51.04360118925347,
+        {0.0: {'a': -51.04360118925347,
                'c2': 9821.41471886313,
                'nominal_pause_time': 0.0,
-               't_min': 1.0115890689350606},
+               't_min': 1.0234109310649393},
          ...}
 
          See :meth:`.linex` for parameters description.
