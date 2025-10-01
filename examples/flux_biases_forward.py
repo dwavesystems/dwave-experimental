@@ -43,10 +43,10 @@ def main(
     See also the calibration refinement tutorial  <https://doi.org/10.3389/fcomp.2023.1238988>
 
     Args:
-        solver: name of the solver, or dictionary of characteristics.
-        loop_length: length of the loop.
-        num_iters: number of gradient descent steps.
-        coupling_strength: coupling strength on the cubic lattice.
+        solver: Name of the solver, or dictionary of characteristics.
+        loop_length: Length of the loop.
+        num_iters: Number of gradient descent steps.
+        coupling_strength: Coupling strength on the cubic lattice.
         annealing_time: annealing_time in microseconds
     """
     qpu = DWaveSampler(solver=solver)

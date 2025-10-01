@@ -39,6 +39,7 @@ class FluxBiases(unittest.TestCase):
         self.assertSetEqual(set(mh.keys()), set(fbh.keys()))
         self.assertSetEqual(set(mh.keys()), set(bqm.variables))
 
+
     def test_flux_params(self):
         """Check parameters in = parameters out for empty learning_schedule or convergence test"""
         nv = 10
@@ -113,6 +114,22 @@ class FluxBiases(unittest.TestCase):
             self.assertEqual(len(learning_schedule) + 1, len(fbh[1]))
             self.assertTrue(
                 len(learning_schedule), len(mh[1]) // (1 + int(symmetrize_experiments))
+            )
+            # Experimental average, 3 or 6 magnetizations:
+            shimmed_variables = [1, 2]
+            sampling_params_updates = [{'num_reads': 4}, {}, {'num_reads': 1}]
+            fb, fbh, mh = shim_flux_biases(
+                bqm,
+                sampler,
+                sampling_params=sampling_params,
+                learning_schedule=learning_schedule,
+                shimmed_variables=shimmed_variables,
+                sampling_params_updates=sampling_params_updates
+            )
+            self.assertNotIn(0, fbh)
+            self.assertEqual(len(learning_schedule) + 1, len(fbh[1]))
+            self.assertTrue(
+                len(learning_schedule), len(mh[1]) // ((1 + int(symmetrize_experiments))*3)
             )
 
     def test_qubit_freezeout_alpha_phi(self):
