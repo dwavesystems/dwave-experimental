@@ -46,15 +46,18 @@ def main(
     See also the calibration refinement tutorial  <https://doi.org/10.3389/fcomp.2023.1238988>
 
     Args:
-        solver: name of the solver, or dictionary of characteristics.
-        num_steps: number of gradient descent steps.
-        coupling_strength: coupling strength on the loop.
-        x_target_c: schedule target point for reverse anneal.
-        x_target_c_updates: a list of x_target_c to average over.
-        x_nominal_pause_time: pause time at target point for reverse anneal.
-        use_hypergradient: use the adaptive learning rate. If set to False,
+        solver: Name of the solver, or dictionary of characteristics.
+        loop_length: Length of the loop.
+        num_steps: Number of gradient descent steps.
+        coupling_strength: Coupling strength on the loop.
+        x_target_c:
+            The lowest value of the normalized control bias, c(s), attained during the fast 
+            reverse anneal. This parameter sets the reversal distance of the reverse anneal.
+        x_target_c_updates: A list of x_target_c to average over.
+        x_nominal_pause_time: Pause time at target point for reverse anneal.
+        use_hypergradient: Use the adaptive learning rate. If set to False,
             a fixed geometric decay is used.
-        beta_hypergradient: adaptive learning rate parameter
+        beta_hypergradient: Adaptive learning rate parameter.
     """
 
     # when available, use feature-based search to default the solver.
@@ -188,7 +191,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--x_target_c",
         type=float,
-        help="Reverse anneal point x_target_c, should be early enough for magnetization not to be polarized by the initial condition, by default 0.22",
+        help="Reverse anneal target point x_target_c, should be low enough for magnetization not to be polarized by the initial condition, by default 0.22",
         default=0.22,
     )
     parser.add_argument(

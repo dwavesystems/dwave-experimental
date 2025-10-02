@@ -45,14 +45,13 @@ def main(
     See also the calibration refinement tutorial  <https://doi.org/10.3389/fcomp.2023.1238988>
 
     Args:
-        solver: name of the solver, or dictionary of characteristics.
-        loop_length: length of the loop.
-        num_steps: number of gradient descent steps.
-        coupling_strength: coupling strength on the cubic lattice.
-        annealing_time: annealing_time in microseconds.
-        use_hypergradient: use the adaptive learning rate. If set to False,
+        solver: Name of the solver, or dictionary of characteristics.
+        num_steps: Number of gradient descent steps.
+        coupling_strength: Coupling strength on the cubic lattice.
+        annealing_time: Annealing time in microseconds.
+        use_hypergradient: Use the adaptive learning rate. If set to False,
             a fixed geometric decay is used.
-        beta_hypergradient: adaptive learning rate parameter.
+        beta_hypergradient: Adaptive learning rate parameter.
     """
     qpu = DWaveSampler(solver=solver)
     if annealing_time is None:
