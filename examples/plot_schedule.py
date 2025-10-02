@@ -55,8 +55,8 @@ def main(
     pprint(schedules)
 
 
-    t = numpy.arange(0.95, 1.03, 1e-4)
     nominal_pause_times = params['x_nominal_pause_time']['limits']['set']
+    t = numpy.arange(1.0, 1.035 + max(nominal_pause_times), 1e-4)
 
     target_c = x_target_c
     fig = None

@@ -40,10 +40,10 @@ def load_schedules(solver_name: Optional[str] = None) -> dict[float, dict[str, f
         A dict mapping allowed ``nominal_pause_time`` values to a schedule
         approximation curve (linear-exponential) parameters dict. For example:
 
-        {0.0: {'a': 51.04360118925347,
+        {0.0: {'a': -51.04360118925347,
                'c2': 9821.41471886313,
                'nominal_pause_time': 0.0,
-               't_min': 1.0115890689350606},
+               't_min': 1.0234109310649393},
          ...}
 
          See :meth:`.linex` for parameters description.
@@ -77,7 +77,7 @@ def linex(
     r"""Linear-exponential (linex) function used to approximate a
     fast-reverse-annealing schedule.
 
-    Fast-reverse-annealing schedule can be approximated with the following
+    Fast-reverse-annealing schedules can be approximated with the following
     linear exponential function:
 
     .. math::
@@ -85,10 +85,10 @@ def linex(
 
     Args:
         t: Discrete time (in microseconds), given as a scalar or an array.
-        c0: Offset coefficient.
-        c2: Scale coefficient.
-        a: Rate coefficient.
-        t_min: Time offset coefficient.
+        c0: Ordinate offset coefficient.
+        c2: Quadratic ordinate coefficient.
+        a: Asymmetry parameter.
+        t_min: Time offset parameter.
 
     Returns:
         The linear-exponential function evaluated at ``t``.
@@ -150,7 +150,7 @@ def plot_schedule(
         import matplotlib.pyplot as plt
         from dwave.experimental.fast_reverse_anneal import plot_schedule
 
-        t = numpy.arange(0.95, 1.03, 1e-4)
+        t = numpy.arange(1.0, 1.04, 1e-4)
         fig = plot_schedule(t, target_c=0.0)
         plt.show()
 
