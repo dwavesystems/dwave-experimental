@@ -1,0 +1,6 @@
+---
+fixes:
+  - |
+    Fix incorrect inversion of predicted fast-reverse-anneal schedules in time by updating the 
+    linear-exponential line shape parameters. 
+    See `#14 <https://github.com/dwavesystems/dwave-experimental/pull/14>`_.
