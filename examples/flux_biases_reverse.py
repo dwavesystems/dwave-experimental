@@ -33,10 +33,13 @@ from dwave.experimental.fast_reverse_anneal import SOLVER_FILTER
 def main(
     solver: Union[None, dict, str],
     loop_length: int,
-    num_iters: int,
+    num_steps: int,
     coupling_strength: float,
     x_target_c: float,
     x_target_c_updates: Optional[list] = None,
+    x_nominal_pause_time: float = 0.0,
+    use_hypergradient: bool = True,
+    beta_hypergradient: float = 0.4,
 ):
     """Refine the calibration of a ferromagnetic loop.
 
@@ -44,12 +47,17 @@ def main(
 
     Args:
         solver: Name of the solver, or dictionary of characteristics.
+        loop_length: Length of the loop.
+        num_steps: Number of gradient descent steps.
         coupling_strength: Coupling strength on the loop.
-        x_target_c: 
+        x_target_c:
             The lowest value of the normalized control bias, c(s), attained during the fast 
             reverse anneal. This parameter sets the reversal distance of the reverse anneal.
         x_target_c_updates: A list of x_target_c to average over.
-
+        x_nominal_pause_time: Pause time at target point for reverse anneal.
+        use_hypergradient: Use the adaptive learning rate. If set to False,
+            a fixed geometric decay is used.
+        beta_hypergradient: Adaptive learning rate parameter.
     """
 
     # when available, use feature-based search to default the solver.
@@ -77,7 +85,7 @@ def main(
         num_reads=1024,
         reinitialize_state=True,
         x_target_c=x_target_c,
-        x_nominal_pause_time=0.0,
+        x_nominal_pause_time=x_nominal_pause_time,
         anneal_schedule=[[0, 1], [1, 1]],
         auto_scale=False,
         initial_state={q: 1 for q in embedding.values()},
@@ -91,13 +99,13 @@ def main(
         sampling_params_updates = None
         symmetrize_experiments = True
 
-    # A geometric decay is sufficient for a bulk low-frequency correction.
-    # Note that, qubit_freezeout_alpha_phi can be tuned as a function of
-    # solver specific properties (MAFM and B(s)).
-    # Tuning of the prefactor can enhance rate of convergence, large values
-    # can result in overshooting or divergence.
-    learning_schedule = 0.1 * qubit_freezeout_alpha_phi() / np.arange(1, num_iters + 1)
-
+    alpha = 0.1*qubit_freezeout_alpha_phi()
+    if use_hypergradient:
+        # A geometric decay is sufficient for a bulk low-frequency correction.
+        learning_schedule = None
+    else:
+        learning_schedule = alpha / np.arange(1, num_steps + 1)
+    
     # Find flux biases that restore average magnetization, ideally this cancels
     # the impact of low-frequency environment fluxes coupling into the qubit body
     flux_biases, fb_history, mag_history = shim_flux_biases(
@@ -106,7 +114,10 @@ def main(
         sampling_params=sampling_params,
         learning_schedule=learning_schedule,
         sampling_params_updates=sampling_params_updates,
-        symmetrize_experiments=True,
+        symmetrize_experiments=symmetrize_experiments,
+        beta_hypergradient=beta_hypergradient,
+        num_steps=num_steps,
+        alpha=alpha,
     )
 
     mag_array = np.array(list(mag_history.values()))
@@ -172,7 +183,7 @@ if __name__ == "__main__":
         "--loop_length", type=int, help="Length of the loop, by default 4", default=4
     )
     parser.add_argument(
-        "--num_iters",
+        "--num_steps",
         type=int,
         help="Number of gradient descent steps, by default 10. A geometrically decaying learning rate is used 1/num_steps",
         default=10,
@@ -190,10 +201,28 @@ if __name__ == "__main__":
         default=False,
     )
     parser.add_argument(
+        "--x_nominal_pause_time",
+        type=float,
+        help="Reverse anneal dwell time.",
+        default=0.0,
+    )
+    parser.add_argument(
         "--coupling_strength",
         type=float,
         help="Coupling strength on the ring, by default -1 (ferromagnetic)",
         default=-1,
+    )
+    parser.add_argument(
+        "--use_hypergradient",
+        type=bool,
+        help="Enables hypergradient descent optimization instead of a fixed geometric decay",
+        default=True,
+    )
+    parser.add_argument(
+        "--beta_hypergradient",
+        type=float,
+        help="Specifies the adaptive learning rate hyperparameter beta",
+        default=0.4,
     )
     args = parser.parse_args()
     if args.x_target_c_average:
@@ -207,8 +236,11 @@ if __name__ == "__main__":
     main(
         solver=args.solver_name,
         loop_length=args.loop_length,
-        num_iters=args.num_iters,
+        num_steps=args.num_steps,
         coupling_strength=args.coupling_strength,
         x_target_c=args.x_target_c,
         x_target_c_updates=x_target_c_updates,
+        x_nominal_pause_time=args.x_nominal_pause_time,
+        use_hypergradient=args.use_hypergradient,
+        beta_hypergradient=args.beta_hypergradient,
     )

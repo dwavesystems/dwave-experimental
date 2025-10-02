@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any, Optional, Iterable, Callable
 
 import numpy as np
@@ -97,6 +98,9 @@ def shim_flux_biases(
     convergence_test: Optional[Callable] = None,
     symmetrize_experiments: bool = True,
     sampling_params_updates: Optional[list] = None,
+    beta_hypergradient: float = 0.4,
+    num_steps: int = 10,
+    alpha: Optional[float] = None,
 ) -> tuple[list[Bias], dict, dict]:
     r"""Return flux_biases achieving  <s_i> = 0 for symmetry preserving
     experiments.
@@ -116,6 +120,11 @@ def shim_flux_biases(
     L(t) is an iteration-dependent map, <s> is the expected magnetization, m
     is the target magnetization and Phi are the programmed flux biases.
 
+    By default L(t) is uniform with respect to programmed qubits, and
+    determined by a hypergradient descent method <https://doi.org/10.48550/arXiv.1703.04782>.
+    The learning rate can alternatively be provided as a list, in which
+    case the hypergradient method is not used.
+
     Symmetry can be broken by the choice of initial condition in reverse
     annealing, non-zero h, or non-zero flux biases over unshimmed
     fluxes. We can collect data for two experiments, where the symmetry
@@ -132,6 +141,9 @@ def shim_flux_biases(
     Hamiltonian parameters. Shims inferred in smoothly related models can be used
     as approximations (or initial conditions) for searches in related models.
 
+    If the provided learning rate or learning schedule is too large, it is
+    possible to exceed the bounds of allowed values for the flux bias offsets.
+
     Args:
        bqm: A dimod binary quadratic model.
        sampler: A DWaveSampler.
@@ -143,12 +155,9 @@ def shim_flux_biases(
            be specified according the Ising model convention (+/-1, and -3 for inactive).
        shimmed_variables: A list of variables to shim, by default all elements in
            bqm.variables.
-       learning_schedule: An iterable of gradient descent prefactors. By default, a
-           single step is taken. Experimental-timescale fluctuations in the flux
-           noise (characterized by a 1/f spectrum) as well as sampling error
-           linked to estimator variance, limit the accuracy attainable. Per standard
-           gradient descent approaches one can consider a constant learning rate,
-           or one that decreases with t. See examples.
+       learning_schedule: An iterable of gradient descent prefactors. When this
+           is not provided the prefactors are determined by a hypergradient descent
+           method parameterized by `alpha`, `beta_hypergradient` and `num_steps`.
        convergence_test: A callable taking the history of magnetizations and flux_biases
            as input, returning True to exit the search, and False otherwise. By default,
            all stages specified in the learning_schedule are completed.
@@ -165,7 +174,21 @@ def shim_flux_biases(
            original value of the sampling parameter to be updated will be ignored.
            If ``flux_biases`` should not be amongst the updated parameters.
            See repository examples/ for use cases.
-
+        beta_hypergradient: A parameter control the learning rate evolution for the
+            hypergradient descent method. A choice customized to the annealing protocol
+            and processor may improve performance. This parameter is ignored if
+            ``learning_schedule` is specified. A value in the range (0,1) is
+            required.
+        num_steps: This parameter is inferred from the learning_schedule when
+            this is specified, otherwise it determines the number of
+            steps taken by the hypergradient descent method with 10 as the default.
+        alpha: The initial learning rate for the hypergradient descent method. By default
+            this is initialised using `qubit_freezeout_alpha_phi`. A choice customized to
+            the annealing protocol and processor may improve performance. This
+            parameter is ignored if ``learning_schedule` is specified. The
+            learning rate should be a positive real value. A typical scale can
+            be determined using ``qubit_freezeout_alpha_phi``, which provides
+            a default.
     Returns:
         A tuple consisting of 3 parts:
         1. flux_biases in a list format suitable as a DWaveSampler argument.
@@ -217,6 +240,11 @@ def shim_flux_biases(
     if shimmed_variables is None:
         # All variables of the model
         shimmed_variables = bqm.variables
+    else:
+        if len(shimmed_variables) == 0:
+            raise ValueError("shimmed_variables should not be empty")
+        elif not set(shimmed_variables).issubset(bqm.variables):
+            raise ValueError("Invalid shimmed variables")
 
     if symmetrize_experiments:
         unshimmed_variables = set(bqm.variables).difference(shimmed_variables)
@@ -229,7 +257,7 @@ def shim_flux_biases(
         reverseanneal = "initial_state" in sampling_params
     else:
         fbnonzero = hnonzero = reverseanneal = False
-    num_experiments = 1 + int(reverseanneal or hnonzero or fbnonzero)
+    num_signed_experiments = 1 + int(reverseanneal or hnonzero or fbnonzero)
 
     if sampling_params_updates is None:
         # By default, a single experimental setting:
@@ -243,19 +271,30 @@ def shim_flux_biases(
                 "flux_biases should not be explicitely set"
                 "within sampling_params_updates."
             )
-    if learning_schedule is None:
-        learning_schedule = [qubit_freezeout_alpha_phi()]
+    num_experiments = num_signed_experiments*len(sampling_params_updates)
+
+    use_hypergradient = (learning_schedule is None)
+    if not use_hypergradient:
+        num_steps = len(learning_schedule)
+    else:
+        if alpha is None:
+            alpha = qubit_freezeout_alpha_phi()
+        if not (0 < beta_hypergradient < 1):
+            raise ValueError("beta_hypergradient should be in the (0,1) interval")
+        if not (alpha > 0):
+            raise ValueError("alpha should be positively valued")
 
     if convergence_test is None:
         convergence_test = lambda x, y: False
 
     flux_bias_history = {v: [flux_biases[v]] for v in shimmed_variables}
     mag_history = {v: [] for v in bqm.variables}
-
-    for lr in learning_schedule:
+    for step in range(num_steps):
+        # Possible feature enhancement for intermediate num_experiments:
+        # following loops are parallelizable, call sample() asyncrhonously.
         for spu in sampling_params_updates:
             sampling_params.update(spu)
-            for _ in range(num_experiments):
+            for _ in range(num_signed_experiments):
                 if reverseanneal:
                     for i in bqm.variables:
                         sampling_params["initial_state"][i] *= -1
@@ -265,13 +304,12 @@ def shim_flux_biases(
                 if fbnonzero:
                     for i in unshimmed_variables:
                         flux_biases[i] *= -1
+
                 ss = sampler.sample(bqm, flux_biases=flux_biases, **sampling_params)
-                # Possible feature enhancement: it may make sense to process asynchronously.
-                # I.e. loop all job submissions, then loop magnetization calculations, assuming
-                # the update list is not too long (for sake of memory).
                 all_mags = np.sum(
                     ss.record.sample * ss.record.num_occurrences[:, np.newaxis], axis=0
                 ) / np.sum(ss.record.num_occurrences)
+
                 for idx, v in enumerate(ss.variables):
                     mag_history[v].append(all_mags[idx])
 
@@ -280,10 +318,28 @@ def shim_flux_biases(
             # This can be included as part of the test evaluation (if required)
             break
 
-        for v in shimmed_variables:
-            flux_biases[v] = flux_biases[v] - lr * sum(
-                mag_history[v][-num_experiments * len(sampling_params_updates) :]
+        if use_hypergradient:
+            magnetizations = np.array(
+                [np.mean(mag_history[v][-num_experiments:]) for v in shimmed_variables]
             )
+            if step > 0:
+                norm = np.linalg.norm(magnetizations) * np.linalg.norm(last_mags)
+                if math.isclose(norm, 0):
+                    # When magnetization norms are zero the paper method is ill defined.
+                    # One could choose to convergence test to exit at zero magnetization
+                    # as an alternative.
+                    alpha *= 1 - beta_hypergradient
+                else:
+                    alpha *= (
+                        1
+                        + beta_hypergradient * np.dot(magnetizations, last_mags) / norm
+                    )
+            last_mags = magnetizations
+        else:
+            alpha = learning_schedule[step]
+
+        for v in shimmed_variables:
+            flux_biases[v] -= alpha * sum(mag_history[v][-num_experiments:])
             flux_bias_history[v].append(flux_biases[v])
 
     if pop_fb:

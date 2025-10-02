@@ -34,9 +34,11 @@ from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_
 
 def main(
     solver: Union[None, dict, str],
-    num_iters: int,
+    num_steps: int,
     coupling_strength: float = -1,
     annealing_time: Union[None, float] = None,
+    use_hypergradient: bool = True,
+    beta_hypergradient: float = 0.4,
 ):
     """Refine the calibration of a large spin glass.
 
@@ -44,10 +46,12 @@ def main(
 
     Args:
         solver: Name of the solver, or dictionary of characteristics.
-        loop_length: Length of the loop.
-        num_iters: Number of gradient descent steps.
+        num_steps: Number of gradient descent steps.
         coupling_strength: Coupling strength on the cubic lattice.
-        annealing_time: annealing_time in microseconds
+        annealing_time: Annealing time in microseconds.
+        use_hypergradient: Use the adaptive learning rate. If set to False,
+            a fixed geometric decay is used.
+        beta_hypergradient: Adaptive learning rate parameter.
     """
     qpu = DWaveSampler(solver=solver)
     if annealing_time is None:
@@ -82,10 +86,13 @@ def main(
         auto_scale=False,
         annealing_time=annealing_time,
     )
-
-    # A geometric decay is sufficient for a bulk low-frequency correction.
-    learning_schedule = qubit_freezeout_alpha_phi() / np.arange(1, num_iters + 1)
-
+    alpha = qubit_freezeout_alpha_phi()
+    if use_hypergradient:
+        # A geometric decay is sufficient for a bulk low-frequency correction.
+        learning_schedule = None
+    else:
+        learning_schedule = alpha / np.arange(1, num_steps + 1)
+    
     # Find flux biases that restore average magnetization, ideally this cancels
     # the impact of low-frequency environment fluxes coupling into the qubit body
     flux_biases, fb_history, mag_history = shim_flux_biases(
@@ -93,6 +100,9 @@ def main(
         sampler=qpu,
         sampling_params=sampling_params,
         learning_schedule=learning_schedule,
+        beta_hypergradient=beta_hypergradient,
+        num_steps=num_steps,
+        alpha=alpha,
     )
 
     mag_array = np.array(list(mag_history.values()))
@@ -135,7 +145,7 @@ if __name__ == "__main__":
         default=None,
     )
     parser.add_argument(
-        "--num_iters",
+        "--num_steps",
         type=int,
         help="Number of gradient descent steps, by default 10. A geometrically decaying learning rate is used 1/num_steps.",
         default=10,
@@ -152,11 +162,24 @@ if __name__ == "__main__":
         help="annealing_time in microseconds. Smallest valuable supported by default.",
         default=None,
     )
+    parser.add_argument(
+        "--use_hypergradient",
+        type=bool,
+        help="Enables hypergradient descent optimization instead of the default learning schedule.",
+        default=True,
+    )
+    parser.add_argument(
+        "--beta_hypergradient",
+        type=float,
+        help="Specifies a custom multiplicative hyperparameter beta",
+        default=0.4,
+    )
     args = parser.parse_args()
-
     main(
         solver=args.solver_name,
-        num_iters=args.num_iters,
+        num_steps=args.num_steps,
         coupling_strength=args.coupling_strength,
         annealing_time=args.annealing_time,
+        use_hypergradient=args.use_hypergradient,
+        beta_hypergradient=args.beta_hypergradient,
     )

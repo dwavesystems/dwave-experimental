@@ -1,0 +1,4 @@
+---
+features:
+  - |
+    Implement hypergradient descent (arXiv:1703.04782B) for automation of learning rates as default option.
