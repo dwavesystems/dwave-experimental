@@ -1,0 +1,4 @@
+---
+fixes:
+  - |
+    Upgrade dependency packages version bounds to support Ocean 9.
