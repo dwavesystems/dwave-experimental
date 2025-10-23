@@ -1,6 +1,6 @@
 {
     "Advantage2_prototype2_x_internal": {
-        "date": "2025-10-21",
+        "date": "2025-10-01",
         "params": [
             {
                 "nominal_pause_time": 0.0,
@@ -41,7 +41,7 @@
         ]
     },
     "Advantage2_research1.3": {
-        "date": "2025-10-21",
+        "date": "2025-10-01",
         "params": [
             {
                 "nominal_pause_time": 0.0,
