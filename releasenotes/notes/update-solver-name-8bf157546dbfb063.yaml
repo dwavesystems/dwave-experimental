@@ -1,0 +1,5 @@
+---
+other:
+  - |
+    Update solver name in fast-reverse-anneal schedules data to "Advantage2_research1.3". 
+    Schedules data remains unchanged.
