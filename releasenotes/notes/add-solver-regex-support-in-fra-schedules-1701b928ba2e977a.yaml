@@ -1,0 +1,5 @@
+---
+features:
+  - |
+    Add support for specifying FRA solver schedules for a range of solvers via
+    regular expressions.
