@@ -28,6 +28,11 @@ from .api import get_solver_name
 __all__ = ['load_schedules', 'linex', 'c_vs_t', 'plot_schedule']
 
 
+def _get_schedules_data() -> dict[str, dict]:
+    fra = files('dwave.experimental.fast_reverse_anneal')
+    return json.loads(fra.joinpath('data/schedules.json').read_bytes())
+
+
 def load_schedules(solver_name: Optional[str] = None) -> dict[float, dict[str, float]]:
     """Return per-solver approximation parameters for a family of fast reverse
     annealing schedules.
@@ -57,8 +62,7 @@ def load_schedules(solver_name: Optional[str] = None) -> dict[float, dict[str, f
     if solver_name is None:
         solver_name = get_solver_name()
 
-    fra = files('dwave.experimental.fast_reverse_anneal')
-    schedules = json.loads(fra.joinpath('data/schedules.json').read_bytes())
+    schedules = _get_schedules_data()
 
     def load_params(solver_name, schedules):
         if solver_name in schedules:
@@ -66,7 +70,7 @@ def load_schedules(solver_name: Optional[str] = None) -> dict[float, dict[str, f
 
         # try regex search before failing
         for pattern, schedule in schedules.items():
-            if re.match(pattern, solver_name):
+            if re.fullmatch(pattern, solver_name):
                 return schedule['params']
 
         raise ValueError(f"Schedule parameters not found for {solver_name!r}")
