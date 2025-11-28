@@ -65,7 +65,7 @@ jobs:
         type: string
       xcode:
         type: string
-        default: "16.0.0"
+        default: "16.4.0"
 
     macos:
       xcode: << parameters.xcode >>
@@ -210,7 +210,7 @@ workflows:
           context: &ctx-build "ocean-build"
           matrix:
             parameters:
-              python-version: &python-versions ["3.9", "3.10", "3.11", "3.12", "3.13"]
+              python-version: &python-versions ["3.10", "3.11", "3.12", "3.13", "3.14"]
 
       - test-macos:
           name: test-macos-py<< matrix.python-version >>
