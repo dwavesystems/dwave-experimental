@@ -21,12 +21,14 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "dimod>=0.12.20,<0.13",
     "dwave-cloud-client>=0.13.6,<0.15",
+    "dwave-samplers>=1,<2",
     "dwave-system>=1.32.0,<2",
-    "matplotlib>=3",
+    "matplotlib>=3,<4",
+    "numpy>=2,<3",
 ]
 
 [project.urls]
