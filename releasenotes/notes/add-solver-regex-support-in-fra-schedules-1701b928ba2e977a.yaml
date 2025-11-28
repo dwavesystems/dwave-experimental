@@ -1,0 +1,5 @@
+---
+features:
+  - |
+    Add support for solver name pattern matching in fast reverse anneal schedules.
+    See `#23 <https://github.com/dwavesystems/dwave-experimental/issues/23>`_.

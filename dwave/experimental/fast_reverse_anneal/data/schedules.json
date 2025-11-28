@@ -40,7 +40,7 @@
             }
         ]
     },
-    "Advantage2_research1.4": {
+    "Advantage2_research1(\\.\\d+)?": {
         "date": "2025-10-01",
         "params": [
             {

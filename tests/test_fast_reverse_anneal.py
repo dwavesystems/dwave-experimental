@@ -81,6 +81,27 @@ class FRA(unittest.TestCase):
         with self.subTest('plot_schedule'):
             plot_schedule(t, target_c=0, schedules=schedules)
 
+    def test_schedule_regex_search(self):
+        mock_schedules = {
+            "Solver1(\\.\\d+)?": {
+                "date": "...",
+                "params": [{"nominal_pause_time": 0.0}]
+            }
+        }
+
+        with unittest.mock.patch('dwave.experimental.fast_reverse_anneal.schedule._get_schedules_data',
+                                 return_value=mock_schedules):
+            self.assertIsInstance(load_schedules("Solver1"), dict)
+            self.assertIsInstance(load_schedules("Solver1.1"), dict)
+            self.assertIsInstance(load_schedules("Solver1.23"), dict)
+
+            with self.assertRaises(ValueError):
+                self.assertIsInstance(load_schedules("Solver1.2.3"), dict)
+            with self.assertRaises(ValueError):
+                load_schedules("Solver2")
+            with self.assertRaises(ValueError):
+                load_schedules("Solver10")
+
 
 class LiveSmokeTests(unittest.TestCase):
 

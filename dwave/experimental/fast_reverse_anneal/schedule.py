@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+import re
 from importlib.resources import files
 from typing import Optional
 
@@ -25,6 +26,11 @@ import matplotlib.pyplot
 from .api import get_solver_name
 
 __all__ = ['load_schedules', 'linex', 'c_vs_t', 'plot_schedule']
+
+
+def _get_schedules_data() -> dict[str, dict]:
+    fra = files('dwave.experimental.fast_reverse_anneal')
+    return json.loads(fra.joinpath('data/schedules.json').read_bytes())
 
 
 def load_schedules(solver_name: Optional[str] = None) -> dict[float, dict[str, float]]:
@@ -56,14 +62,23 @@ def load_schedules(solver_name: Optional[str] = None) -> dict[float, dict[str, f
     if solver_name is None:
         solver_name = get_solver_name()
 
-    fra = files('dwave.experimental.fast_reverse_anneal')
-    schedules = json.loads(fra.joinpath('data/schedules.json').read_bytes())
-    if solver_name not in schedules:
+    schedules = _get_schedules_data()
+
+    def load_params(solver_name, schedules):
+        if solver_name in schedules:
+            return schedules[solver_name]['params']
+
+        # try regex search before failing
+        for pattern, schedule in schedules.items():
+            if re.fullmatch(pattern, solver_name):
+                return schedule['params']
+
         raise ValueError(f"Schedule parameters not found for {solver_name!r}")
 
-    family = schedules[solver_name]['params']
+    params = load_params(solver_name, schedules)
+
     # reformat for easier access
-    return {s['nominal_pause_time']: s for s in family}
+    return {s['nominal_pause_time']: s for s in params}
 
 
 def linex(
