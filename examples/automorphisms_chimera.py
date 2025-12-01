@@ -28,14 +28,14 @@ from dwave.experimental.automorphism import schreier_rep, array_to_cycle
 def main(
     chimera_unit_cells: int,
     num_samples: Optional[int],
-    verbose: bool,
+    silent: bool,
 ):
 
     graph = dnx.chimera_graph(chimera_unit_cells)
     result = schreier_rep(graph, num_samples=num_samples)
 
     #print the elements of the group vector in cycle notation
-    if verbose == True:
+    if not silent:
         print('Schreier-Sims representation (not including identity):')
         for i in sorted(result.u_map.keys()):
             print(f'U_{i}:')
@@ -64,15 +64,15 @@ if __name__ == "__main__":
         default=None,
     )
     parser.add_argument(
-        "--verbose",
+        "--silent",
         type=bool,
-        help="Prints the left transversals of the Schreier-Sims representation of a graph, the number of automorphisms, and the vertex orbits",
-        default=True,
+        help="Suppresses output of left transversals, number of automorphisms, and vertex orbits",
+        default=False,
     )
     args = parser.parse_args()
 
     main(
         chimera_unit_cells=args.num_unit_cells,
         num_samples=args.num_samples,
-        verbose=args.verbose
+        silent=args.silent
     )

@@ -2,6 +2,6 @@
 features:
   - |
     Add `dwave.experimental.automorphism` submodule with a function to calculate
-    the Schreier-sims representation of a graph, as well as the number of
+    the Schreier-Sims representation of a graph, as well as the number of
     automorphisms, vertex orbits, and edge orbits.
     
