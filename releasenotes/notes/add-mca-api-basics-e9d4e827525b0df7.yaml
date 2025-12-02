@@ -1,0 +1,5 @@
+---
+features:
+  - |
+    Add ``dwave.experimental.multicolor_anneal`` submodule with a utility
+    function to fetch available annealing lines and their properties.
