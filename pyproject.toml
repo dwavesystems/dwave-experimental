@@ -21,7 +21,6 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
 ]
-requires-python = ">=3.10"
 dependencies = [
     "dimod>=0.12.20,<0.13",
     "dwave-cloud-client>=0.13.6,<0.15",
@@ -30,6 +29,10 @@ dependencies = [
     "matplotlib>=3,<4",
     "numpy>=2,<3",
 ]
+# note: 3.14.1 excluded due to a regression bug breaking dataclasses in NetworkX
+# see: https://github.com/networkx/networkx/issues/8362,
+# https://github.com/python/cpython/issues/142214
+requires-python = ">=3.10, !=3.14.1"
 
 [project.urls]
 Issues = "https://github.com/dwavesystems/dwave-experimental/issues"
