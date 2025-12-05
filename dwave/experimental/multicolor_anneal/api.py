@@ -37,10 +37,12 @@ def get_properties(sampler: DWaveSampler | Solver | str | None = None
             :attr:`.SOLVER_FILTER` is used to fetch an MCA-enabled solver.
 
     Returns:
-        Annealing line properties (dict) in a list of available lines.
+        Annealing line properties for all available anneal lines, formatted
+        as list of dicts in ascending order of anneal-line index.
 
     Examples:
-        Retrieve MCA annealing lines' properties for a default solver::
+        Retrieve MCA annealing lines' properties for a default solver, and
+        print the number of anneal lines and first qubits on anneal line 0.
 
         >>> from dwave.experimental import multicolor_anneal as mca
         >>> annealing_lines = mca.get_properties()
@@ -75,4 +77,4 @@ def get_properties(sampler: DWaveSampler | Solver | str | None = None
     try:
         return result['x_get_multicolor_annealing_exp_feature_info']
     except KeyError:
-        raise ValueError(f'Provided sampler ({solver.name}) does not support multicolor annealing')
+        raise ValueError(f'Selected sampler ({solver.name}) does not support multicolor annealing')

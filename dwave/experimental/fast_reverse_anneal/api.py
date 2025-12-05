@@ -104,7 +104,7 @@ def get_parameters(sampler: Optional[Union[DWaveSampler, Solver, str]] = None,
     try:
         raw = result['x_get_fast_reverse_anneal_exp_feature_info']
     except KeyError:
-        raise ValueError(f'Provided sampler ({solver.name}) does not support fast reverse anneal')
+        raise ValueError(f'Selected sampler ({solver.name}) does not support fast reverse anneal')
 
     info = dict(zip(raw[::2], raw[1::2]))
 
