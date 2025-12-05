@@ -210,7 +210,7 @@ workflows:
           context: &ctx-build "ocean-build"
           matrix:
             parameters:
-              python-version: &python-versions ["3.10", "3.11", "3.12", "3.13", "3.14"]
+              python-version: &python-versions ["3.10", "3.11", "3.12", "3.13", "3.14.0"]
 
       - test-macos:
           name: test-macos-py<< matrix.python-version >>
