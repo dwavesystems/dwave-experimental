@@ -16,9 +16,12 @@ import unittest
 import unittest.mock
 
 from dwave.system import DWaveSampler
+from dwave.system.testing import MockDWaveSampler
 from dwave.experimental.multicolor_anneal import (
     get_properties, get_solver_name, SOLVER_FILTER,
+    qubit_to_Advantage2_annealing_line,
 )
+from dwave_networkx import zephyr_coordinates
 
 
 class PropertiesCheckMixin:
@@ -109,3 +112,38 @@ class LiveSmokeTests(unittest.TestCase, PropertiesCheckMixin):
     def test_get_parameters_from_name(self):
         lines = get_properties(get_solver_name())
         self.validate_annealing_lines_properties(lines)
+
+
+    def test_6_line_accuracy(cls):
+        annealing_lines = get_properties(cls.sampler)
+        topology_type = cls.sampler.properties["topology"]["type"]
+        if len(annealing_lines) == 6 and topology_type == "zephyr":
+            shape = cls.sampler.properties["topology"]["shape"]
+            for al_idx, al in enumerate(annealing_lines):
+                self.assertTrue(
+                    all(
+                        qubit_to_Advantage2_annealing_line(n, shape) == al_idx for n in al["qubits"]
+                    )
+                )
+
+
+class UtilsTestWithoutClient(unittest.TestCase):
+
+    def test_line_assignment(self):
+        shape = [3, 2]
+        qpu = MockDWaveSampler(topology_type="zephyr", topology_shape=shape)
+        # 0th qubit is always line 0:
+        assignments = {n: qubit_to_Advantage2_annealing_line(n, shape) for n in qpu.nodelist}
+
+        self.assertSetEqual(
+            set(assignments.values()), set(range(6)), "All 6 lines should be represented"
+        )
+
+        self.assertEqual(assignments[0], 1, "Zeroth qubit should be line 1")
+        test_node = qpu.nodelist[-1]  # could be any
+        test_nodeC = zephyr_coordinates(*shape).linear_to_zephyr(test_node)
+        self.assertEqual(
+            assignments[test_node],
+            qubit_to_Advantage2_annealing_line(test_nodeC, shape, coordinates=True),
+            "Coordinates are handled correctly",
+        )
