@@ -116,7 +116,9 @@ class FluxBiases(unittest.TestCase):
             self.assertNotIn(0, fbh)
             self.assertEqual(len(learning_schedule) + 1, len(fbh[1]))
             num_signed_experiments = 1 + int(symmetrize_experiments)
-            self.assertEqual(len(learning_schedule)*num_signed_experiments, len(mh[1]))
+            self.assertEqual(
+                len(learning_schedule) * num_signed_experiments, len(mh[1])
+            )
             shimmed_variables = [1, 2]
             sampling_params_updates = [{"num_reads": 4}, {}, {"num_reads": 1}]
             num_experiments = len(sampling_params_updates) * num_signed_experiments
@@ -168,6 +170,95 @@ class FluxBiases(unittest.TestCase):
             symmetrize_experiments=False,
         )
         self.assertTrue(all(math.isclose(a, b) for a, b in zip(fbh[0], res[-1])))
+
+    def test_symmetry_detection(self):
+
+        sampler = ShimmingMockSampler(substitute_sampler=SteepestDescentSampler())
+        bqm = dimod.BinaryQuadraticModel("SPIN").from_ising(
+            {sampler.nodelist[0]: 0}, {}
+        )
+        nq = sampler.properties["num_qubits"]
+        sampling_params = {
+            "flux_biases": [0] * nq,
+            "x_polarizing_schedules": [[[0.0, 0.0], [1.0, 0.0]]] * 6,
+        }
+        _, fbh, mh = shim_flux_biases(
+            bqm,
+            sampler,
+            sampling_params=sampling_params,
+            num_steps=1,
+            symmetrize_experiments=True,
+        )
+
+        self.assertTrue(
+            len(fbh[0]) - 1 == len(mh[0]) == 1,
+            "Should detect symmetry, 1 experiment per iteration",
+        )
+
+        # NB: Parameters are not checked for validity beyond their impact on symmetry break:
+        bqmB = dimod.BinaryQuadraticModel("SPIN").from_ising(
+            {sampler.nodelist[0]: 1}, {}
+        )
+        _, fbh, mh = shim_flux_biases(
+            bqmB,
+            sampler,
+            sampling_params=sampling_params,
+            num_steps=1,
+            symmetrize_experiments=True,
+        )
+        self.assertTrue(
+            len(fbh[0]) - 1 == len(mh[0]) // 2 == 1,
+            "Should detect asymmetry, 2 experiment per iteration",
+        )
+
+        sampling_params = {
+            "flux_biases": [0] * nq,
+            "x_polarizing_schedules": [[[0.0, 0.0], [1.0, 0.0]]] * 6,
+            "initial_state": {0: 1},
+        }
+        _, fbh, mh = shim_flux_biases(
+            bqm,
+            sampler,
+            sampling_params=sampling_params,
+            num_steps=1,
+            symmetrize_experiments=True,
+        )
+        self.assertTrue(
+            len(fbh[0]) - 1 == len(mh[0]) // 2 == 1,
+            "Should detect asymmetry, 2 experiment per iteration",
+        )
+
+        sampling_params = {
+            "flux_biases": [1] * nq,
+            "x_polarizing_schedules": [[[0.0, 0.0], [1.0, 0.0]]] * 6,
+        }
+        _, fbh, mh = shim_flux_biases(
+            bqm,
+            sampler,
+            sampling_params=sampling_params,
+            num_steps=1,
+            symmetrize_experiments=True,
+        )
+        self.assertTrue(
+            len(fbh[0]) - 1 == len(mh[0]) // 2 == 1,
+            "Should detect asymmetry, 2 experiment per iteration",
+        )
+
+        sampling_params = {
+            "flux_biases": [0] * nq,
+            "x_polarizing_schedules": [[[0.0, 0.0], [1.0, 1.0]]] * 6,
+        }
+        _, fbh, mh = shim_flux_biases(
+            bqm,
+            sampler,
+            sampling_params=sampling_params,
+            num_steps=1,
+            symmetrize_experiments=True,
+        )
+        self.assertTrue(
+            len(fbh[0]) - 1 == len(mh[0]) // 2 == 1,
+            "Should detect asymmetry, 2 experiment per iteration",
+        )
 
     def test_qubit_freezeout_alpha_phi(self):
         x = qubit_freezeout_alpha_phi()

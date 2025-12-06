@@ -126,7 +126,8 @@ def shim_flux_biases(
     case the hypergradient method is not used.
 
     Symmetry can be broken by the choice of initial condition in reverse
-    annealing, non-zero h, or non-zero flux biases over unshimmed
+    annealing, non-zero h, x_polarizing_schedules (in multicolor annealing),
+    or non-zero flux biases over unshimmed
     fluxes. We can collect data for two experiments, where the symmetry
     breaking is inverted - we can anticipate zero magnetization not per
     experiment but in the experimental average. Shimming based on this
@@ -255,9 +256,14 @@ def shim_flux_biases(
         if hnonzero:
             bqm = bqm.copy()
         reverseanneal = "initial_state" in sampling_params
+        polarizedmca = "x_polarizing_schedules" in sampling_params and any(
+            v != 0 for wfm in sampling_params["x_polarizing_schedules"] for _, v in wfm
+        )
     else:
-        fbnonzero = hnonzero = reverseanneal = False
-    num_signed_experiments = 1 + int(reverseanneal or hnonzero or fbnonzero)
+        fbnonzero = hnonzero = reverseanneal = polarizedmca = False
+    num_signed_experiments = 1 + int(
+        reverseanneal or hnonzero or fbnonzero or polarizedmca
+    )
 
     if sampling_params_updates is None:
         # By default, a single experimental setting:
@@ -271,9 +277,9 @@ def shim_flux_biases(
                 "flux_biases should not be explicitely set"
                 "within sampling_params_updates."
             )
-    num_experiments = num_signed_experiments*len(sampling_params_updates)
+    num_experiments = num_signed_experiments * len(sampling_params_updates)
 
-    use_hypergradient = (learning_schedule is None)
+    use_hypergradient = learning_schedule is None
     if not use_hypergradient:
         num_steps = len(learning_schedule)
     else:
@@ -304,7 +310,11 @@ def shim_flux_biases(
                 if fbnonzero:
                     for i in unshimmed_variables:
                         flux_biases[i] *= -1
-
+                if polarizedmca:
+                    sampling_params["x_polarizing_schedules"] = [
+                        [(t, -v) for t, v in wfm]
+                        for wfm in sampling_params["x_polarizing_schedules"]
+                    ]
                 ss = sampler.sample(bqm, flux_biases=flux_biases, **sampling_params)
                 all_mags = np.sum(
                     ss.record.sample * ss.record.num_occurrences[:, np.newaxis], axis=0
