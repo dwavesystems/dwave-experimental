@@ -48,25 +48,23 @@ class ShimmingMockSampler(MockDWaveSampler):
     See the shimming tutorial and dwave-experimental tests for examples of usage.
     """
 
-    def __init__(
-        self,
-        flux_biases_baseline: Optional[list[float]] = None,
-        **kwargs
-    ):
+    def __init__(self, flux_biases_baseline: Optional[list[float]] = None, **kwargs):
         kwargs.setdefault("topology_type", "zephyr")
         kwargs.setdefault("topology_shape", [6, 4])
 
         kwargs.setdefault("substitute_sampler", SimulatedAnnealingSampler())
-        kwargs.setdefault("substitute_kwargs", {
-            "beta_range": [0, 3],
-            "beta_schedule_type": "linear",
-            "num_sweeps": 100,
-            "randomize_order": True,
-            "proposal_acceptance_criteria": "Gibbs",
-        })
-
+        kwargs.setdefault(
+            "substitute_kwargs",
+            {
+                "beta_range": [0, 3],
+                "beta_schedule_type": "linear",
+                "num_sweeps": 100,
+                "randomize_order": True,
+                "proposal_acceptance_criteria": "Gibbs",
+            },
+        )
         super().__init__(**kwargs)
-
+        self.parameters["x_polarizing_schedules"]: ["parameters"]
         num_qubits = self.properties["num_qubits"]
         if flux_biases_baseline is None:
             self.flux_biases_baseline = [1e-5] * num_qubits
@@ -74,6 +72,7 @@ class ShimmingMockSampler(MockDWaveSampler):
             self.flux_biases_baseline = flux_biases_baseline
         self.sampler_type = "mock"
         self.mocked_parameters.add("flux_biases")
+        self.mocked_parameters.add("x_polarizing_schedules")
 
     def sample(self, bqm, **kwargs):
         """Sample with flux_biases transformed to Ising model linear biases."""
@@ -88,7 +87,9 @@ class ShimmingMockSampler(MockDWaveSampler):
                 ]
 
         if flux_biases is None:
-            ss = super().sample(bqm=bqm, **kwargs)
+            ss = self.substitute_sampler.sample(
+                bqm=bqm, **kwargs
+            )  # super() is too fastidious w.r.t. kwargs
         else:
             _bqm = bqm.change_vartype("SPIN", inplace=False)
             flux_to_h_factor = fluxbias_to_h()
@@ -97,7 +98,9 @@ class ShimmingMockSampler(MockDWaveSampler):
                 bias = _bqm.get_linear(v)
                 _bqm.set_linear(v, bias + flux_to_h_factor * flux_biases[v])
 
-            ss = super().sample(bqm=_bqm, **kwargs)
+            ss = self.substitute_sampler.sample(
+                bqm=_bqm, **kwargs
+            )  # super() is too fastidious w.r.t. kwargs
 
             ss.change_vartype(bqm.vartype)
 
