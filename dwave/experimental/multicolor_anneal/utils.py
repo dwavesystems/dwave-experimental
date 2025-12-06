@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Union
+from typing import Union, Optional
+
+import networkx as nx
+
 from dwave_networkx import zephyr_coordinates
 
 
@@ -61,3 +64,52 @@ def qubit_to_Advantage2_annealing_line(
         u, w, k, j, z = zephyr_coordinates(*shape).linear_to_zephyr(n)
 
     return 3 * u + (1 - 2 * z - j) % 3
+
+
+def make_tds_graph(
+    target_graph: nx.Graph,
+    detected_nodes: Optional[list] = None,
+    sourced_nodes: Optional[list] = None,
+) -> tuple[nx.Graph, dict]:
+    """Decorate a target graph with detectors and sources.
+
+    We add single node source and detector branches to nodes of a target
+    graph.
+
+    Args:
+        target_graph: A networkx target graph
+        detector_nodes: An iterable on the target nodes, if None
+            all target nodes.
+        source_nodes: An iterable on the target nodes, if None
+            all target nodes.
+
+    Returns:
+        A copy of the graph where edges from target nodes (n) are
+        added to ('target', n) and/or ('source', n) nodes.
+
+    Raises:
+        If detected_nodes or sourced_nodes are not in the graph
+        target_graph.
+    """
+
+    if detected_nodes is None:
+        detected_nodes = target_graph.nodes()
+    elif not set(detected_nodes).issubset(target_graph.nodes()):
+        raise ValueError("detected_nodes are not compatible with the target graph")
+
+    if sourced_nodes is None:
+        sourced_nodes = target_graph.nodes()
+    elif not set(sourced_nodes).issubset(target_graph.nodes()):
+        raise ValueError("sourced_nodes are not compatible with the target graph")
+
+    node_to_tds = (
+        {n: "target" for n in target_graph.nodes()}
+        | {("source", n): "source" for n in sourced_nodes}
+        | {("detector", n): "detector" for n in detected_nodes}
+    )
+
+    tds_graph = target_graph.copy()
+    tds_graph.add_edges_from((n, ("detector", n)) for n in detected_nodes)
+    tds_graph.add_edges_from((n, ("source", n)) for n in sourced_nodes)
+
+    return tds_graph, node_to_tds

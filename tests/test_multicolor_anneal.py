@@ -15,11 +15,13 @@
 import unittest
 import unittest.mock
 
+import networkx as nx
+
 from dwave.system import DWaveSampler
 from dwave.system.testing import MockDWaveSampler
 from dwave.experimental.multicolor_anneal import (
     get_properties, get_solver_name, SOLVER_FILTER,
-    qubit_to_Advantage2_annealing_line,
+    qubit_to_Advantage2_annealing_line, make_tds_graph,
 )
 from dwave_networkx import zephyr_coordinates
 
@@ -81,7 +83,9 @@ class MCA(unittest.TestCase, PropertiesCheckMixin):
         class Solver:
             name = "mock-solver"
 
-        client.from_config.return_value.__enter__.return_value.get_solver.return_value = Solver()
+        client.from_config.return_value.__enter__.return_value.get_solver.return_value = (
+            Solver()
+        )
 
         solver_name = get_solver_name()
 
@@ -122,21 +126,26 @@ class LiveSmokeTests(unittest.TestCase, PropertiesCheckMixin):
             for al_idx, al in enumerate(annealing_lines):
                 self.assertTrue(
                     all(
-                        qubit_to_Advantage2_annealing_line(n, shape) == al_idx for n in al["qubits"]
+                        qubit_to_Advantage2_annealing_line(n, shape) == al_idx
+                        for n in al["qubits"]
                     )
                 )
 
 
 class UtilsTestWithoutClient(unittest.TestCase):
 
-    def test_line_assignment(self):
+    def test_qubit_to_Advantage2_annealing_line(self):
         shape = [3, 2]
         qpu = MockDWaveSampler(topology_type="zephyr", topology_shape=shape)
         # 0th qubit is always line 0:
-        assignments = {n: qubit_to_Advantage2_annealing_line(n, shape) for n in qpu.nodelist}
+        assignments = {
+            n: qubit_to_Advantage2_annealing_line(n, shape) for n in qpu.nodelist
+        }
 
         self.assertSetEqual(
-            set(assignments.values()), set(range(6)), "All 6 lines should be represented"
+            set(assignments.values()),
+            set(range(6)),
+            "All 6 lines should be represented",
         )
 
         self.assertEqual(assignments[0], 1, "Zeroth qubit should be line 1")
@@ -147,3 +156,25 @@ class UtilsTestWithoutClient(unittest.TestCase):
             qubit_to_Advantage2_annealing_line(test_nodeC, shape, coordinates=True),
             "Coordinates are handled correctly",
         )
+
+    def test_tds_graph(self):
+        target_graph = nx.from_edgelist([(0, 1)])
+        G, node_to_tds = make_tds_graph(target_graph)
+        for n in node_to_tds:
+            if type(n) is tuple:
+                self.assertEqual(node_to_tds[n], n[0])
+            else:
+                self.assertEqual("target", node_to_tds[n])
+        self.assertEqual(G.number_of_edges(), 5)
+        self.assertEqual(G.number_of_nodes(), 6)
+        detected_nodes = [1]
+        G, node_to_tds = make_tds_graph(
+            target_graph,
+            detected_nodes=detected_nodes,
+        )
+        self.assertEqual(G.number_of_edges(), 4)
+        self.assertEqual(G.number_of_nodes(), 5)
+        sourced_nodes = []
+        G, node_to_tds = make_tds_graph(target_graph, sourced_nodes=sourced_nodes)
+        self.assertEqual(G.number_of_edges(), 3)
+        self.assertEqual(G.number_of_nodes(), 4)
