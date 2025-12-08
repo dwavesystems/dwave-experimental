@@ -2,6 +2,6 @@
 # omit transitive dependencies (e.g. dimod, numpy, dwave-cloud-client, etc.)
 dwave-system==1.34.0    # first to support 3.14
 matplotlib==3.10.5      # first to support 3.14
-
+minorminer==0.2.21      # Requires recent find_subgraph upgrades
 # dev requirements
 reno==4.1.0
