@@ -27,6 +27,7 @@ dependencies = [
     "dwave-samplers>=1,<2",
     "dwave-system>=1.32.0,<2",
     "matplotlib>=3,<4",
+    "minorminer>=0.2.21,<0.3",
     "numpy>=2,<3",
 ]
 # note: 3.14.1 excluded due to a regression bug breaking dataclasses in NetworkX
