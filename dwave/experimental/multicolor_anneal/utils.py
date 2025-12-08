@@ -90,8 +90,8 @@ def make_tds_graph(
         added to ('target', n) and/or ('source', n) nodes.
 
     Raises:
-        If detected_nodes or sourced_nodes are not in the graph
-        target_graph.
+        ValueError: If detected_nodes or sourced_nodes are not in the graph
+            target_graph.
     """
 
     if detected_nodes is None:
