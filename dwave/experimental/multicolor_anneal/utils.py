@@ -18,6 +18,8 @@ import networkx as nx
 
 from dwave_networkx import zephyr_coordinates
 
+__all__ = ["qubit_to_Advantage2_annealing_line", "make_tds_graph"]
+
 
 def qubit_to_Advantage2_annealing_line(
     n: Union[int, tuple], shape: tuple, coordinates=False
