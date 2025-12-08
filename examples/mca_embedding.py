@@ -50,7 +50,7 @@ def main(
 ):
     """Demonstrate 3-examples of multicolor annealing.
 
-    In the first example we demonstrate embedding of a single
+    The first example demonstrates the embedding of a single
     qubit problem in many places on the processor, such that
     every qubit is connected to a source and detector qubit on the
     specified lines.
