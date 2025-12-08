@@ -16,10 +16,10 @@ An example to show embedding for multicolor annealing.
 """
 
 import argparse
-from typing import Union, Optional
 
 import matplotlib.pyplot as plt
 import networkx as nx
+import numpy as np
 
 from dwave.system import DWaveSampler
 from dwave.system.testing import MockDWaveSampler
@@ -27,24 +27,19 @@ from minorminer.subgraph import find_subgraph
 from minorminer.utils.parallel_embeddings import find_multiple_embeddings
 from dwave.experimental.multicolor_anneal import (
     get_properties,
-    get_solver_name,
     SOLVER_FILTER,
     qubit_to_Advantage2_annealing_line,
     make_tds_graph,
 )
 from dwave_networkx import (
-    zephyr_graph,
     draw_zephyr,
     draw_parallel_embeddings,
-    chimera_graph,
-    zephyr_coordinates,
 )
-from hybrid.decomposers import _chimeralike_to_zephyr
 
 
 def main(
     use_client: bool = False,
-    solver: Union[None, dict, str] = None,
+    solver: dict | str | None = None,
     detector_line: int = 0,
     source_line: int = 3,
 ):
@@ -105,7 +100,7 @@ def main(
 
     Tnode_to_tds = {n: target_assignments(n) for n in qpu.nodelist}
     node_color = [colors[line_assignments[n]] for n in T.nodes()]
-    plt.figure("annealing lines")
+    plt.figure("Annealing lines")
     draw_zephyr(T, node_color=node_color, node_size=5, edge_color="grey")
 
     print(
@@ -124,7 +119,7 @@ def main(
     node_color = [
         colors[line_assignments[n]] if n in used_nodes else "grey" for n in T.nodes()
     ]
-    plt.figure("Parallel Embedding")
+    plt.figure("Parallel Embedding of many decoupled D-T-S models")
     draw_parallel_embeddings(T, embeddings=embs, S=S, node_color=node_color)
 
     print(
@@ -134,13 +129,30 @@ def main(
     L = 64
     target_graph = nx.from_edgelist((i, (i + 1) % L) for i in range(L))
     S, Snode_to_tds = make_tds_graph(target_graph)
+    
+    plt.figure("A loop decorated with sources and detectors")
+    colors_S = {'target': 'k', 'source': colors[source_line], 'detector': colors[detector_line]}
+    def loop_pos(n):
+        if type(n) is tuple:
+            if n[0] == 'detector':
+                mult = 1.2
+            else:
+                mult = 0.8
+            return (mult*np.cos(2*np.pi*n[1]/L), mult*np.sin(2*np.pi*n[1]/L))
+            
+        else:
+            return (np.cos(2*np.pi*n/L), np.sin(2*np.pi*n/L))
+    pos = {n: loop_pos(n) for n in S.nodes()}
+    node_color = [colors_S[Snode_to_tds[n]] for n in S.nodes()] 
+    nx.draw_networkx(S, node_color=node_color, pos=pos, with_labels=False, node_size=640/L)
+
     subgraph_kwargs = dict(node_labels=(Snode_to_tds, Tnode_to_tds), as_embedding=True)
     emb = find_subgraph(S, T, **subgraph_kwargs)
     used_nodes = {v[0] for v in emb.values()}
     node_color = [
         colors[line_assignments[n]] if n in used_nodes else "grey" for n in T.nodes()
     ]
-    plt.figure("Loop embedding")
+    plt.figure("The embedded loop with detectors and sources")
     draw_parallel_embeddings(T, embeddings=[emb], S=S, node_color=node_color)
 
     plt.show()
