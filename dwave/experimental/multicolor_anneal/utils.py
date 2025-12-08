@@ -60,7 +60,7 @@ def qubit_to_Advantage2_annealing_line(
         >>>     assert(all(qubit_to_Advantage2_annealing_line(n)==al_idx for al_idx, al in enumerate(annealing_lines) for n in al['qubits']))            # doctest: +SKIP
     """
 
-    if coordinates:
+    if isinstance(n, tuple):
         u, w, k, j, z = n
     else:
         u, w, k, j, z = zephyr_coordinates(*shape).linear_to_zephyr(n)
