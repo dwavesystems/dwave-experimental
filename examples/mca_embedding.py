@@ -54,7 +54,8 @@ def main(
     qubit problem in many places on the processor, such that
     every qubit is connected to a source and detector qubit on the
     specified lines.
-
+    The second example embeds a loop of 64 target qubits with each target coupled
+    to a source and detector qubit.
     Args:
         use_client: Whether or not to use a specific solver. If
             True, the solver field is used to establish a client
