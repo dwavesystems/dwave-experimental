@@ -7,5 +7,5 @@ features:
 
     A utility is added that assigns anneal lines to Advantage2 processor
     nodes under the 6-annealing line scheme most often used. This function
-    does not require a client, but is compatible with client returned
+    does not require a client, but is compatible with client-returned
     color assignments.
