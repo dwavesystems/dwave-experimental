@@ -127,7 +127,7 @@ def main(
     draw_parallel_embeddings(T, embeddings=embs, S=S, node_color=node_color)
 
     print(
-        "Embed a loop of length 64, with a source and detector"
+        "Embed a loop of length 64, with a source and detector "
         "associated to every qubit Embedding for a ring of length L."
     )
     L = 64
