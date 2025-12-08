@@ -70,8 +70,8 @@ def qubit_to_Advantage2_annealing_line(
 
 def make_tds_graph(
     target_graph: nx.Graph,
-    detected_nodes: Optional[list] = None,
-    sourced_nodes: Optional[list] = None,
+    detected_nodes: list[int] | None = None,
+    sourced_nodes: list[int] | None = None,
 ) -> tuple[nx.Graph, dict]:
     """Decorate a target graph with detectors and sources.
 
