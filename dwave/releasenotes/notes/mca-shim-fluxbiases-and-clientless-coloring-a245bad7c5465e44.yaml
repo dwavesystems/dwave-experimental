@@ -1,8 +1,8 @@
 ---
 features:
   - |
-    "x_polarizing_schedules" in sampling_params is detected as a
-    symmetry breaking parameter, allow the symmetry detection functinoality
+    "x_polarizing_schedules" in ``sampling_params`` is detected as a
+    symmetry-breaking parameter, allowing the symmetry-detection functionality
     in shimming routines to operate correctly for multicolor annealing.
 
     A utility is added that assigns anneal lines to Advantage2 processor
