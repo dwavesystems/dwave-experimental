@@ -48,7 +48,7 @@ def main(
     detector_line: int = 0,
     source_line: int = 3,
 ):
-    """Demonstrate 3-examples of multicolor annealing.
+    """Examples of multicolor annealing.
 
     The first example demonstrates the embedding of a single
     qubit problem in many places on the processor, such that
