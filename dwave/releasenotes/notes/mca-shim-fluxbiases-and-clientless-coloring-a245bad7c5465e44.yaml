@@ -9,3 +9,6 @@ features:
     nodes under the 6-annealing line scheme most often used. This function
     does not require a client, but is compatible with client-returned
     color assignments.
+other:
+  - |
+    Add examples of embedding graphs with line-wise assignment restrictions.
