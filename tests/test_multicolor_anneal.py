@@ -20,31 +20,18 @@ import networkx as nx
 from dwave.system import DWaveSampler
 from dwave.system.testing import MockDWaveSampler
 from dwave.experimental.multicolor_anneal import (
-    get_properties,
-    get_solver_name,
-    SOLVER_FILTER,
-    qubit_to_Advantage2_annealing_line,
-    make_tds_graph,
+    get_properties, get_solver_name, SOLVER_FILTER,
+    qubit_to_Advantage2_annealing_line, make_tds_graph,
 )
 from dwave_networkx import zephyr_coordinates
-
-# SOLVER_FILTER = {}
-# get_solver_name = lambda x: 'BAY21_Z6_XINTERNAL_ALPHA'
 
 
 class PropertiesCheckMixin:
 
     properties = [
-        "annealingLine",
-        "minTimeStep",
-        "depolarizationAnnealScheduleRequiredDelay",
-        "holdOvershootFor",
-        "minCOvershoot",
-        "maxCOvershoot",
-        "maxC",
-        "minC",
-        "scheduleDelayStep",
-        "qubits",
+        'annealingLine', 'minTimeStep', 'depolarizationAnnealScheduleRequiredDelay',
+        'holdOvershootFor', 'minCOvershoot', 'maxCOvershoot', 'maxC', 'minC',
+        'scheduleDelayStep', 'qubits'
     ]
 
     def validate_annealing_lines_properties(self, data):
@@ -54,8 +41,8 @@ class PropertiesCheckMixin:
         for i in range(n_lines):
             for p in self.properties:
                 self.assertIn(p, data[i])
-            self.assertEqual(data[i]["annealingLine"], i)
-            self.assertGreater(len(data[i]["qubits"]), 0)
+            self.assertEqual(data[i]['annealingLine'], i)
+            self.assertGreater(len(data[i]['qubits']), 0)
 
 
 class MCA(unittest.TestCase, PropertiesCheckMixin):
@@ -67,46 +54,36 @@ class MCA(unittest.TestCase, PropertiesCheckMixin):
     def test_sampler_properties(self):
         n_lines = 6
         n_qubits = 100
-        info = [
-            {
-                "annealingLine": i,
-                "minTimeStep": 0.01,
-                "depolarizationAnnealScheduleRequiredDelay": 2.0,
-                "holdOvershootFor": 0.02,
-                "minCOvershoot": -7.0,
-                "maxCOvershoot": 8.0,
-                "maxC": 3.0,
-                "minC": -2.0,
-                "scheduleDelayStep": 1e-06,
-                "qubits": list(range(i * 100, (i + 1) * 100)),
-            }
-            for i in range(n_lines)
-        ]
+        info = [{'annealingLine': i,
+                 'minTimeStep': 0.01,
+                 'depolarizationAnnealScheduleRequiredDelay': 2.0,
+                 'holdOvershootFor': 0.02,
+                 'minCOvershoot': -7.0,
+                 'maxCOvershoot': 8.0,
+                 'maxC': 3.0,
+                 'minC': -2.0,
+                 'scheduleDelayStep': 1e-06,
+                 'qubits': list(range(i*100, (i+1)*100))} for i in range(n_lines)]
 
         with unittest.mock.MagicMock() as sampler:
-            sampler.solver.edges = [(0, 1)]
-            sampler.solver.sample_qubo.return_value.result.return_value = dict(
-                x_get_multicolor_annealing_exp_feature_info=info
-            )
+            sampler.solver.edges = [(0,1)]
+            sampler.solver.sample_qubo.return_value.result.return_value = \
+                dict(x_get_multicolor_annealing_exp_feature_info=info)
 
             lines = get_properties(sampler)
 
             self.assertEqual(len(lines), n_lines)
-            self.assertTrue(all(lines[i]["annealingLine"] == i for i in range(n_lines)))
-            self.assertTrue(
-                all(len(lines[i]["qubits"]) == n_qubits for i in range(n_lines))
-            )
+            self.assertTrue(all(lines[i]['annealingLine'] == i for i in range(n_lines)))
+            self.assertTrue(all(len(lines[i]['qubits']) == n_qubits for i in range(n_lines)))
 
             self.validate_annealing_lines_properties(lines)
 
-    @unittest.mock.patch("dwave.experimental.fast_reverse_anneal.api.Client")
+    @unittest.mock.patch('dwave.experimental.fast_reverse_anneal.api.Client')
     def test_default_solver_name(self, client):
         class Solver:
             name = "mock-solver"
 
-        client.from_config.return_value.__enter__.return_value.get_solver.return_value = (
-            Solver()
-        )
+        client.from_config.return_value.__enter__.return_value.get_solver.return_value = Solver()
 
         solver_name = get_solver_name()
 
@@ -120,7 +97,7 @@ class LiveSmokeTests(unittest.TestCase, PropertiesCheckMixin):
         try:
             cls.sampler = DWaveSampler(solver=SOLVER_FILTER)
         except:
-            raise unittest.SkipTest("Multicolor annealing solver not available.")
+            raise unittest.SkipTest('Multicolor annealing solver not available.')
 
     @classmethod
     def tearDownClass(cls):
@@ -137,6 +114,7 @@ class LiveSmokeTests(unittest.TestCase, PropertiesCheckMixin):
     def test_get_parameters_from_name(self):
         lines = get_properties(get_solver_name())
         self.validate_annealing_lines_properties(lines)
+
 
     def test_6_line_accuracy(cls):
         annealing_lines = get_properties(cls.sampler)
