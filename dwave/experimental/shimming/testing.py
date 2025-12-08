@@ -64,7 +64,7 @@ class ShimmingMockSampler(MockDWaveSampler):
             },
         )
         super().__init__(**kwargs)
-        self.parameters["x_polarizing_schedules"]: ["parameters"]
+        self.parameters["x_polarizing_schedules"] = ["parameters"]
         num_qubits = self.properties["num_qubits"]
         if flux_biases_baseline is None:
             self.flux_biases_baseline = [1e-5] * num_qubits

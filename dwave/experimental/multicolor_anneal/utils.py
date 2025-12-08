@@ -18,9 +18,11 @@ import networkx as nx
 
 from dwave_networkx import zephyr_coordinates
 
+__all__ = ["qubit_to_Advantage2_annealing_line", "make_tds_graph"]
+
 
 def qubit_to_Advantage2_annealing_line(
-    n: Union[int, tuple], shape: tuple, coordinates=False
+    n: int | tuple, shape: tuple, coordinates: bool = False
 ) -> int:
     """Return the annealing line associated to an Advantage2 qubit
 
@@ -58,7 +60,7 @@ def qubit_to_Advantage2_annealing_line(
         >>>     assert(all(qubit_to_Advantage2_annealing_line(n)==al_idx for al_idx, al in enumerate(annealing_lines) for n in al['qubits']))            # doctest: +SKIP
     """
 
-    if coordinates:
+    if isinstance(n, tuple):
         u, w, k, j, z = n
     else:
         u, w, k, j, z = zephyr_coordinates(*shape).linear_to_zephyr(n)
@@ -68,8 +70,8 @@ def qubit_to_Advantage2_annealing_line(
 
 def make_tds_graph(
     target_graph: nx.Graph,
-    detected_nodes: Optional[list] = None,
-    sourced_nodes: Optional[list] = None,
+    detected_nodes: list[int] | None = None,
+    sourced_nodes: list[int] | None = None,
 ) -> tuple[nx.Graph, dict]:
     """Decorate a target graph with detectors and sources.
 
@@ -88,8 +90,8 @@ def make_tds_graph(
         added to ('target', n) and/or ('source', n) nodes.
 
     Raises:
-        If detected_nodes or sourced_nodes are not in the graph
-        target_graph.
+        ValueError: If detected_nodes or sourced_nodes are not in the graph
+            target_graph.
     """
 
     if detected_nodes is None:
