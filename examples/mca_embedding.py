@@ -48,13 +48,14 @@ def main(
     detector_line: int = 0,
     source_line: int = 3,
 ):
-    """Demonstrate 3-examples of multicolor annealing.
+    """Examples of multicolor annealing.
 
-    In the first example we demonstrate embedding of a single
+    The first example demonstrates the embedding of a single
     qubit problem in many places on the processor, such that
     every qubit is connected to a source and detector qubit on the
     specified lines.
-
+    The second example embeds a loop of 64 target qubits with each target coupled
+    to a source and detector qubit.
     Args:
         use_client: Whether or not to use a specific solver. If
             True, the solver field is used to establish a client
@@ -68,8 +69,8 @@ def main(
 
     Raises:
         ValueError: If the number of lines is less than 3, or
-        ValueError: If the detector_line or source_line is not in
-            the range [0, num_lines)
+            if ``detector_line`` or ``source_line`` is not in
+            range [0, ``num_lines``).
     """
 
     # when available, use feature-based search to default the solver.
@@ -127,7 +128,7 @@ def main(
     draw_parallel_embeddings(T, embeddings=embs, S=S, node_color=node_color)
 
     print(
-        "Embed a loop of length 64, with a source and detector"
+        "Embed a loop of length 64, with a source and detector "
         "associated to every qubit Embedding for a ring of length L."
     )
     L = 64
