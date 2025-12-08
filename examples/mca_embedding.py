@@ -68,8 +68,8 @@ def main(
 
     Raises:
         ValueError: If the number of lines is less than 3, or
-        ValueError: If the detector_line or source_line is not in
-            the range [0, num_lines)
+            if ``detector_line`` or ``source_line`` is not in
+            range [0, ``num_lines``).
     """
 
     # when available, use feature-based search to default the solver.
