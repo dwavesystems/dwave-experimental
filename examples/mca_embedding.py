@@ -105,7 +105,7 @@ def main(
 
     print(
         "Embed many single-target variable problems, with a source and detector"
-        "associated to every qubit."
+        " associated to every qubit."
     )
     target_graph = nx.Graph()
     target_graph.add_node(0)
