@@ -22,7 +22,7 @@ __all__ = ["qubit_to_Advantage2_annealing_line", "make_tds_graph"]
 
 
 def qubit_to_Advantage2_annealing_line(
-    n: Union[int, tuple], shape: tuple, coordinates=False
+    n: int | tuple, shape: tuple, coordinates: bool = False
 ) -> int:
     """Return the annealing line associated to an Advantage2 qubit
 
