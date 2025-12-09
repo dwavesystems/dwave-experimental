@@ -19,13 +19,11 @@ from dwave_networkx import zephyr_coordinates
 __all__ = ["qubit_to_Advantage2_annealing_line", "make_tds_graph"]
 
 
-def qubit_to_Advantage2_annealing_line(
-    n: int | tuple, shape: tuple, coordinates: bool = False
-) -> int:
+def qubit_to_Advantage2_annealing_line(n: int | tuple, shape: tuple) -> int:
     """Return the annealing line associated to an Advantage2 qubit
 
     Advantage2 processors can allow for multicolor annealing based in
-    some cases on a 6-line control schme. Compatibility with this
+    some cases on a 6-line control scheme. Compatibility with this
     scheme should be confirmed using a solver API or release notes.
     Based on the Zephyr coordinate system (u,w,k,j,z), a qubit
     can be uniquely assigned a color. u denotes qubit orientation
@@ -33,11 +31,9 @@ def qubit_to_Advantage2_annealing_line(
     dwave_networkx.zephyr_graph and dwave_networkx.zephyr_coordinates
 
     Args:
-        n: qubit label
+        n: qubit label, as an integer, or a Zephyr coordinate as a 5-tuple
         shape: Advantage2 processor shape, accessible as a solver
             property properties['topology']['shape']
-        coordinates: label format, if False the labeling is an integer
-            if True the Zephyr coordinate labeling scheme is used.
 
     Returns:
         Integer annealing line assignment for Advantage2 processors

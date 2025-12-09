@@ -117,12 +117,11 @@ class LiveSmokeTests(unittest.TestCase, PropertiesCheckMixin):
         lines = get_properties(get_solver_name())
         self.validate_annealing_lines_properties(lines)
 
-
-    def test_6_line_accuracy(cls):
-        annealing_lines = get_properties(cls.sampler)
-        topology_type = cls.sampler.properties["topology"]["type"]
+    def test_6_line_accuracy(self):
+        annealing_lines = get_properties(self.sampler)
+        topology_type = self.sampler.properties["topology"]["type"]
         if len(annealing_lines) == 6 and topology_type == "zephyr":
-            shape = cls.sampler.properties["topology"]["shape"]
+            shape = self.sampler.properties["topology"]["shape"]
             for al_idx, al in enumerate(annealing_lines):
                 self.assertTrue(
                     all(
@@ -153,7 +152,7 @@ class UtilsTestWithoutClient(unittest.TestCase):
         test_nodeC = zephyr_coordinates(*shape).linear_to_zephyr(test_node)
         self.assertEqual(
             assignments[test_node],
-            qubit_to_Advantage2_annealing_line(test_nodeC, shape, coordinates=True),
+            qubit_to_Advantage2_annealing_line(test_nodeC, shape),
             "Coordinates are handled correctly",
         )
 
