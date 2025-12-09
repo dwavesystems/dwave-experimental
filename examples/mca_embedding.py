@@ -155,6 +155,18 @@ def main(
     plt.figure("The embedded loop with detectors and sources")
     draw_parallel_embeddings(T, embeddings=[emb], S=S, node_color=node_color)
 
+    print('Identify nodes that are each attached to atleast one source and one'
+          ' detector. These might be shared amongst target nodes of a complex'
+          ' model (in this case a Chimera graph).')
+    def has_source_and_detector(T, n):
+        return any(line_assignments[nn] == detector_line for nn in T.neighbors(n)) and any(line_assignments[nn] == source_line for nn in T.neighbors(n)) 
+    Tsub = T.subgraph({n for n in T.nodes() if has_source_and_detector(T,n)}).copy()  # Keep only nodes connected to both a source and detector
+    emb = {n: (n,) for n in Tsub.nodes()}
+    plt.figure('Chimera: a complex graph allowing reconfigurable detectors and sources')
+    Tsub.add_nodes_from(T.nodes())
+    node_color = [colors[line_assignments[n]] if line_assignments[n]==detector_line or line_assignments[n]==source_line else 'grey' for n in T.nodes()]
+    draw_parallel_embeddings(T, embeddings=[emb], S=Tsub, node_color=node_color)
+
     plt.show()
 
 
