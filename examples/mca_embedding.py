@@ -42,6 +42,7 @@ def main(
     solver: dict | str | None = None,
     detector_line: int = 0,
     source_line: int = 3,
+    biclique_target_lines: set = {0, 3},
 ):
     """Examples of multicolor annealing.
 
@@ -51,6 +52,15 @@ def main(
     specified lines.
     The second example embeds a loop of 64 target qubits with each target coupled
     to a source and detector qubit.
+    The third example shows embedding of a chimera like graph where every
+    target node has a coupling available to a source and target line. Sources
+    might be shared in principle, but there are insufficient detectors to
+    measure all target qubits simultaneously (a subset must be chosen per
+    experiment).
+
+    In the fourth example we embed a biclique on two lines, with the remaining
+    lines used as detectors. There are no sources.
+
     Args:
         use_client: Whether or not to use a specific solver. If
             True, the solver field is used to establish a client
@@ -61,7 +71,10 @@ def main(
         solver: Name of the solver, or dictionary of characteristics.
         detector_line: The integer index of the detector line.
         source_line: The integer index of the source line.
-
+        biclique_target_lines: a pair of lines used for embedding a
+            a biclique. The remaining lines are used as detectors.
+            Subject to device yield limitations, a biclique of size
+            up to K_{8,8} is possible.
     Raises:
         ValueError: If the number of lines is less than 3, or
             if ``detector_line`` or ``source_line`` is not in
@@ -89,7 +102,7 @@ def main(
     cmap = plt.colormaps.get_cmap("plasma")
     colors = [cmap(i / (num_lines - 1)) for i in range(num_lines)]
 
-    def target_assignments(n: int):
+    def T_line_assignments(n: int):
         line = line_assignments[n]
         if line == detector_line:
             return "detector"
@@ -98,7 +111,7 @@ def main(
         else:
             return "target"
 
-    Tnode_to_tds = {n: target_assignments(n) for n in qpu.nodelist}
+    Tnode_to_tds = {n: T_line_assignments(n) for n in qpu.nodelist}
     node_color = [colors[line_assignments[n]] for n in T.nodes()]
     plt.figure("Annealing lines")
     draw_zephyr(T, node_color=node_color, node_size=5, edge_color="grey")
@@ -129,22 +142,33 @@ def main(
     L = 64
     target_graph = nx.from_edgelist((i, (i + 1) % L) for i in range(L))
     S, Snode_to_tds = make_tds_graph(target_graph)
-    
+
     plt.figure("A loop decorated with sources and detectors")
-    colors_S = {'target': 'k', 'source': colors[source_line], 'detector': colors[detector_line]}
-    def loop_pos(n):
+    colors_S = {
+        "target": "k",
+        "source": colors[source_line],
+        "detector": colors[detector_line],
+    }
+
+    def loop_pos(n, n_range):
         if type(n) is tuple:
-            if n[0] == 'detector':
+            if n[0] == "detector":
                 mult = 1.2
             else:
                 mult = 0.8
-            return (mult*np.cos(2*np.pi*n[1]/L), mult*np.sin(2*np.pi*n[1]/L))
-            
+            return (
+                mult * np.cos(2 * np.pi * n[1] / n_range),
+                mult * np.sin(2 * np.pi * n[1] / n_range),
+            )
+
         else:
-            return (np.cos(2*np.pi*n/L), np.sin(2*np.pi*n/L))
-    pos = {n: loop_pos(n) for n in S.nodes()}
-    node_color = [colors_S[Snode_to_tds[n]] for n in S.nodes()] 
-    nx.draw_networkx(S, node_color=node_color, pos=pos, with_labels=False, node_size=640/L)
+            return (np.cos(2 * np.pi * n / n_range), np.sin(2 * np.pi * n / n_range))
+
+    pos = {n: loop_pos(n, L) for n in S.nodes()}
+    node_color = [colors_S[Snode_to_tds[n]] for n in S.nodes()]
+    nx.draw_networkx(
+        S, node_color=node_color, pos=pos, with_labels=False, node_size=640 / L
+    )
 
     subgraph_kwargs = dict(node_labels=(Snode_to_tds, Tnode_to_tds), as_embedding=True)
     emb = find_subgraph(S, T, **subgraph_kwargs)
@@ -155,17 +179,70 @@ def main(
     plt.figure("The embedded loop with detectors and sources")
     draw_parallel_embeddings(T, embeddings=[emb], S=S, node_color=node_color)
 
-    print('Identify nodes that are each attached to atleast one source and one'
-          ' detector. These might be shared amongst target nodes of a complex'
-          ' model (in this case a Chimera graph).')
+    print(
+        "Identify nodes that are each attached to atleast one source and one"
+        " detector. These might be shared amongst target nodes of a complex"
+        " model (in this case a Chimera graph)."
+    )
+
     def has_source_and_detector(T, n):
-        return any(line_assignments[nn] == detector_line for nn in T.neighbors(n)) and any(line_assignments[nn] == source_line for nn in T.neighbors(n)) 
-    Tsub = T.subgraph({n for n in T.nodes() if has_source_and_detector(T,n)}).copy()  # Keep only nodes connected to both a source and detector
+        return any(
+            line_assignments[nn] == detector_line for nn in T.neighbors(n)
+        ) and any(line_assignments[nn] == source_line for nn in T.neighbors(n))
+
+    Tsub = T.subgraph(
+        {n for n in T.nodes() if has_source_and_detector(T, n)}
+    ).copy()  # Keep only nodes connected to both a source and detector
     emb = {n: (n,) for n in Tsub.nodes()}
-    plt.figure('Chimera: a complex graph allowing reconfigurable detectors and sources')
+    plt.figure("Chimera: a complex graph allowing reconfigurable detectors and sources")
     Tsub.add_nodes_from(T.nodes())
-    node_color = [colors[line_assignments[n]] if line_assignments[n]==detector_line or line_assignments[n]==source_line else 'grey' for n in T.nodes()]
+    node_color = [
+        (
+            colors[line_assignments[n]]
+            if line_assignments[n] == detector_line
+            or line_assignments[n] == source_line
+            else "grey"
+        )
+        for n in T.nodes()
+    ]
     draw_parallel_embeddings(T, embeddings=[emb], S=Tsub, node_color=node_color)
+
+    m = 8
+    print(
+        "Embed a K_{m,m} on two lines, with detectors on the other four lines."
+        f"m={m} for this example."
+    )
+    target_graph = nx.from_edgelist([(i, j) for i in range(m) for j in range(m, 2 * m)])
+    S, Snode_to_td = make_tds_graph(target_graph, sourced_nodes=[])  # No source nodes.
+
+    def T_line_assignments(n: int):
+        line = line_assignments[n]
+        if line in biclique_target_lines:
+            return "target"
+        else:
+            return "detector"
+
+    Tnode_to_td = {n: T_line_assignments(n) for n in qpu.nodelist}
+
+    subgraph_kwargs = dict(node_labels=(Snode_to_td, Tnode_to_td), as_embedding=True)
+    emb = find_subgraph(S, T, **subgraph_kwargs)
+    if emb:
+        pos = {n: loop_pos(n, 2 * m) for n in S.nodes()}
+        plt.figure("A fully detected clique, with no sources")
+        nx.draw_networkx(S, pos)
+
+        used_nodes = {v[0] for v in emb.values()}
+        node_color = [
+            colors[line_assignments[n]] if n in used_nodes else "grey"
+            for n in T.nodes()
+        ]
+        plt.figure("A clique on two lines, detected by qubits on the remaining 4 lines")
+        draw_parallel_embeddings(T, embeddings=[emb], S=S, node_color=node_color)
+    else:
+        print(
+            "For the choice of biclique target lines and yield pattern "
+            f"a K {m} {m} embedding was not found."
+        )
 
     plt.show()
 
