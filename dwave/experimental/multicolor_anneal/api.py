@@ -26,25 +26,26 @@ __all__ = ['SOLVER_FILTER', 'get_solver_name', 'get_properties']
 
 def get_properties(sampler: DWaveSampler | Solver | str | None = None
                    ) -> list[dict[str, Any]]:
-    """For a given sampler/solver, return the multicolor anneal properties
-    for each of the available annealing lines.
+    """Return multicolor-annealing properties for each annealing line.
 
     Args:
         sampler:
-            A :class:`~dwave.system.DWaveSampler` sampler that supports the multicolor
-            anneal (MCA) protocol. Alternatively, a :class:`dwave.cloud.Solver`
-            solver can be provided, or a solver name string. If unspecified,
-            :attr:`.SOLVER_FILTER` is used to fetch an MCA-enabled solver.
+            A :class:`~dwave.system.samplers.DWaveSampler` sampler that supports
+            the multicolor annealing (MCA) protocol. Alternatively, you can
+            specify a :class:`~dwave.cloud.solver.StructuredSolver` solver or a
+            solver name. If unspecified, :data:`.SOLVER_FILTER` is used to fetch
+            an MCA-enabled solver.
 
     Returns:
-        Annealing line properties for all available anneal lines, formatted
-        as list of dicts in ascending order of anneal-line index.
+        Annealing-line properties for all available annealing lines, formatted
+        as list of dicts in ascending order of annealing-line index.
 
     Examples:
-        Retrieve MCA annealing lines' properties for a default solver, and
-        print the number of anneal lines and first qubits on anneal line 0.
+        Retrieve MCA properties for the annealing lines of a default solver, and
+        print the number of lines and first qubits on line 0.
 
         >>> from dwave.experimental import multicolor_anneal as mca
+        ...
         >>> annealing_lines = mca.get_properties()
         >>> len(annealing_lines)            # doctest: +SKIP
         6
