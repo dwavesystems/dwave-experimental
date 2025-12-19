@@ -27,7 +27,7 @@ SOLVER_FILTER = dict(name__regex=r'Advantage2_prototype2.*|Advantage2_research1\
 """Filter for an available solver that supports advanced annealing features.
 
 Feature-based solver selection returns the first available solver that supports
-features such as multicolor annealing.
+features such as fast reverse annealing.
 
 .. note:: currently SAPI does not support filtering for solvers with
     :ref:`experimental research <qpu_experimental_research>` features, so a
