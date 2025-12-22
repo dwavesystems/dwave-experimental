@@ -54,9 +54,7 @@ def load_schedules(solver_name: Optional[str] = None) -> dict[float, dict[str, f
     Args:
         solver_name:
             Name of a QPU solver that supports fast
-            reverse annealing. If unspecified, the default solver is used.
-
-            If ``solver_name`` is not specified, a call to SAPI is made to
+            reverse annealing. If unspecified, a call to SAPI is made to
             determine the default solver (a QPU that supports fast reverse
             annealing) .
 
@@ -64,7 +62,13 @@ def load_schedules(solver_name: Optional[str] = None) -> dict[float, dict[str, f
         A dict mapping supported values of the
         :ref:`parameter_qpu_nominal_pause_time` parameter to dicts of parameters
         that can be used to approximate the (linear-exponential) annealing
-        schedule of the QPU.
+        schedule of the QPU. For example::
+
+            {0.0: {'a': -51.04360118925347,
+                'c2': 9821.41471886313,
+                'nominal_pause_time': 0.0,
+                't_min': 1.0234109310649393},
+            ...}
 
     Examples:
         Obtain the schedule-approximation parameters for the default solver that
