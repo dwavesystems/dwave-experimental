@@ -52,7 +52,8 @@ def load_schedules(solver_name: Optional[str] = None) -> dict[float, dict[str, f
     |fra_approximation_params|
 
     Args:
-        solver_name: Name, as a string, of a QPU solver that supports fast
+        solver_name:
+            Name of a QPU solver that supports fast
             reverse annealing. If unspecified, the default solver is used.
 
             If ``solver_name`` is not specified, a call to SAPI is made to
