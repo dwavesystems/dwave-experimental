@@ -52,9 +52,8 @@ def load_schedules(solver_name: Optional[str] = None) -> dict[float, dict[str, f
     |fra_approximation_params|
 
     Args:
-        solver_name:
-            Name, as a string, of a QPU solver that supports fast reverse
-            annealing. If unspecified, the default solver is used.
+        solver_name: Name, as a string, of a QPU solver that supports fast
+            reverse annealing. If unspecified, the default solver is used.
 
             If ``solver_name`` is not specified, a call to SAPI is made to
             determine the default solver (a QPU that supports fast reverse
@@ -111,10 +110,8 @@ def linex(
     r"""Approximate the fast-reverse-annealing schedule at a given time.
 
     Uses a linear-exponential ("linex") function to approximate a
-    fast-reverse-annealing schedule.
-
-    Fast-reverse-annealing schedules can be approximated with the following
-    linear exponential function,
+    fast-reverse-annealing schedule with the following linear-exponential
+    function,
 
     |fra_approximation_formula|\ ,
 
@@ -131,11 +128,7 @@ def linex(
         The linear-exponential function evaluated at ``t``.
 
     Examples:
-        Evaluate the fast-reverse-annealing schedule at 0.025 microseconds.
-
-        >>> from dwave.experimental import fast_reverse_anneal as fra
-        ...
-        >>> c = fra.linex(0.025, a=-0.15, c2=4770, t_min=1.035, c0=0)
+        See source code of the :func:`c_vs_t` function for a usage example.
     """
     return c0 + 2*c2/a**2*(numpy.exp(a*(t - t_min)) - a*(t - t_min) - 1)
 
@@ -148,24 +141,41 @@ def c_vs_t(
     upper_bound: float = 1.0,
     schedules: Optional[dict[str, float]] = None,
 ) -> numpy.typing.ArrayLike:
-    """Time-dependence of the normalized control bias c(s) in linear-exponential
+    """Calculate the approximate normalized control bias.
+
+    Approximates the time-dependent normalized control bias :math:`c(s)` using a
+    linear-exponential function, :func:`.linex`, for simulating
     fast-reverse-anneal waveforms.
 
     Args:
         t:
-            Discrete time (in microseconds), given as a scalar or an array.
+            Discrete time, in microseconds, as a scalar or an array.
         target_c:
-            The lowest value of the normalized control bias, `c(s)`, reached
-            during a fast reverse annealing.
+            The lowest value of the normalized control bias, :math:`c(s)`,
+            reached during a fast reverse annealing.
         nominal_pause_time:
-            Pause duration, in microseconds, for the fast-reverse-annealing schedule.
+            Pause duration, in microseconds, for the fast-reverse-annealing
+            schedule.
         upper_bound:
             Waveform's upper bound.
         schedules:
-            Schedule family parameters, as returned by :meth:`.load_schedules`.
+            Schedule family parameters, as returned by the
+            :func:`.load_schedules` function.
 
     Returns:
         Schedule waveform approximation evaluated at ``t``.
+
+    Examples:
+        Obtain an estimated normalized control bias :math:`c(s)`, at time 0.022,
+        for a waveform that reaches :math:`c(s)=0` at its lowest point and
+        nominally pauses there for 0.02 microsecond.
+
+        >>> from dwave.experimental import fast_reverse_anneal as fra
+        ...
+        >>> c = c_vs_t(0.022,
+        ...     target_c=0.0,
+        ...     nominal_pause_time=0.02,
+        ...     schedules=fra.schedule.load_schedules())
 
     """
     if schedules is None:
@@ -185,20 +195,23 @@ def plot_schedule(
     schedules: Optional[dict[str, float]] = None,
     figure: Optional[matplotlib.pyplot.Figure] = None,
 ) -> matplotlib.pyplot.Figure:
-    """Plot the approximate fast reverse schedule for a given ``target_c`` and
-    ``nominal_pause_time``, using time grid ``t``, optionally adding to figure
-    ``fig``.
+    """Plot the approximate fast-reverse waveform.
 
-    Example::
-        import numpy
-        import matplotlib.pyplot as plt
-        from dwave.experimental.fast_reverse_anneal import plot_schedule
+    Creates a plot of the approximate fast-reverse waveform for a given
+    ``target_c`` and ``nominal_pause_time``, using time grid ``t``, optionally
+    adding to an existing figure ``figure``.
 
-        t = numpy.arange(1.0, 1.04, 1e-4)
-        fig = plot_schedule(t, target_c=0.0)
-        plt.show()
+    Example:
 
-    See also: ``examples/plot_schedule.py``.
+        >>> import numpy
+        >>> import matplotlib.pyplot as plt                     # doctest: +SKIP
+        >>> from dwave.experimental.fast_reverse_anneal import plot_schedule
+        ...
+        >>> t = numpy.arange(1.0, 1.04, 1e-4)
+        >>> fig = plot_schedule(t, target_c=0.0)                # doctest: +SKIP
+        >>> plt.show()                                          # doctest: +SKIP
+
+    See also: `examples directory <https://github.com/dwavesystems/dwave-experimental/tree/main/examples>`_.
     """
 
     if figure is None:
