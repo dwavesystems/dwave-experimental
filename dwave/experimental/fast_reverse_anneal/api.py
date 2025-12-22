@@ -24,27 +24,36 @@ __all__ = ['SOLVER_FILTER', 'get_solver_name', 'get_parameters']
 
 
 SOLVER_FILTER = dict(name__regex=r'Advantage2_prototype2.*|Advantage2_research1\..*')
-"""Feature-based solver selection filter to return the first available solver
-that supports fast reverse annealing.
+"""Filter for an available solver that supports advanced annealing features.
 
-Note: currently SAPI doesn't provide a nice way to filter solvers with prototype
-features (like fast reverse anneal), so we need to defer to a simple pattern
-matching.
+Feature-based solver selection returns the first available solver that supports
+features such as fast reverse annealing.
+
+.. note:: currently SAPI does not support filtering for solvers with
+    :ref:`experimental research <qpu_experimental_research>` features, so a
+    simple pattern matching is used.
 
 Example::
-    from dwave.system import DWaveSampler
-    from dwave.experimental import fast_reverse_anneal as fra
-
-    with DWaveSampler(solver=fra.SOLVER_FILTER) as sampler:
-        sampler.sample(...)
+    >>> from dwave.system import DWaveSampler
+    >>> from dwave.experimental import fast_reverse_anneal as fra
+    ...
+    >>> with DWaveSampler(solver=fra.SOLVER_FILTER) as sampler: # doctest: +SKIP
+            sampler.sample(...)
 """
 
 
 @cache
 def get_solver_name() -> str:
-    """Return the name of a solver that supports fast reverse anneal.
+    """Return the name of a solver that supports advanced annealing features.
 
-    Note: the result is memoized, so the API is queried only on first call.
+    The result is memoized, so the API is queried only on first call.
+
+    Examples:
+
+        >>> from dwave.experimental.fast_reverse_anneal import get_solver_name
+        ...
+        >>> print(get_solver_name())                # doctest: +SKIP
+        Advantage2_research1.4
     """
     with Client.from_config() as client:
         solver = client.get_solver(**SOLVER_FILTER)
@@ -53,30 +62,30 @@ def get_solver_name() -> str:
 
 def get_parameters(sampler: Optional[Union[DWaveSampler, Solver, str]] = None,
                    ) -> dict[str, Any]:
-    """For a given sampler (or solver), return the available fast annealing
-    parameters and their expanded info.
+    """Return available fast-reverse-annealing parameters and their information.
 
     Args:
         sampler:
-            A :class:`~dwave.system.DWaveSampler` sampler that supports the fast
-            reverse anneal (FRA) protocol. Alternatively, a :class:`dwave.cloud.Solver`
-            solver can be provided, or a solver name. If unspecified,
-            :attr:`.SOLVER_FILTER` is used to fetch a FRA-enabled solver.
+            A :class:`~dwave.system.samplers.DWaveSampler` sampler that supports
+            the fast-reverse-anneal (FRA) protocol. Alternatively, you can
+            specify a :class:`~dwave.cloud.solver.StructuredSolver` solver or a
+            solver name. If unspecified, :data:`.SOLVER_FILTER` is used to fetch
+            an FRA-enabled solver.
 
     Returns:
-        Each parameter available is described with: a data type, value limits,
-        an is-required flag, a default value if it's optional, and a short text
+        Each parameter available is described with its data type, value limits,
+        an is-required flag, a default value (if it's optional), and a short
         description.
 
     Examples:
-        Use an instantiated :class:`~dwave.system.DWaveSampler` sampler:
+        Use an instantiated :class:`~dwave.system.samplers.DWaveSampler`
+        sampler:
 
-        .. code:: python
-            from dwave.system import DWaveSampler
-            from dwave.experimental import fast_reverse_anneal as fra
-
-            with DWaveSampler() as sampler:
-                param_info = fra.get_parameters(sampler)
+        >>> from dwave.system import DWaveSampler
+        >>> from dwave.experimental import fast_reverse_anneal as fra
+        ...
+        >>> with DWaveSampler() as sampler:             # doctest: +SKIP
+        ...    param_info = fra.get_parameters(sampler)
     """
 
     # inelegant, but convenient extensions
