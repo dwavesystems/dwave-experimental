@@ -46,10 +46,10 @@ def get_properties(sampler: DWaveSampler | Solver | str | None = None
 
         >>> from dwave.experimental import multicolor_anneal as mca
         ...
-        >>> annealing_lines = mca.get_properties()
-        >>> len(annealing_lines)            # doctest: +SKIP
+        >>> annealing_lines = mca.get_properties()      # doctest: +SKIP
+        >>> len(annealing_lines)                        # doctest: +SKIP
         6
-        >>> annealing_lines[0]['qubits']    # doctest: +SKIP
+        >>> annealing_lines[0]['qubits']                # doctest: +SKIP
         [2, 6, 9, 14, 17, 18, ...]
     """
 
