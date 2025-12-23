@@ -34,29 +34,52 @@ def _get_schedules_data() -> dict[str, dict]:
 
 
 def load_schedules(solver_name: Optional[str] = None) -> dict[float, dict[str, float]]:
-    """Return per-solver approximation parameters for a family of fast reverse
-    annealing schedules.
+    r"""Return fast-reverse-annealing schedule-approximation parameters.
+
+    The approximation parameters are for all allowed values of pause duration,
+    and used in the following formula,
+
+    .. |fra_approximation_formula| replace:: :math:`f(t) = c_0 + \frac{2 c_2}{a^2}
+        \left(e^{a(t - t_{\min})} - a(t - t_{\min}) - 1\right)`
+
+    .. |fra_approximation_params| replace:: where :math:`t` is discrete time, in
+        microseconds, :math:`c_0` is an ordinate offset coefficient, :math:`c_2`
+        is a quadratic ordinate coefficient, :math:`a` is an asymmetry
+        parameter, and :math:`t_{\text{min}}` is a time offset parameter.
+
+    |fra_approximation_formula|\ ,
+
+    |fra_approximation_params|
 
     Args:
         solver_name:
-            Name of a QPU solver that supports fast reverse annealing.
-            If unspecified, the default solver is used.
+            Name of a QPU solver that supports fast
+            reverse annealing. If unspecified, a call to SAPI is made to
+            determine the default solver (a QPU that supports fast reverse
+            annealing) .
 
     Returns:
-        A dict mapping allowed ``nominal_pause_time`` values to a schedule
-        approximation curve (linear-exponential) parameters dict. For example:
+        A dict mapping supported values of the
+        :ref:`parameter_qpu_nominal_pause_time` parameter to dicts of parameters
+        that can be used to approximate the (linear-exponential) annealing
+        schedule of the QPU. For example::
 
-        {0.0: {'a': -51.04360118925347,
-               'c2': 9821.41471886313,
-               'nominal_pause_time': 0.0,
-               't_min': 1.0234109310649393},
-         ...}
+            {0.0: {'a': -51.04360118925347,
+                'c2': 9821.41471886313,
+                'nominal_pause_time': 0.0,
+                't_min': 1.0234109310649393},
+            ...}
 
-         See :meth:`.linex` for parameters description.
+    Examples:
+        Obtain the schedule-approximation parameters for the default solver that
+        supports fast reverse annealing.
 
-    Note:
-        When ``solver_name`` is not specified, a call to SAPI has to be made to
-        determine the default (fast reverse anneal) solver.
+        >>> from dwave.experimental import fast_reverse_anneal as fra
+        ...
+        >>> param_002 = fra.schedule.load_schedules()[0.02]
+        >>> list(param_002.keys())
+        ['nominal_pause_time', 'a', 'c2', 't_min']
+        >>> tmin_002 = param_002['t_min']
 
     """
     if solver_name is None:
@@ -89,24 +112,28 @@ def linex(
     a: float,
     t_min: float,
 ) -> numpy.typing.ArrayLike:
-    r"""Linear-exponential (linex) function used to approximate a
-    fast-reverse-annealing schedule.
+    r"""Approximate the fast-reverse-annealing schedule at a given time.
 
-    Fast-reverse-annealing schedules can be approximated with the following
-    linear exponential function:
+    Uses a linear-exponential ("linex") function to approximate a
+    fast-reverse-annealing schedule with the following linear-exponential
+    function,
 
-    .. math::
-        f(t) = c_0 + \frac{2 c_2}{a^2} \left(e^{a(t - t_{\min})} - a(t - t_{\min}) - 1\right)
+    |fra_approximation_formula|\ ,
+
+    |fra_approximation_params|
 
     Args:
-        t: Discrete time (in microseconds), given as a scalar or an array.
-        c0: Ordinate offset coefficient.
-        c2: Quadratic ordinate coefficient.
-        a: Asymmetry parameter.
-        t_min: Time offset parameter.
+        t: Discrete time, in microseconds, as a scalar or an array.
+        c0: :math:`c_0` is an ordinate offset coefficient.
+        c2: :math:`c_2` is a quadratic ordinate coefficient.
+        a: :math:`a` is an asymmetry parameter.
+        t_min: :math:`t_{\text{min}}` is a time offset parameter.
 
     Returns:
         The linear-exponential function evaluated at ``t``.
+
+    Examples:
+        See source code of the :func:`c_vs_t` function for a usage example.
     """
     return c0 + 2*c2/a**2*(numpy.exp(a*(t - t_min)) - a*(t - t_min) - 1)
 
@@ -119,24 +146,41 @@ def c_vs_t(
     upper_bound: float = 1.0,
     schedules: Optional[dict[str, float]] = None,
 ) -> numpy.typing.ArrayLike:
-    """Time-dependence of the normalized control bias c(s) in linear-exponential
+    """Calculate the approximate normalized control bias.
+
+    Approximates the time-dependent normalized control bias :math:`c(s)` using a
+    linear-exponential function, :func:`.linex`, for simulating
     fast-reverse-anneal waveforms.
 
     Args:
         t:
-            Discrete time (in microseconds), given as a scalar or an array.
+            Discrete time, in microseconds, as a scalar or an array.
         target_c:
-            The lowest value of the normalized control bias, `c(s)`, reached
-            during a fast reverse annealing.
+            The lowest value of the normalized control bias, :math:`c(s)`,
+            reached during a fast reverse annealing.
         nominal_pause_time:
-            Pause duration, in microseconds, for the fast-reverse-annealing schedule.
+            Pause duration, in microseconds, for the fast-reverse-annealing
+            schedule.
         upper_bound:
             Waveform's upper bound.
         schedules:
-            Schedule family parameters, as returned by :meth:`.load_schedules`.
+            Schedule family parameters, as returned by the
+            :func:`.load_schedules` function.
 
     Returns:
         Schedule waveform approximation evaluated at ``t``.
+
+    Examples:
+        Obtain an estimated normalized control bias :math:`c(s)`, at time 0.022,
+        for a waveform that reaches :math:`c(s)=0` at its lowest point and
+        nominally pauses there for 0.02 microsecond.
+
+        >>> from dwave.experimental import fast_reverse_anneal as fra
+        ...
+        >>> c = c_vs_t(0.022,
+        ...     target_c=0.0,
+        ...     nominal_pause_time=0.02,
+        ...     schedules=fra.schedule.load_schedules())
 
     """
     if schedules is None:
@@ -156,20 +200,23 @@ def plot_schedule(
     schedules: Optional[dict[str, float]] = None,
     figure: Optional[matplotlib.pyplot.Figure] = None,
 ) -> matplotlib.pyplot.Figure:
-    """Plot the approximate fast reverse schedule for a given ``target_c`` and
-    ``nominal_pause_time``, using time grid ``t``, optionally adding to figure
-    ``fig``.
+    """Plot the approximate fast-reverse waveform.
 
-    Example::
-        import numpy
-        import matplotlib.pyplot as plt
-        from dwave.experimental.fast_reverse_anneal import plot_schedule
+    Creates a plot of the approximate fast-reverse waveform for a given
+    ``target_c`` and ``nominal_pause_time``, using time grid ``t``, optionally
+    adding to an existing figure ``figure``.
 
-        t = numpy.arange(1.0, 1.04, 1e-4)
-        fig = plot_schedule(t, target_c=0.0)
-        plt.show()
+    Example:
 
-    See also: ``examples/plot_schedule.py``.
+        >>> import numpy
+        >>> import matplotlib.pyplot as plt                     # doctest: +SKIP
+        >>> from dwave.experimental.fast_reverse_anneal import plot_schedule
+        ...
+        >>> t = numpy.arange(1.0, 1.04, 1e-4)
+        >>> fig = plot_schedule(t, target_c=0.0)                # doctest: +SKIP
+        >>> plt.show()                                          # doctest: +SKIP
+
+    See also: `examples directory <https://github.com/dwavesystems/dwave-experimental/tree/main/examples>`_.
     """
 
     if figure is None:
