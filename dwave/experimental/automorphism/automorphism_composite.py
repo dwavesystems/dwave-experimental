@@ -14,7 +14,7 @@
 
 """
 This module contains an automorphism composite that can make use of
-either the Schreier Sims representation of the automorphism_generation.py
+either the Schreier-Sims representation of the automorphism_generation.py
 module, or a (generator, degree) format where the generator is a dictionary.
 This generator should later be moved to dwave.preprocessing.composites to
 work alongside SpinReversalTransformComposite - since it serves a closely
@@ -400,7 +400,7 @@ def sample_automorphisms_listtuple(generators_listtuple, *, prng=None, mapping=N
     Generators for Chimera, Pegasus and Zephyr graphs are not abelian, but can
     be ordered to allow for similar fair sampling. See the respective generator methods
     of this module.
-    For more general cases it is recommended to fairly sample by the Screier-Sims
+    For more general cases it is recommended to fairly sample by the Schreier-Sims
     method of automorphism_generation.py module.
 
     Generators are specified as dictionaries (1:1 mappings), with some known
@@ -592,7 +592,6 @@ class AutomorphismComposite(ComposedSampler):
                     raise ValueError("idx_to_node should have contiguous integer keys")
             result = schreier_rep(
                 nx.relabel_nodes(G, {n: idx for idx, n in self.idx_to_node.items()}),
-                num_samples=G.number_of_nodes(),
             )
             self.generators_u_vector = result.u_vector
         elif generators_u_vector is not None:
@@ -686,7 +685,7 @@ class AutomorphismComposite(ComposedSampler):
                 to no automorphism.
 
             num_automorphisms:
-                When mappings is not given, specifies teh number of mappings to
+                When mappings is not given, specifies the number of mappings to
                 apply (create). If mappings is provided, it
                 is inferred as :code:`len(mappings)`, otherwise it is defaulted
                 to 1.

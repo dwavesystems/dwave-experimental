@@ -17,7 +17,6 @@ An example to show noise mitigation by use of automorphic averaging
 
 import os
 import argparse
-
 import pickle
 
 import networkx as nx
