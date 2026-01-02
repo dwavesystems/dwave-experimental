@@ -151,7 +151,7 @@ def main(
     }
 
     def loop_pos(n, n_range):
-        if type(n) is tuple:
+        if isinstance(n, tuple):
             if n[0] == "detector":
                 mult = 1.2
             else:
@@ -180,7 +180,7 @@ def main(
     draw_parallel_embeddings(T, embeddings=[emb], S=S, node_color=node_color)
 
     print(
-        "Identify nodes that are each attached to atleast one source and one"
+        "Identify nodes that are each attached to at least one source and one"
         " detector. These might be shared amongst target nodes of a complex"
         " model (in this case a Chimera graph)."
     )
@@ -210,7 +210,7 @@ def main(
     m = 8
     print(
         "Embed a K_{m,m} on two lines, with detectors on the other four lines."
-        f"m={m} for this example."
+        f" m={m} for this example."
     )
     target_graph = nx.from_edgelist([(i, j) for i in range(m) for j in range(m, 2 * m)])
     S, Snode_to_td = make_tds_graph(target_graph, sourced_nodes=[])  # No source nodes.
