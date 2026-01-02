@@ -42,7 +42,7 @@ def main(
     solver: dict | str | None = None,
     detector_line: int = 0,
     source_line: int = 3,
-    biclique_target_lines: set = {0, 3},
+    biclique_target_lines: set | None = None,
 ):
     """Examples of multicolor annealing.
 
@@ -74,7 +74,7 @@ def main(
         biclique_target_lines: a pair of lines used for embedding a
             a biclique. The remaining lines are used as detectors.
             Subject to device yield limitations, a biclique of size
-            up to K_{8,8} is possible.
+            up to K_{8,8} is possible. {2,3} by default.
     Raises:
         ValueError: If the number of lines is less than 3, or
             if ``detector_line`` or ``source_line`` is not in
@@ -96,6 +96,8 @@ def main(
             n: qubit_to_Advantage2_annealing_line(n, shape) for n in qpu.nodelist
         }
         num_lines = 6
+    if biclique_target_lines is None:
+        biclique_target_lines = {0, 3}
     # Plot the colored graph:
     T = qpu.to_networkx_graph()
 
@@ -215,14 +217,10 @@ def main(
     target_graph = nx.from_edgelist([(i, j) for i in range(m) for j in range(m, 2 * m)])
     S, Snode_to_td = make_tds_graph(target_graph, sourced_nodes=[])  # No source nodes.
 
-    def T_line_assignments(n: int):
-        line = line_assignments[n]
-        if line in biclique_target_lines:
-            return "target"
-        else:
-            return "detector"
-
-    Tnode_to_td = {n: T_line_assignments(n) for n in qpu.nodelist}
+    Tnode_to_td = {
+        n: "target" if line_assignments[n] in biclique_target_lines else "detector"
+        for n in qpu.nodelist
+    }
 
     subgraph_kwargs = dict(node_labels=(Snode_to_td, Tnode_to_td), as_embedding=True)
     emb = find_subgraph(S, T, **subgraph_kwargs)

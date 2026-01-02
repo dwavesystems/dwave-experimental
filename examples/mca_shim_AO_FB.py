@@ -41,10 +41,10 @@ from dwave.experimental.shimming import shim_flux_biases
 
 def _make_anneal_schedules(
     exp_feature_info: list,
-    target_c: float=0.37,
-    times: list[float] | tuple[float] =(0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0),
-    line_detector: int=0,
-    line_source:int=3,
+    target_c: float = 0.37,
+    times: list[float] | tuple[float] = (0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0),
+    line_detector: int = 0,
+    line_source: int = 3,
 ):
     """Set annealing schedules suitable for Larmour precision.
 
@@ -53,7 +53,7 @@ def _make_anneal_schedules(
     """
 
     num_lines = len(exp_feature_info)
-    min_time_step = exp_feature_info[0]["minTimeStep"]
+    min_time_step = exp_feature_info[0]["minAnnealingTimeStep"]
     if len(times) != 7 or np.min(np.diff(times)) < 2 * min_time_step:
         raise ValueError("Format assumes 7 times each separated by atleast 2 minStep")
 
@@ -96,7 +96,11 @@ def _make_anneal_schedules(
 
 
 def _make_polarizing_schedules(
-    line_source: int, num_lines: int=6, *, sign_polarization: int=1, times: list[float] | tuple[float] =(0.0, 1.0, 2.0, 6.0)
+    line_source: int,
+    num_lines: int = 6,
+    *,
+    sign_polarization: int = 1,
+    times: list[float] | tuple[float] = (0.0, 1.0, 2.0, 6.0),
 ):
     """Set polzarizing schedules suitable for Larmour precision.
 
@@ -116,7 +120,14 @@ def _make_polarizing_schedules(
     return polarization_schedules
 
 
-def _calc_anneal_offsets(frequencies: np.ndarray, psd: np.ndarray, target_A: float, dAdc:float, Amin: float|None =None, Amax: float | None=None):
+def _calc_anneal_offsets(
+    frequencies: np.ndarray,
+    psd: np.ndarray,
+    target_A: float,
+    dAdc: float,
+    Amin: float | None = None,
+    Amax: float | None = None,
+):
     """Determine the anneal_offset necessary to synchronize frequency.
 
     After fully decoupling from the source, the signal is expected to be
@@ -154,11 +165,11 @@ def _calc_anneal_offsets(frequencies: np.ndarray, psd: np.ndarray, target_A: flo
         Amin = target_A / 2
     if Amax is None:
         Amax = target_A * 1.5
-        
+
     Afilter = np.logical_and(frequencies < Amax, frequencies > Amin)
-    mean_A_est = np.sum(psd[:, Afilter] * frequencies[Afilter][np.newaxis, :], axis=1) / np.sum(
-        psd[:, Afilter], axis=1
-    )
+    mean_A_est = np.sum(
+        psd[:, Afilter] * frequencies[Afilter][np.newaxis, :], axis=1
+    ) / np.sum(psd[:, Afilter], axis=1)
     mu = np.mean(mean_A_est)
     print("Standard deviation in A estimates", np.sqrt(np.var(mean_A_est)))
     print()
@@ -250,7 +261,7 @@ def plot_shim(
             process for every embedding.
         flux_history: the flux_biases assignments throughout the iterative
             process for every embedding.
-        num_experiments: Number of programmings per flux iteration. Using 1 
+        num_experiments: Number of programmings per flux iteration. Using 1
             by default it should be noted that 2 magnetizations may be
             be measured per step in flux_biases.
         fname: a filename to which to save data, mag or fb is prepended for
@@ -264,7 +275,8 @@ def plot_shim(
         (mag_array.shape[0], mag_array.shape[1] // num_experiments, num_experiments),
     )
 
-    plt.figure(r"Magnetization by iteration, $\langle Z\rangle_{detector}$")
+    plt.figure()
+    plt.title(r"Magnetization by iteration, $\langle Z\rangle_{detector}$")
     for experiment_sign in range(num_experiments):
         if num_experiments > 1:
             plt.plot(
@@ -291,7 +303,8 @@ def plot_shim(
     if fname is not None:
         plt.savefig(f"mag_{fname}")
 
-    plt.figure("all_fluxes")
+    plt.figure()
+    plt.title("All detector flux_biases")
     plt.plot(flux_array.transpose())
     plt.xlabel("Shim iteration")
     plt.ylabel("Flux bias ($\\Phi_0$)")
@@ -309,10 +322,10 @@ def main(
     target_c: float = 0.37,
     no_flux_biases: bool = False,
     no_anneal_offsets: bool = False,
-    delay_min: float=0.005,
-    delay_max: float=0.015,
-    delay_min_fit: float | None=None,
-    delay_max_fit: float | None=None,
+    delay_min: float = 0.005,
+    delay_max: float = 0.015,
+    delay_min_fit: float | None = None,
+    delay_max_fit: float | None = None,
     fn_schedule: str = "09-1317A-D_Advantage2_research1_4_annealing_schedule.xlsx",
 ):
     """Demonstrate t-d-s variability and mitigation strategies
@@ -326,7 +339,7 @@ def main(
     Methods are demonstrated for synchronization of frequency with
     use of anneal offsets incorporating a simple decoherence model, and
     shimming of a detector flux bias to restore symmetry.
-    
+
     Higher accuracy shimming, and shimming of target flux_biases may also be
     desirable, but are beyond the scope of the example. Note that we can
     use simple statistic to determine flux_bias assignment on a detector
@@ -337,29 +350,60 @@ def main(
     maximized.
 
     Args:
-        use_client: Whether or not to use a specific solver. If
-            True, the solver field is used to establish a client
-            connection, and embedding proceeds with respect to the
-            associated solver graph. If False the code runs locally
-            using a defect-free Advantage2 processor graph at a
-            Zephyr[6] scale, using the standard 6-anneal line scheme.
-        solver: Name of the solver, or dictionary of characteristics.
-        line_detector: The integer index of the detector line.
-        line_source: The integer index of the source line.
+        use_cache:
+            Flag to enable caching of experimental data. If set to True a directory
+            cache/ is created which is populated with experimental data. The cache
+            is checked for compatible experimental data before running an experiment,
+            and if compatible data is present the data is reloaded rather than
+            running new jobs through the client.
+        solver:
+            Name of the solver, or dictionary of characteristics.
+        line_detector:
+            The integer index of the detector line.
+        line_source:
+            The integer index of the source line.
+        target_c:
+            normalized control bias at which the target qubits are held
+        no_flux_biases:
+            When set to True, flux_biases are not modified. When False flux_biases
+            are modified on detector qubits to achived zero expected magnetization at
+            long delay.
+        no_anneal_offsets:
+            When set to True, anneal_offsets are not modified. When False anneal_offsets
+            are modified so that the peak power-spectral density is peaked at a common
+            value for all qubits. This peak values characterizes the frequency of the target
+            qubit in simple well-calibratied models.
+        delay_min: The delay on the detector line for which data is collected.
+        delay_max: The maximum delay on the detector line for which data is collected. Between
+            delay_min and delay_max the spacing in time reflects the target frequency that we
+            are seeking to resolve for anneal_offset refinement.
+        delay_min_fit:
+            A lower bound on the timeseries window used for inference of the target power spectral density.
+            A value that is too small can bias the estimator by introduction of effects related
+            to coupling to the source line.
+        delay_max_fit:
+            An upper bound on the timeseries window used for inference of the target power spectral density.
+            Too large a value reduces the efficiency of the estimator, since delays much larger than the
+            T1 coherence time are dominated by noise.
+        fn_schedule: A schedule file that is used to estimate an appropriate sampling interval for delay
+            time and an appropriate scale for anneal_offset synchronization. This should be matched to the
+            solver.
 
     Raises:
         ValueError: If the number of lines is less than 3, or
         if the line_detector or line_source is not in
             the range [0, num_lines)
     """
-    print('A variety of plots are shown to demonstrate heuristic correction of '
-          'flux_biases on detectors, and target qubit frequency '
-          'desynchronization, from small amounts of data. ')
-    if args.delay_max_fit is None:
+    print(
+        "A variety of plots are shown to demonstrate heuristic correction of "
+        "flux_biases on detectors, and target qubit frequency "
+        "desynchronization, from small amounts of data. "
+    )
+    if delay_max_fit is None:
         delay_max_fit = delay_max  # Can be automated for SNR in principle.
     elif delay_max_fit > delay_max:
         raise ValueError("Fit window exceeds data window")
-    if args.delay_min_fit is None:
+    if delay_min_fit is None:
         delay_min_fit = delay_min  # Can be automated for SNR in principle.
     elif delay_min_fit < delay_min:
         raise ValueError("Fit window exceeds data window")
@@ -369,13 +413,14 @@ def main(
     qpu_anneal_schedule = pd.read_excel(
         fn_schedule, sheet_name="Fast-Annealing Schedule"
     )
-    plt.figure("schedule")
+    plt.figure()
+    plt.title("Schedule")
     delta_vs_s = qpu_anneal_schedule[::-1]
     plt.plot(delta_vs_s["s"], delta_vs_s["A(s) (GHz)"], label="A(s)")
     plt.plot(delta_vs_s["s"], delta_vs_s["B(s) (GHz)"], label="B(s)")
     target_A = np.interp(
         1 - target_c, 1 - delta_vs_s["s"], delta_vs_s["A(s) (GHz)"]
-    )  # Expected frequency of detector magnetization oscillations 
+    )  # Expected frequency of detector magnetization oscillations
     target_B = np.interp(1 - target_c, 1 - delta_vs_s["s"], delta_vs_s["B(s) (GHz)"])
     print("Schedule predictions: ", "A(c)", target_A, "B(c)", target_B)
     print()
@@ -422,7 +467,6 @@ def main(
     plt.xlim([0, 1])
     plt.legend()
 
-    
     qpu = DWaveSampler(solver=solver)
     zephyr_shape = qpu.properties["topology"]["shape"]
     exp_feature_info = get_properties(qpu)
@@ -460,7 +504,7 @@ def main(
     )
 
     print(
-        "Determine many T-D-S embeddings appropriate for parallel programming (see mca_embeddding.py example)"
+        "Determine many T-D-S embeddings appropriate for parallel programming (see mca_embedding.py example)."
     )
     print()
     T = qpu.to_networkx_graph()
@@ -484,11 +528,9 @@ def main(
     )
     # Reorder by target line for ease of analysis:
     embs_by_line = {i: [] for i in range(num_lines)}
-    for i in range(len(embs)):
-        q = embs[i][0][0]
-        embs_by_line[qubit_to_Advantage2_annealing_line(q, zephyr_shape)].append(
-            embs[i]
-        )
+    for i, emb in enumerate(embs):
+        q = emb[0][0]
+        embs_by_line[qubit_to_Advantage2_annealing_line(q, zephyr_shape)].append(emb)
     embs = [emb for i in range(num_lines) for emb in embs_by_line[i]]
 
     sampler = ParallelEmbeddingComposite(qpu, embeddings=embs)
@@ -497,7 +539,7 @@ def main(
     delays = np.linspace(delay_min, delay_max, round((delay_max - delay_min) / dt) + 1)
 
     # Demonstrate some data for simple model y(t) = cos(2 pi A [t + t0]) exp(- [t + t0]/d):
-    delays_ns = 5*np.random.random() + 1000 * delays
+    delays_ns = 5 * np.random.random() + 1000 * delays
     ld = len(delays_ns)
     frequencies = np.arange(ld) / dt / 1000 / ld
     decay_time_ns = 20
@@ -515,19 +557,20 @@ def main(
                 label = f"A={A:.3g}"
             else:
                 continue
-            plt.figure("Simple model data: y=cos(2pi A t)exp(-t/T)+sampling error (approx. Lorentzian)")
+
+            plt.figure("y=cos(2pi A t)exp(-t/T)+sampling error")
             plt.title("y=cos(2pi A t)exp(-t/T)+sampling error")
             plt.plot(delays_ns, signal, label=label)
             plt.xlabel("Time, microseconds")
             plt.ylabel(r"Magnetization, $\langle Z \rangle_{detector}$")
             plt.legend()
+
             plt.figure("Simple model data (PSD) ~ A/((f-A)^2 + A^2)")
             plt.title("Approx Lorentzian power spectral density ~ A/((f-A)^2 + A^2)")
             psd = np.abs(np.fft.fft(signal)) ** 2 / len(signal)
             plt.plot(frequencies[: ld // 2], psd[: ld // 2], label=label)
             plt.ylabel(rf"Power Spectral Density, $|\langle Z\rangle(\omega)|^2$")
             plt.xlabel(r"Frequency ($\omega$), GHz")
-    
             plt.legend()
 
     bqm = dimod.BinaryQuadraticModel("SPIN").from_ising(
@@ -567,15 +610,6 @@ def main(
             qpu_parameters["x_schedule_delays"][
                 line_detector
             ] = 0.1  # Documented limit.
-            with open("DebugForBrendand.pkl", "wb") as f:
-                pickle.dump(
-                    dict(
-                        bqm=bqm_embedded,
-                        sampling_params=qpu_parameters,
-                        shimmed_variables=shimmed_variables,
-                    ),
-                    f,
-                )
             flux_biases, flux_history, mag_history = shim_flux_biases(
                 bqm=bqm_embedded,
                 sampler=qpu,
@@ -616,13 +650,32 @@ def main(
             for i in range(len(embs))
         ]
     ) / (last - first)
-    
-    print('Plot real space data in 3 formats, and the power spectral density estimated by a discrete Fourier transform')
-    plt.figure("First 3 embedding")
-    plt.plot(delays * 1000, mean_Z_detector[:, 0:3])
+
+    print(
+        "Plot real space data in 3 formats, and the power spectral density estimated by a discrete Fourier transform"
+    )
+
+    plt.figure()
+    plt.title("Time series for several qubits using distinct target lines")
+    line_targets = set()
+    for idx, emb in enumerate(embs):
+        q = emb[0][0]
+        line_target = qubit_to_Advantage2_annealing_line(q, zephyr_shape)
+        if line_target not in line_targets:
+            plt.plot(
+                delays * 1000,
+                mean_Z_detector[:, idx],
+                color=line_color[line_target],
+                label=f"target line {line_target}",
+            )
+            line_targets.add(line_target)
     plt.ylabel("Detector magnetizations")
     plt.xlabel("Detector delay, ns")
-    plt.figure("Real space")
+    plt.legend()
+    plt.grid()
+
+    plt.figure()
+    plt.title("Real space magnetizations (divergent color scheme)")
     plt.imshow(mean_Z_detector, vmin=-1, vmax=1, cmap="RdBu")
     yticks_dict = {
         first: f"{1000 * delays[first]:.3g}",
@@ -637,8 +690,9 @@ def main(
     )
     plt.xlabel("Target-Detector-Source embedding")
     plt.ylabel("Delay, nanoseconds")
-    # Higher contrast near zero with default:
-    plt.figure("Real space (higher contrast)")
+
+    plt.figure()
+    plt.title("Real space magnetizations (higher contrast color scheme)")
     plt.imshow(mean_Z_detector[first:last, :])
     yticks_dictN = {
         0: f"{1000 * delays[first]:.3g}",
@@ -651,12 +705,22 @@ def main(
     plt.xlabel("Target-Detector-Source embedding")
     plt.ylabel("Delay, nanoseconds")
 
-    plt.figure("Fourier space")
-    for i in range(len(embs)):
-        q = embs[i][0][0]
+    plt.figure()
+    plt.title("Power associated to magnetization time series")
+    lines_represented = set()
+    for i, emb in enumerate(embs):
+        q = emb[0][0]
         line_target = qubit_to_Advantage2_annealing_line(q, zephyr_shape)
+        if line_target in lines_represented:
+            label = None
+        else:
+            label = f"target-qubit line={line_target}"
+            lines_represented.add(line_target)
         plt.plot(
-            frequencies[: ld // 2], psd[i, : ld // 2], color=line_color[line_target]
+            frequencies[: ld // 2],
+            psd[i, : ld // 2],
+            color=line_color[line_target],
+            label=label,
         )
     plt.plot(
         [target_A, target_A],
@@ -669,6 +733,7 @@ def main(
     plt.ylabel(rf"Power Spectral Density, $|\langle Z\rangle(\omega)|^2$")
     plt.xlabel(r"Frequency ($\omega$), GHz")
     plt.grid(True)
+
     # Calculate anneal_offsets for synchronization
     if not no_anneal_offsets:
         anneal_offsets = _calc_anneal_offsets(
@@ -695,13 +760,32 @@ def main(
                 for i in range(len(embs))
             ]
         ) / (last - first)
-        print('Plot real space data in 3 formats, and the power spectral density estimated by a discrete Fourier transform')
-        plt.figure("First 3 embedding after anneal offsets")
-        plt.plot(delays * 1000, mean_Z_detector[:, 0:3])
+
+        print(
+            "Plot real space data in 3 formats, and the power spectral density estimated by a discrete Fourier transform"
+        )
+
+        plt.figure()
+        plt.title("Time series after anneal_offsets")
+        line_targets = set()
+        for i, emb in enumerate(embs):
+            q = emb[0][0]
+            line_target = qubit_to_Advantage2_annealing_line(q, zephyr_shape)
+            if line_target not in line_targets:
+                plt.plot(
+                    delays * 1000,
+                    mean_Z_detector[:, i],
+                    color=line_color[line_target],
+                    label=f"target line {line_target}",
+                )
+                line_targets.add(line_target)
         plt.ylabel("Detector magnetizations")
         plt.xlabel("Detector delay, ns")
+        plt.legend()
+        plt.grid()
 
-        plt.figure("Real space after anneal offsets")
+        plt.figure()
+        plt.title("Real space magnetizations after anneal offsets")
         plt.imshow(mean_Z_detector, vmin=-1, vmax=1, cmap="RdBu")
         plt.yticks(
             list(yticks_dict.keys()),
@@ -710,7 +794,8 @@ def main(
         plt.xlabel("Target-Detector-Source embedding")
         plt.ylabel("Delay, nanoseconds")
 
-        plt.figure("Real space after anneal offsets (higher contrast)")
+        plt.figure()
+        plt.title("Real space magnetizations after anneal offsets")
         plt.imshow(mean_Z_detector[first:last, :])
         plt.yticks(
             list(yticks_dictN.keys()),
@@ -719,12 +804,22 @@ def main(
         plt.xlabel("Target-Detector-Source embedding")
         plt.ylabel("Delay, nanoseconds")
 
-        plt.figure("Fourier space after anneal offsets")
-        for i in range(len(embs)):
-            q = embs[i][0][0]
+        plt.figure()
+        plt.title("Power associated to magnetization time series after anneal offsets")
+        lines_represented = set()
+        for i, emb in enumerate(embs):
+            q = emb[0][0]
             line_target = qubit_to_Advantage2_annealing_line(q, zephyr_shape)
+            if line_target in lines_represented:
+                label = None
+            else:
+                label = f"target-qubit line={line_target}"
+                lines_represented.add(line_target)
             plt.plot(
-                frequencies[: ld // 2], psd[i, : ld // 2], color=line_color[line_target]
+                frequencies[: ld // 2],
+                psd[i, : ld // 2],
+                color=line_color[line_target],
+                label=label,
             )
         plt.plot(
             [target_A, target_A],
@@ -737,23 +832,36 @@ def main(
         plt.ylabel(rf"Power Spectral Density, $|\langle Z\rangle(\omega)|^2$")
         plt.xlabel(r"Frequency ($\omega$), GHz")
         plt.grid(True)
+
+        plt.figure()
         anneal_offsets0 = anneal_offsets
         anneal_offsets = _calc_anneal_offsets(
             frequencies, psd, target_A, dAdc
         )  # Per embedding
-        plt.figure("Frequency variability before and after")
-        for i in range(len(embs)):
-            q = embs[i][0][0]
+        lines_represented = set()
+        for i, emb in enumerate(embs):
+            q = emb[0][0]
             line_target = qubit_to_Advantage2_annealing_line(q, zephyr_shape)
-
+            if line_target in lines_represented:
+                label = None
+            else:
+                label = f"target-qubit line={line_target}"
+                lines_represented.add(line_target)
             plt.plot(
                 anneal_offsets0[i],
                 anneal_offsets[i],
                 color=line_color[line_target],
                 marker="x",
+                label=label,
             )
-        plt.ylabel("Normalized control bias (c-<c>) before anneal_offset shim")
-        plt.xlabel("Normalized control bias (c-<c>) after anneal_offset shim")
+        plt.xlabel(
+            "Frequency discrepancy (proposed c-<c> change) before anneal_offset shim"
+        )
+        plt.ylabel(
+            "Frequency discrepancy (proposed c-<c> change) after anneal_offset shim"
+        )
+        plt.grid(True)
+        plt.legend()
     plt.show()
 
 
