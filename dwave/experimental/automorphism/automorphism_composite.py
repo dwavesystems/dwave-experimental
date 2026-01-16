@@ -58,7 +58,7 @@ def listtuple_to_arrays(
     """Unwrap (generator, degree) pairs into an array format.
 
     Note, the array format is accepted by the
-    `automorphism_generatation.sample_automorphisms`.
+    :meth:`~dwave.experimental.automorphism.automorphism_generatation.sample_automorphisms`.
     It is more general than the generator pair format, so an
     inverse mapping is not possible in general.
 
@@ -70,10 +70,10 @@ def listtuple_to_arrays(
 
     Output:
         A list of lists of numpy arrays, suitable for use by
-        `automorphism.sample_automorphisms`
+        :meth:`~dwave.experimental.automorphism.automorphism_generatation.sample_automorphisms`.
     """
 
-    nodeset = set(node_to_idx.keys())
+    nodeset = set(node_to_idx)
     listtuple = [
         (prune_by_nodeset(g, nodeset), n) for g, n in listtuple
     ]  # Compress listtuple w.r.t. mapped nodes.
@@ -97,7 +97,7 @@ def chimera_generators(
     m: int,
     n: Optional[int] = None,
     t: int = 4,
-    generator_type: str = "redundant",
+    generator_type: Literal["redundant", "strongest"] = "redundant",
 ) -> list[tuple[dict, int]]:
     """Return generators for Chimera graphs.
 
@@ -224,7 +224,7 @@ def chimera_generators(
 
 
 def _flip_zephyr(u: int, w: int, k: int, j: int, z: int, orient: bool, m: int) -> tuple:
-    if orient == True:
+    if orient:
         ue = u
     else:
         ue = 1 - u
@@ -238,7 +238,7 @@ def _flip_zephyr(u: int, w: int, k: int, j: int, z: int, orient: bool, m: int) -
 
 
 def zephyr_generators(
-    m: int, t: int = 4, generator_type="redundant"
+    m: int, t: int = 4, generator_type: Literal["redundant", "strongest"] = "redundant"
 ) -> list[tuple[dict, int]]:
     """Create generators for zephyr graphs
 
@@ -334,7 +334,7 @@ def zephyr_generators(
 
 
 def pegasus_generators(
-    m: int, generator_type: str = "redundant"
+    m: int, generator_type: Literal["redundant", "strongest"] = "redundant"
 ) -> list[tuple[dict, int]]:
     """Create generators for pegasus (fabric_only, for m>1)
 
@@ -444,13 +444,13 @@ def prune_by_nodeset(generator_dict, nodeset):
 
     """
 
-    nodeset = nodeset.intersection(set(generator_dict.keys()))
+    nodeset = nodeset.intersection(generator_dict)
     if not nodeset:
         return {}
-    reduced_nodeset = nodeset & set({generator_dict[n] for n in nodeset})
+    reduced_nodeset = nodeset.intersection(generator_dict[n] for n in nodeset)
     while reduced_nodeset != nodeset:
         nodeset = reduced_nodeset
-        reduced_nodeset = nodeset & set({generator_dict[n] for n in nodeset})
+        reduced_nodeset = nodeset.intersection(generator_dict[n] for n in nodeset)
     return {n: generator_dict[n] for n in nodeset}
 
 
@@ -471,7 +471,7 @@ def prune_by_edgeset(generator, edgeset):
         (dictionary format) are assumed to map 1:1.
     """
 
-    nodeset = {n for e in edgeset for n in e}.intersection(set(generator.keys()))
+    nodeset = {n for e in edgeset for n in e}.intersection(generator)
     edgeset = {
         frozenset(e) for e in edgeset
     }  # Note edges can be external to elements in the generator.
@@ -562,7 +562,7 @@ class AutomorphismComposite(ComposedSampler):
         child: dimod.core.Sampler,
         *,
         seed=None,
-        generators_listtuple: list[tuple[dict, int]] = None,
+        generators_listtuple: list[tuple[dict, int]] | None = None,
         generators_u_vector: list[list[np.ndarray[np.intp]]] = None,
         G: nx.Graph = None,
         idx_to_node: dict = None,
