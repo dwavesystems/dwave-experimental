@@ -28,7 +28,7 @@ processor-graph theoretic properties.
 """
 
 
-from typing import Optional, Sequence, Any
+from typing import Sequence, Any, Literal
 from itertools import product
 
 import networkx as nx
@@ -95,7 +95,7 @@ def listtuple_to_arrays(
 
 def chimera_generators(
     m: int,
-    n: Optional[int] = None,
+    n: int | None = None,
     t: int = 4,
     generator_type: Literal["redundant", "strongest"] = "redundant",
 ) -> list[tuple[dict, int]]:
@@ -392,7 +392,12 @@ def pegasus_generators(
     return pruned_generators
 
 
-def sample_automorphisms_listtuple(generators_listtuple, *, prng=None, mapping=None):
+def sample_automorphisms_listtuple(
+    generators_listtuple: list[tuple[dict, int]],
+    *,
+    prng: np.random.Generator | int | None = None,
+    mapping: dict | None = None,
+):
     """Sample an automorphism by ordered application of generators
 
     An abelian group allows for generators to be sampled sequentially to fairly
@@ -426,12 +431,12 @@ def sample_automorphisms_listtuple(generators_listtuple, *, prng=None, mapping=N
     return mapping
 
 
-def prune_by_nodeset(generator_dict, nodeset):
+def prune_by_nodeset(generator_dict: dict, nodeset: set):
     """Restrict a generator to a subspace defined by nodeset
 
     Args:
         generator_dict: An automorphism as a dictionary.
-        nodeset: A list of variables (in the subgraph).
+        nodeset: A set of variables (defining the subgraph).
 
     Returns:
         a generator restricted to the subspace defined by the nodeset,
@@ -454,12 +459,12 @@ def prune_by_nodeset(generator_dict, nodeset):
     return {n: generator_dict[n] for n in nodeset}
 
 
-def prune_by_edgeset(generator, edgeset):
+def prune_by_edgeset(generator_dict: dict, edgeset: set[tuple]):
     """Restrict a generator to a subspace defined by an edgeset
 
     Args:
         generator_dict: An automorphism as a dictionary.
-        nodeset: A list of edges (in the subgraph).
+        edgeset: A set of edges (in the subgraph).
 
     Returns:
         a generator restricted to the subspace defined by the edgeset,
@@ -471,16 +476,16 @@ def prune_by_edgeset(generator, edgeset):
         (dictionary format) are assumed to map 1:1.
     """
 
-    nodeset = {n for e in edgeset for n in e}.intersection(generator)
+    nodeset = {n for e in edgeset for n in e}.intersection(generator_dict)
     edgeset = {
         frozenset(e) for e in edgeset
     }  # Note edges can be external to elements in the generator.
     generated_edgeset = edgeset.intersection(
-        {frozenset(generator[i] for i, j in edgeset)}
+        {frozenset(generator_dict[i] for i, j in edgeset)}
     )
     # If an edge is absent we must recursively remove the associated nodes:
     bad_nodes = {n for e in generated_edgeset ^ edgeset for n in e}
-    return prune_by_nodeset(generator, nodeset.difference(bad_nodes))
+    return prune_by_nodeset(generator_dict, nodeset.difference(bad_nodes))
 
 
 class AutomorphismComposite(ComposedSampler):
@@ -561,7 +566,7 @@ class AutomorphismComposite(ComposedSampler):
         self,
         child: dimod.core.Sampler,
         *,
-        seed=None,
+        seed: np.random.Generator | int | None = None,
         generators_listtuple: list[tuple[dict, int]] | None = None,
         generators_u_vector: list[list[np.ndarray[np.intp]]] = None,
         G: nx.Graph = None,
@@ -668,8 +673,8 @@ class AutomorphismComposite(ComposedSampler):
         self,
         bqm: dimod.BinaryQuadraticModel,
         *,
-        mappings: Optional[list[dict]] = None,
-        num_automorphisms: Optional[int] = None,
+        mappings: list[dict] | None = None,
+        num_automorphisms: int | None = None,
         **kwargs,
     ):
         """Sample from the binary quadratic model.
