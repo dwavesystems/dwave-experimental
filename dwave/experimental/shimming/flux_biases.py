@@ -78,6 +78,8 @@ def qubit_freezeout_alpha_phi(
         parameters. Note that defaults (by contrast) are determined based on
         published values for ``Advantage2_system1.3``.
 
+        >>> from dwave.experimental.shimming import qubit_freezeout_alpha_phi
+        ...
         >>> alpha_phi = qubit_freezeout_alpha_phi(
         ...     eff_temp_phi=0.198,
         ...     flux_associated_variance=1/1024,
