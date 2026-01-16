@@ -48,7 +48,7 @@ def main(
     Args:
 
     """
-    qpu = DWaveSampler(solver=solver, profile='defaults')
+    qpu = DWaveSampler(solver=solver)
 
     J = {
         ((x, y), ((x + uv[0]) % L, (y + uv[1]) % L)): -1 + 2 * (x % 2 and uv[0] == 0)
@@ -135,9 +135,9 @@ if __name__ == "__main__":
         " can mitigate for symmetry breaking noise in statistics."
     )
 
-    parser = argparse.ArgumentParser(description="An AutomorphismComposte example")
+    parser = argparse.ArgumentParser(description="An AutomorphismComposite example")
     parser.add_argument(
-        "--use_cache",
+        "--use-cache",
         action="store_true",
         help="Add this flag to save experimental data, and reload when available at matched parameters",
     )

@@ -88,9 +88,9 @@ class TestAutomorphismComposite(unittest.TestCase):
                         num_automorphisms=num_automorphisms,
                         num_reads=num_reads,
                     )
-                    self.assertTrue(
-                        sum(sampleset.record.num_occurrences)
-                        == num_reads * num_automorphisms
+                    self.assertEqual(
+                        sum(sampleset.record.num_occurrences),
+                        num_reads * num_automorphisms
                     )
 
     def test_empty(self):
