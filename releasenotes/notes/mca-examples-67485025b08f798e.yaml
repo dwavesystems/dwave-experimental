@@ -1,0 +1,9 @@
+---
+features:
+  - |
+    The embedding examples are expanded to include a case with detector and
+    target only, and an example of distillation of a fully sourced and detected
+    Chimera graph.
+    A multicolor annealing example is presented demonstrating effectiveness of
+    flux shimming for zero magnetization, and anneal-offsets for target qubit
+    frequency synchronization.

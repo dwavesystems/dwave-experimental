@@ -1,3 +1,5 @@
 -e ..
 
 dwave-hybrid>=0.6.12
+pandas>=2.3.0
+tqdm
