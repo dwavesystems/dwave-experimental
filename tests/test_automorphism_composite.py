@@ -90,7 +90,7 @@ class TestAutomorphismComposite(unittest.TestCase):
                     )
                     self.assertEqual(
                         sum(sampleset.record.num_occurrences),
-                        num_reads * num_automorphisms
+                        num_reads * num_automorphisms,
                     )
 
     def test_empty(self):
@@ -505,3 +505,42 @@ class TestAutomorphismComposite(unittest.TestCase):
                 self.assertLessEqual(
                     len(generators_listtuple2), len(generators_listtuple)
                 )
+
+    def test_reduce_generator_by_node_set(self):
+        # Chimera cell (biclique)
+        t = 2 + np.random.randint(3)
+        gens = chimera_generators(1, 1, t, "redundant")
+        self.assertEqual(len(gens), 2 * t - 1)
+        node_set = {(0, 0, u, k) for u in range(2) for k in range(t)}
+        gens_p = [reduce_generator_by_node_set(gen, node_set) for gen, _ in gens]
+        self.assertTrue(
+            all(g1[0] == g2 for g1, g2 in zip(gens, gens_p)),
+            "With full set of nodes, generators should be unchanged",
+        )
+
+        # Vertical generators survive, reflection generator survives but reduced in size (by 2), final horizontal generator is empty:
+        node_set_p = node_set.difference({(0, 0, 1, t - 1)})
+        gens_p = [reduce_generator_by_node_set(gen[0], node_set_p) for gen in gens]
+        self.assertTrue(
+            all(set(gen.keys()) == set(gen.values()) for gen in gens_p),
+            "Returned generators should be closed",
+        )
+
+        modified_idxs = {0, t}  # Reflection, and rotation on horizontals
+        self.assertEqual(gens_p[t], {}, "Rotation on all horizontals not viable")
+        self.assertEqual(
+            len(gens_p[0]), 2 * (t - 1), "All v to h matching except the last"
+        )
+        self.assertEqual(
+            set(gens_p[0].keys()),
+            set({(0, 0, u, k) for u in range(2) for k in range(t - 1)}),
+            "Reflection excludes (0,0,0,t-1), because partner is missing",
+        )
+        self.assertTrue(
+            all(
+                gens[idx][0] == gens_p[idx]
+                for idx in range(0, 2 * t - 2)
+                if idx not in modified_idxs
+            ),
+            "All but first and last generators should be unchanged",
+        )

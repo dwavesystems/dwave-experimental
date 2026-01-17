@@ -49,6 +49,7 @@ __all__ = [
     "zephyr_generators",
     "sample_automorphisms_listtuple",
     "listtuple_to_arrays",
+    "reduce_generator_by_node_set",
 ]
 
 
@@ -73,9 +74,9 @@ def listtuple_to_arrays(
         :meth:`~dwave.experimental.automorphism.automorphism_generatation.sample_automorphisms`.
     """
 
-    nodeset = set(node_to_idx)
+    node_set = set(node_to_idx)
     listtuple = [
-        (prune_by_nodeset(g, nodeset), n) for g, n in listtuple
+        (reduce_generator_by_node_set(g, node_set), n) for g, n in listtuple
     ]  # Compress listtuple w.r.t. mapped nodes.
     listtuple = [p for p in listtuple if p[0]]  # Remove anything redundant
     llarray = [
@@ -385,7 +386,7 @@ def pegasus_generators(
     }.difference(nonfabric)
     pruned_generators = []
     for g in diagonal + odd_pairs:
-        new = prune_by_nodeset(g[0], nodeset=fabric)
+        new = reduce_generator_by_node_set(g[0], node_set=fabric)
         if new:
             pruned_generators.append((new, g[1]))
 
@@ -431,61 +432,35 @@ def sample_automorphisms_listtuple(
     return mapping
 
 
-def prune_by_nodeset(generator_dict: dict, nodeset: set):
-    """Restrict a generator to a subspace defined by nodeset
+def reduce_generator_by_node_set(generator_dict: dict, node_set: set):
+    """Restrict a generator to a closed subspace defined by node_set
+
+    Note that the returned generators will only be valid for some graph
+    in general if the node_set are fully connected.
 
     Args:
         generator_dict: An automorphism as a dictionary.
-        nodeset: A set of variables (defining the subgraph).
+        node_set: A set of variables (defining the subgraph).
 
     Returns:
-        a generator restricted to the subspace defined by the nodeset,
-        or an empty dictionary if the nodeset is not closed under the
+        a generator restricted to the subspace defined by the node_set,
+        or an empty dictionary if the node_set is not closed under the
         generator.
 
     .. note:: The generator keys need only specify a subset of
-        variables in the nodeset. Variables not specified in the generator
+        variables in the node_set. Variables not specified in the generator
         (dictionary format) are assumed to map 1:1.
 
     """
 
-    nodeset = nodeset.intersection(generator_dict)
-    if not nodeset:
+    node_set = node_set.intersection(generator_dict)
+    if not node_set:
         return {}
-    reduced_nodeset = nodeset.intersection(generator_dict[n] for n in nodeset)
-    while reduced_nodeset != nodeset:
-        nodeset = reduced_nodeset
-        reduced_nodeset = nodeset.intersection(generator_dict[n] for n in nodeset)
-    return {n: generator_dict[n] for n in nodeset}
-
-
-def prune_by_edgeset(generator_dict: dict, edgeset: set[tuple]):
-    """Restrict a generator to a subspace defined by an edgeset
-
-    Args:
-        generator_dict: An automorphism as a dictionary.
-        edgeset: A set of edges (in the subgraph).
-
-    Returns:
-        a generator restricted to the subspace defined by the edgeset,
-        or an empty dictionary if the edgeset is not closed under the
-        generator.
-
-    .. note:: The generator keys need only specify a subset of
-        variables in the edges. Variables not specified in the generator
-        (dictionary format) are assumed to map 1:1.
-    """
-
-    nodeset = {n for e in edgeset for n in e}.intersection(generator_dict)
-    edgeset = {
-        frozenset(e) for e in edgeset
-    }  # Note edges can be external to elements in the generator.
-    generated_edgeset = edgeset.intersection(
-        {frozenset(generator_dict[i] for i, j in edgeset)}
-    )
-    # If an edge is absent we must recursively remove the associated nodes:
-    bad_nodes = {n for e in generated_edgeset ^ edgeset for n in e}
-    return prune_by_nodeset(generator_dict, nodeset.difference(bad_nodes))
+    reduced_node_set = node_set.intersection(generator_dict[n] for n in node_set)
+    while reduced_node_set != node_set:
+        node_set = reduced_node_set
+        reduced_node_set = node_set.intersection(generator_dict[n] for n in node_set)
+    return {n: generator_dict[n] for n in node_set}
 
 
 class AutomorphismComposite(ComposedSampler):
@@ -553,9 +528,6 @@ class AutomorphismComposite(ComposedSampler):
         >>> response.first.sample
         {'a': -1, 'b': -1}
 
-    References
-    ----------
-    .. [#TODO]
     """
 
     _children: list[dimod.core.Sampler]
