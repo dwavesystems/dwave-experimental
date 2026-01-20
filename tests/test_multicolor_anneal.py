@@ -29,8 +29,9 @@ from dwave_networkx import zephyr_coordinates
 class PropertiesCheckMixin:
 
     properties = [
-        'annealingLine', 'minTimeStep', 'depolarizationAnnealScheduleRequiredDelay',
-        'holdOvershootFor', 'minCOvershoot', 'maxCOvershoot', 'maxC', 'minC',
+        'annealingLine', 'minAnnealingTimeStep', 'minPolarizingTimeStep',
+        'depolarizationAnnealScheduleRequiredDelay', 'holdOvershootFor',
+        'minCOvershoot', 'maxCOvershoot', 'maxC', 'minC',
         'scheduleDelayStep', 'qubits'
     ]
 
@@ -55,7 +56,8 @@ class MCA(unittest.TestCase, PropertiesCheckMixin):
         n_lines = 6
         n_qubits = 100
         info = [{'annealingLine': i,
-                 'minTimeStep': 0.01,
+                 'minAnnealingTimeStep': 0.01,
+                 'minPolarizingTimeStep': 0.02,
                  'depolarizationAnnealScheduleRequiredDelay': 2.0,
                  'holdOvershootFor': 0.02,
                  'minCOvershoot': -7.0,
