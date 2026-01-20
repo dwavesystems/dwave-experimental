@@ -17,8 +17,8 @@ An example to show noise mitigation by use of automorphic averaging
 
 import os
 import argparse
-import pickle
 
+import pickle
 import networkx as nx
 import numpy as np
 import matplotlib.pyplot as plt
@@ -32,7 +32,7 @@ from dwave.experimental.automorphism.automorphism_composite import AutomorphismC
 
 
 def main(
-    solver=None,
+    solver: str | None = None,
     use_cache: bool = True,
     L: int = 4,
     subgraph_timeout: int = 60,
@@ -46,6 +46,11 @@ def main(
     enhances the signal to noise ratio, resulting in improved statistics.
 
     Args:
+        solver: Name of a QPU solver,
+        use_cache: Save data to a cache/ folder, which will be reloaded when available
+        L: LxL is the size of the periodic square lattice to be sampled
+        subgraph_timeout: time allowed for find_subgraph operation
+        srts: apply spin-reversal transforms (as an option alongside automorphism averaging)
 
     """
     qpu = DWaveSampler(solver=solver)
@@ -85,16 +90,19 @@ def main(
     else:
         signed_correlations = {sn: [] for sn in samplers.keys()}
 
-    print('Employing different averaging techniques, we can decrease the '
-          'observed variance in statistics, which are expected to be equal '
-          'in the absence of symmetry breaking effects in environmental noise '
-          'device control and calibration.')
+    print(
+        "Employing different averaging techniques, we can decrease the "
+        "observed variance in statistics, which are expected to be equal "
+        "in the absence of symmetry breaking effects in environmental noise "
+        "device control and calibration."
+    )
 
-    
-    print('Identical signed edge expectations are anticipated based on the; '
-          'programmed model, a fully frustrated square lattice on a torus. '
-          'Specifically <sign(Jij) s_i s_j> = -0.5 is anticipated if samples '
-          'are restricted to the ground state space.')
+    print(
+        "Identical signed edge expectations are anticipated based on the; "
+        "programmed model, a fully frustrated square lattice on a torus. "
+        "Specifically <sign(Jij) s_i s_j> = -0.5 is anticipated if samples "
+        "are restricted to the ground state space."
+    )
     for sn, sampler in samplers.items():
         for num_prog in range(num_progs):
             if len(signed_correlations[sn]) < num_prog:
@@ -137,7 +145,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="An AutomorphismComposite example")
     parser.add_argument(
-        "--use-cache",
+        "--use_cache",
         action="store_true",
         help="Add this flag to save experimental data, and reload when available at matched parameters",
     )
