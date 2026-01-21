@@ -1,0 +1,5 @@
+---
+fixes:
+  - |
+    Update multicolor-annealing live tests to reflect the split of ``minTimeStep``
+    property into ``minAnnealingTimeStep`` and ``minPolarizingTimeStep``.
