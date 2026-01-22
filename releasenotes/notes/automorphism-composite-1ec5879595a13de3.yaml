@@ -1,0 +1,9 @@
+---
+features:
+  - |
+    Add an AutomorphismComposite that averages over graphically related
+    embeddings using a common set of nodes and edges. This makes use of
+    the new automorphism functionality in dwave-experimental.
+    Add a simple example demonstrating how the AutomorphismComposite
+    mitigates for control errors in a similar manner to
+    SpinReversalTransformComposite.
