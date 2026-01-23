@@ -26,7 +26,10 @@ extensions = [
 autosummary_generate = True
 
 # The suffix(es) of source filenames.
-source_suffix = ['.rst', '.md']
+source_suffix = {
+    '.rst': 'restructuredtext',
+    '.md': 'markdown',
+    }
 
 # The master toctree document.
 master_doc = 'index'
@@ -59,6 +62,9 @@ html_theme_options = {
 html_sidebars = {"**": ["sidebar-nav-bs"]}  # remove ads
 
 html_static_path = ['_static']
+
+def setup(app):
+   app.add_css_file('theme_overrides.css')
 
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
