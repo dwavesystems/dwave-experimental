@@ -160,6 +160,42 @@ jobs:
             env\Scripts\activate.ps1
             coverage run -m unittest discover
 
+  test-docs:
+    docker:
+      - image: python:3.12
+
+    steps:
+      - checkout
+
+      - run: *create-virtualenv
+
+      - run: *install-requirements
+
+      - run:
+          name: Install docs requirements
+          command: env/bin/pip install -U -r docs/requirements.txt
+
+      - run:
+          name: Build docs
+          command: |
+            . env/bin/activate
+            make -C docs/ html
+
+      - store_artifacts:
+          path: ./docs/build/html
+
+      - run:
+          name: Test docs
+          command: |
+            . env/bin/activate
+            make -C docs/ doctest
+
+      - run:
+          name: Test links
+          command: |
+            . env/bin/activate
+            make -C docs/ linkcheck
+
   build-dist:
     docker:
       - image: python:3.12
