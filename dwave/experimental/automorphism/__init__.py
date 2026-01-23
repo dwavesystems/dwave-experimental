@@ -13,3 +13,4 @@
 # limitations under the License.
 
 from .automorphism_generation import *
+from .automorphism_composite import *
