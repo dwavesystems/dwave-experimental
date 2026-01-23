@@ -14,4 +14,4 @@
 
 # use CalVer: YYYY.M.D[.PATCH][rcN|.devN]
 # make no backwards compatibility guarantees
-__version__ = "2025.12.9"
+__version__ = "2026.1.23"
