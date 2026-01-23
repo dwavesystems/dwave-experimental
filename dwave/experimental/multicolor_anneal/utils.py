@@ -46,7 +46,7 @@ def qubit_to_Advantage2_annealing_line(n: int | tuple, shape: tuple) -> int:
         and lines
 
         >>> from dwave.system import DWaveSampler
-        >>> from dwave.experimental import multicolor_anneal, qubit_to_Advantage2_annealing_line
+        >>> from dwave.experimental.multicolor_anneal import get_properties, qubit_to_Advantage2_annealing_line
 
         >>> qpu = DWaveSampler()             # doctest: +SKIP
         >>> annealing_lines = multicolor_anneal.get_properties(qpu)            # doctest: +SKIP
