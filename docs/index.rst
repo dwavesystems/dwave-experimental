@@ -4,7 +4,25 @@
 dwave-experimental
 ==================
 
-Used to test docstrings in this repo.
+Reference documentation for dwave-experimental.
+
+About dwave-experimental
+========================
+
+.. include:: README.rst
+  :start-after: start_experimental_about
+  :end-before: end_experimental_about
+
+Automorphism
+============
+
+.. currentmodule:: dwave.experimental.automorphism
+
+.. automodule:: dwave.experimental.automorphism.automorphism_composite
+    :members:
+
+.. automodule:: dwave.experimental.automorphism.automorphism_generation
+    :members:
 
 Fast Reverse Annealing
 ======================
@@ -34,15 +52,4 @@ Shimming
 .. currentmodule:: dwave.experimental.shimming
 
 .. automodule:: dwave.experimental.shimming.flux_biases
-    :members:
-
-Automorphism
-============
-
-.. currentmodule:: dwave.experimental.automorphism
-
-.. automodule:: dwave.experimental.automorphism.automorphism_composite
-    :members:
-
-.. automodule:: dwave.experimental.automorphism.automorphism_generation
     :members:

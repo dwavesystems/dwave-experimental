@@ -68,7 +68,7 @@ def setup(app):
 
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
-    'networkx': ('https://networkx.github.io/documentation/stable/', None),
+    'networkx': ('https://networkx.org/documentation/stable/', None),
     'dwave': ('https://docs.dwavequantum.com/en/latest/', None),
 }
 # global substitutions

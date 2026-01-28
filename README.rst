@@ -2,10 +2,19 @@
 dwave-experimental
 ==================
 
+.. start_experimental_about
+
 Ocean utilities to support advanced QPU prototype features.
 
+These utilities are subject to change without notification at any time.
+
+Some QPU solvers support experimental features used for advanced research. Not
+all accounts have access to such research quantum computers.
+
+.. end_experimental_about
+
 Installation
-------------
+============
 
 Installation from `PyPI <https://pypi.org/project/dwave-experimental>`_:
 
@@ -23,7 +32,7 @@ To install the latest version from source (available on GitHub in
 .. _`dwavesystems/dwave-experimental`: https://github.com/dwavesystems/dwave-experimental
 
 Versioning
-----------
+==========
 
 This project uses **calendar versioning (CalVer)** to indicate the release timeline,
 following the format ``YYYY.MM.DD`` or ``YYYY.MM``, depending on the release cycle.
@@ -34,17 +43,17 @@ following the format ``YYYY.MM.DD`` or ``YYYY.MM``, depending on the release cyc
 We recommend pinning specific versions in your dependencies.
 
 License
--------
+=======
 
 Released under the Apache License 2.0. See LICENSE file.
 
 Contributing
-------------
+============
 
 Please follow Ocean's `contributing guide <https://docs.dwavequantum.com/en/latest/ocean/contribute.html>`_.
 
 Release Notes
-~~~~~~~~~~~~~
+-------------
 
 We use `reno <https://docs.openstack.org/reno/>`_ to manage release notes.
 
