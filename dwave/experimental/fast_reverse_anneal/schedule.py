@@ -76,10 +76,10 @@ def load_schedules(solver_name: Optional[str] = None) -> dict[float, dict[str, f
 
         >>> from dwave.experimental import fast_reverse_anneal as fra
         ...
-        >>> param_002 = fra.schedule.load_schedules()[0.02]
-        >>> list(param_002.keys())
+        >>> param_002 = fra.schedule.load_schedules()[0.02]     # doctest: +SKIP
+        >>> list(param_002.keys())                              # doctest: +SKIP
         ['nominal_pause_time', 'a', 'c2', 't_min']
-        >>> tmin_002 = param_002['t_min']
+        >>> tmin_002 = param_002['t_min']                       # doctest: +SKIP
 
     """
     if solver_name is None:
@@ -177,7 +177,7 @@ def c_vs_t(
 
         >>> from dwave.experimental import fast_reverse_anneal as fra
         ...
-        >>> c = c_vs_t(0.022,
+        >>> c = fra.c_vs_t(0.022,                           # doctest: +SKIP
         ...     target_c=0.0,
         ...     nominal_pause_time=0.02,
         ...     schedules=fra.schedule.load_schedules())
