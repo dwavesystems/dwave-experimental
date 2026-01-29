@@ -263,6 +263,7 @@ workflows:
               python-version: *python-versions
 
       - build-dist
+      - test-docs
 
   deploy:
     jobs:
