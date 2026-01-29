@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   id="DWave_Logo_-_Dark"
+   version="1.1"
+   viewBox="0 0 659.4 84.9"
+   sodipodi:docname="DWave.svg"
+   inkscape:version="0.92.3 (2405546, 2018-03-11)">
+  <metadata
+     id="metadata18">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <sodipodi:namedview
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1"
+     objecttolerance="10"
+     gridtolerance="10"
+     guidetolerance="10"
+     inkscape:pageopacity="0"
+     inkscape:pageshadow="2"
+     inkscape:window-width="1309"
+     inkscape:window-height="790"
+     id="namedview16"
+     showgrid="false"
+     inkscape:zoom="0.43069455"
+     inkscape:cx="329.70001"
+     inkscape:cy="42.450001"
+     inkscape:window-x="441"
+     inkscape:window-y="64"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="DWave_Logo_-_Dark" />
+  <!-- Generator: Adobe Illustrator 29.1.0, SVG Export Plug-In . SVG Version: 2.1.0 Build 142)  -->
+  <defs
+     id="defs4">
+    <style
+       id="style2">
+      .st0 {
+        fill: #17bebb;
+      }
+
+      .st1 {
+        fill: #2a7de1;
+      }
+
+      .st2 {
+        fill: #f37820;
+      }
+
+      .st3 {
+        fill: #222;
+      }
+    </style>
+  </defs>
+  <path
+     id="E"
+     d="m 490.85259,42.828008 c -2.35,2.15 -5.4,3.35 -8.6,3.35 h -16 v -7.65 h 16 c 1.05,0 2.1,-0.4 2.9,-1.1 0.95,-0.8 1.45,-1.7 1.45,-2.7 v -2.05 c 0,-2.55 -1.45,-3.85 -4.35,-3.85 h -25.1 c -2.9,0 -4.35,1.3 -4.35,3.85 v 19.4 c 0,1.05 0.5,2.1 1.4,2.7 0.8,0.75 1.9,1.15 3,1.15 h 36.75 v 7.55 h -36.75 c -3.15,0 -6.25,-1.15 -8.6,-3.3 -2.4,-2 -3.8,-5 -3.8,-8.15 v -19.35 c -0.1,-3.15 1.25,-6.15 3.65,-8.2 2.4,-2.1 5.5,-3.25 8.75,-3.2 h 25.1 c 3.2,-0.05 6.3,1.05 8.75,3.15 2.4,2.1 3.75,5.1 3.65,8.3 v 2.05 c 0,3.15 -1.2,5.8 -3.8,8.1 v 0 z"
+     inkscape:connector-curvature="0"
+     style="stroke-width:0.5" />
+  <path
+     id="V"
+     d="m 433.90259,52.178008 c -1.95,7.65 -6.05,11.4 -12.35,11.4 h -10.75 c -6.35,0 -10.4,-3.8 -12.35,-11.4 l -7.95,-30.95 h 8.5 l 7.65,29.45 c 0.85,3.5 2.7,5.25 5.3,5.25 h 8.45 c 2.7,0 4.6,-1.75 5.45,-5.25 l 7.55,-29.45 h 8.5 l -8,30.9 v 0 z"
+     inkscape:connector-curvature="0"
+     style="stroke-width:0.5" />
+  <path
+     id="A"
+     d="m 383.60259,60.428008 c -2.45,2.1 -5.55,3.25 -8.8,3.2 h -25.05 c -3.2,0 -6.3,-1.1 -8.75,-3.2 -2.4,-2.05 -3.7,-5.05 -3.65,-8.2 v -2.05 c 0,-3.15 1.35,-6.1 3.8,-8.1 2.35,-2.15 5.4,-3.35 8.6,-3.35 h 15.95 v 7.55 h -15.95 c -1.1,0 -2.15,0.4 -3,1.1 -0.85,0.65 -1.4,1.7 -1.4,2.75 v 2.05 c 0,2.55 1.45,3.8 4.35,3.8 h 25.05 c 3,0 4.45,-1.25 4.45,-3.8 v -19.5 c 0,-1.05 -0.5,-2.05 -1.35,-2.7 -0.85,-0.75 -1.95,-1.15 -3.05,-1.15 h -36.7 v -7.6 h 36.65 c 3.2,0 6.25,1.15 8.6,3.35 2.55,2.25 3.8,4.95 3.8,8.05 v 19.5 c 0,3.35 -1.15,6.1 -3.55,8.2 z"
+     inkscape:connector-curvature="0"
+     style="stroke-width:0.5" />
+  <path
+     id="Dot_4"
+     class="st2"
+     d="m 251.75259,58.478008 c 0,2.8 -2.25,5.05 -5.05,5.05 -2.8,0 -5.05,-2.25 -5.05,-5.05 0,-2.8 2.25,-5.05 5.05,-5.05 v 0 c 2.8,0 5.05,2.25 5.05,5.05 z"
+     inkscape:connector-curvature="0"
+     style="fill:#f37820;stroke-width:0.5" />
+  <path
+     id="Dot_2"
+     class="st3"
+     d="m 234.95259,42.378008 c 0,2.8 -2.25,5.05 -5.05,5.05 -2.8,0 -5.05,-2.25 -5.05,-5.05 0,-2.8 2.25,-5.05 5.05,-5.05 v 0 c 2.8,0 5.05,2.25 5.05,5.05 z"
+     inkscape:connector-curvature="0"
+     style="fill:#222222;stroke-width:0.5" />
+  <path
+     id="Dot_3_Blue"
+     class="st0"
+     d="m 251.75259,42.378008 c 0,2.8 -2.25,5.05 -5.05,5.05 -2.8,0 -5.05,-2.25 -5.05,-5.05 0,-2.8 2.25,-5.05 5.05,-5.05 2.8,0 5.05,2.25 5.05,5.05 z"
+     inkscape:connector-curvature="0"
+     style="fill:#17bebb;stroke-width:0.5" />
+  <path
+     id="Dot_1"
+     class="st1"
+     d="m 234.95259,26.278008 c 0,2.8 -2.25,5.05 -5.05,5.05 -2.8,0 -5.05,-2.25 -5.05,-5.05 0,-2.8 2.25,-5.05 5.05,-5.05 v 0 c 2.8,0 5.05,2.25 5.05,5.05 z"
+     inkscape:connector-curvature="0"
+     style="fill:#2a7de1;stroke-width:0.5" />
+  <path
+     id="W"
+     d="m 323.90259,21.228008 -7.55,29.35 c -0.9,3.5 -2.75,5.2 -5.45,5.2 h -3.25 c -2.6,0 -4.65,-1.85 -5.45,-5.25 l -0.1,-0.2 c -2.05,-6.5 -7.95,-5.9 -7.95,-5.9 -6,0.1 -8,6.15 -8,6.15 -0.85,3.5 -2.75,5.2 -5.45,5.2 h -3.25 c -2.6,0 -4.4,-1.75 -5.3,-5.2 l -7.5,-29.35 h -8.5 l 7.9,30.8 c 1.95,7.6 6,11.35 12.3,11.35 h 5.55 c 6.1,0 10.05,-3.5 12.1,-10.6 l 0.2,-0.75 c 1.95,7.55 6.05,11.3 12.3,11.3 h 5.55 c 6.3,0 10.35,-3.75 12.3,-11.4 l 8,-30.7 z"
+     inkscape:connector-curvature="0"
+     style="stroke-width:0.5" />
+  <path
+     id="D"
+     d="m 212.60259,60.478008 c -2.4,2.15 -5.5,3.3 -8.7,3.2 h -39 v -42.45 h 38.95 c 3.15,0 6.2,1.2 8.5,3.35 2.4,2 3.75,4.95 3.75,8.1 v 19.55 c 0,3.35 -1.15,6.15 -3.55,8.25 v 0 z m -4.4,-27.8 c 0,-1.05 -0.5,-2.05 -1.35,-2.7 -0.8,-0.75 -1.85,-1.15 -2.95,-1.15 h -31.15 v 27.2 h 31.1 c 2.9,0 4.35,-1.25 4.35,-3.8 z"
+     inkscape:connector-curvature="0"
+     style="stroke-width:0.5" />
+</svg>

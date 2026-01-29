@@ -1,0 +1,429 @@
+/*  Copyright 2026 D-Wave
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License. */
+
+/* override table width restrictions */
+/* https://github.com/readthedocs/sphinx_rtd_theme/issues/117 */
+
+:root {
+    /* dwave colors for convenience */
+    --dwave-color-ocean-blue: rgb(42, 125, 225);
+    --dwave-color-dark-blue: rgb(7, 76, 145);
+    --dwave-color-bright-blue: rgb(3, 184, 255);
+    /* Higher contrast for accessibility: */
+    --dwave-color-medium-blue-45: rgb(27, 100, 189);
+    --dwave-color-medium-blue-50: rgb(31, 116, 218);
+    --dwave-color-medium-blue-55: rgb(56, 134, 227);
+    --dwave-color-medium-blue-60: rgb(81, 149, 230);
+    --dwave-color-medium-blue-65: rgb(122, 174, 236);
+
+    --dwave-color-leap-teal: rgb(23, 190, 187);
+    --dwave-color-dark-teal: rgb(0, 140, 130);
+    --dwave-color-bright-teal: rgb(6, 236, 220);
+
+    --dwave-color-advantage-orange: rgb(243, 120, 32);
+    --dwave-color-dark-orange: rgb(175, 73, 4);
+    --dwave-color-bright-orange: rgb(255, 161, 67);
+    --inline-code-light-pink: rgb(237, 110, 169);
+    --inline-code-dark-pink: rgb(210, 25, 111);
+
+    --dwave-color-leap-bg: #f5f7fb; /* rgba(47, 100, 190, 0.05) */
+    --dwave-color-leap-bg-dark: #1a2438; /* rgba(47, 100, 190, 0.16) */
+    --dwave-shadow-leap: 0 10px 18px 0 rgba(66, 82, 121, 0.09);
+
+    --dwave-color-dark-gray-40: rgb(230, 230, 230);
+    --dwave-color-dark-gray-50: rgb(117, 117, 117);
+
+    --pst-font-weight-heading: 400;
+    --pst-font-size-h1: 2.5rem;
+    --pst-font-size-h2: 2rem;
+  }
+
+html[data-theme="light"] {
+
+    /* theme overrides */
+    --pst-color-primary: var(--dwave-color-medium-blue-45);
+    --pst-color-secondary: var(--dwave-color-dark-gray-50);
+    --pst-color-link: var(--dwave-color-medium-blue-50);
+    --pst-color-external-link: var(--dwave-color-medium-blue-50);
+    --pst-color-link-hover: var(--dwave-color-ocean-blue);
+    --pst-color-inline-code: var(--inline-code-dark-pink);
+    --pst-color-inline-code-links: var(--dwave-color-medium-blue-45);
+    --pst-color-success: var(--dwave-color-leap-teal);
+    --pst-color-info: var(--dwave-color-ocean-blue);
+    --pst-color-warning: var(--dwave-color-advantage-orange);
+    /*--pst-color-danger: 220, 53, 69;*/
+    --pst-color-active-navigation: var(--dwave-color-ocean-blue);
+    --pst-color-navbar-link-hover: var(--dwave-color-ocean-blue);
+    --pst-color-navbar-link-active: var(--dwave-color-ocean-blue);
+    --pst-color-sidebar-link-hover: var(--dwave-color-ocean-blue);
+    --pst-color-sidebar-link-active: var(--dwave-color-ocean-blue);
+    --pst-color-toc-link-hover: var(--dwave-color-ocean-blue);
+    --pst-color-toc-link-active: var(--dwave-color-ocean-blue);
+    --sd-color-card-border-hover: var(--dwave-color-ocean-blue);
+    --dwave-bg: var(--dwave-color-leap-bg);
+    --pst-color-info-bg: rgba(42, 125, 225, 0.1);
+}
+
+html[data-theme="light"] .nav-item:has(.dark-theme-icon) {
+    display: none;
+}
+
+html[data-theme="dark"] {
+
+    /* theme overrides */
+    --pst-color-primary: var(--dwave-color-medium-blue-60);
+    --pst-color-secondary: grey;
+    --pst-color-link: var(--dwave-color-medium-blue-60);
+    --pst-color-external-link: var(--dwave-color-medium-blue-60);
+    --pst-color-link-hover: var(--dwave-color-ocean-blue);
+    --pst-color-inline-code: var(--inline-code-light-pink);
+    --pst-color-inline-code-links: var(--dwave-color-medium-blue-65);
+    --pst-color-success: var(--dwave-color-leap-teal);
+    --pst-color-info: var(--dwave-color-ocean-blue);
+    --pst-color-warning: var(--dwave-color-advantage-orange);
+    /*--pst-color-danger: 220, 53, 69;*/
+    --pst-color-active-navigation: var(--dwave-color-ocean-blue);
+    --pst-color-navbar-link-hover: var(--dwave-color-ocean-blue);
+    --pst-color-navbar-link-active: var(--dwave-color-ocean-blue);
+    --pst-color-sidebar-link-hover: var(--dwave-color-ocean-blue);
+    --pst-color-sidebar-link-active: var(--dwave-color-ocean-blue);
+    --pst-color-toc-link-hover: var(--dwave-color-ocean-blue);
+    --pst-color-toc-link-active: var(--dwave-color-ocean-blue);
+    --sd-color-card-border-hover: var(--dwave-color-bright-blue);
+    --dwave-bg: var(--dwave-color-leap-bg-dark);
+    --pst-color-info-bg: var(--dwave-bg);
+}
+
+html[data-theme="dark"] .nav-item:has(.light-theme-icon) {
+    display: none;
+}
+
+.wy-table-responsive table td, .wy-table-responsive table th {
+    white-space: normal;
+}
+
+.wy-table-responsive {
+    margin-bottom: 24px;
+    max-width: 100%;
+    overflow: visible;
+}
+
+/* Dropdown titles */
+.sd-summary-title {
+    font-weight: normal !important;
+}
+
+abbr {
+    border-bottom: none !important;
+    text-decoration : none !important;
+}
+
+.math {
+    vertical-align: text-top;
+}
+
+.sd-card-title {
+    font-size: 0.875em;
+}
+
+.sd-card-text {
+    font-size: 0.875em;
+}
+
+/* General */
+a {
+    transition: color 0.2s ease-in;
+    text-underline-offset: .2em;
+}
+
+a:hover {
+    transition: color 0.2s ease-in;
+    text-underline-offset: .2em;
+    text-decoration-thickness: 2px;
+}
+
+a.reference.external {
+    color: var(--pst-color-external-link);
+}
+
+blockquote .reference.external,
+div.sd-tab-content.docutils a.reference.external span.std,
+div.sd-tab-content.docutils a.reference.internal span.std {
+    color: var(--pst-color-inline-code-links);
+}
+
+div.sd-card-body.docutils a.reference.external span.std,
+div.sd-card-body.docutils a.reference.internal span.std {
+    color: var(--pst-color-link);
+}
+
+/* Nav */
+.bd-header nav,
+.bd-header nav .bd-navbar-elements.navbar-nav,
+.bd-header nav .bd-navbar-elements.navbar-nav .nav-item,
+.bd-header nav .bd-navbar-elements.navbar-nav button {
+    height: 100%;
+}
+
+.bd-header .navbar-nav .dropdown .dropdown-menu {
+    top: 75%;
+}
+
+.navbar-header-items__start {
+    padding-right: 1rem;
+}
+
+.logo .logo__image {
+    height: 1.4rem;
+}
+
+.bd-header .navbar-nav>.current>.nav-link {
+    pointer-events: none;
+    border: none;
+    position: relative;
+    color: var(--pst-color-link);
+    font-weight: 600;
+}
+
+.bd-header ul.navbar-nav>li.nav-item>.nav-link:hover {
+    color: var(--pst-color-primary);
+}
+
+.bd-header ul.navbar-nav>li.nav-item.current>.nav-link:before,
+.bd-header ul.navbar-nav>li.nav-item>.nav-link:hover:before {
+    border-bottom: none;
+}
+
+.bd-header ul.navbar-nav>li.nav-item.dropdown>.dropdown-toggle:hover {
+    color: var(--pst-color-primary);
+    box-shadow: unset;
+}
+
+.bd-header ul.navbar-nav li a.nav-link.dropdown-item:hover {
+    text-decoration: unset;
+    color: var(--pst-color-primary);
+}
+
+.bd-header .navbar-nav>.current>.nav-link::after {
+    height: 5px;
+    background-color: var(--pst-color-link);
+    border-radius: 2.5px;
+    width: 100%;
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+.bd-header .navbar-nav li a.nav-link,
+.bd-header .navbar-nav .dropdown button {
+    transition: opacity 0.2s ease-in, color 0.2s ease-in;
+}
+
+.bd-header .navbar-nav li a.nav-link:hover,
+.bd-header .navbar-nav .dropdown button:hover {
+    text-decoration: none;
+    color: var(--pst-color-link);
+}
+
+/* tab-set */
+.bd-content div.sd-tab-content.docutils {
+    padding: 1rem 1.6rem 2rem;
+    background-color: var(--dwave-bg);
+    box-shadow: var(--dwave-shadow-leap);
+    border-top-left-radius: 0rem;
+    border-top-right-radius: 0rem;
+    border-bottom-left-radius: 1.2rem;
+    border-bottom-right-radius: 1.2rem;
+    border: 1px solid var(--pst-color-border);
+}
+
+.bd-content .sd-tab-set>input+label {
+    border: none;
+    padding: 0.5em 1.25em;
+    background-color: unset;
+    line-height: 1.65;
+    margin-inline-end: unset;
+}
+
+.bd-content .sd-tab-set>label,
+html[data-theme=dark] .bd-content .sd-tab-set>label {
+    color: var(--pst-color-text-muted);
+    background-color: var(--pst-color-background);
+    border-radius: 0;
+}
+
+.bd-content .sd-tab-set>input:not(:checked,:focus-visible)+label:hover {
+    text-decoration-line: unset;
+}
+
+.bd-content .sd-tab-set>input:checked+label {
+    pointer-events: none;
+    background-color: var(--dwave-bg);
+    color: var(--pst-color-text-muted);
+    margin-bottom: -1px;
+    border: 1px solid var(--pst-color-border);
+    border-bottom: none;
+    border-top-left-radius: 1.2rem;
+    border-top-right-radius: 1.2rem;
+    transform: unset;
+}
+
+div.sd-tab-set {
+    margin-bottom: 2em;
+}
+
+@media only screen and (max-width: 768px) {
+    .bd-content div.sd-tab-content {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+
+    .bd-content .sd-tab-set>input+label {
+        font-size: 0.9rem;
+        border: 1px solid var(--pst-color-border);
+        padding: 0.6rem;
+    }
+
+    .bd-content .sd-tab-set>input:not(:checked,:focus-visible)+label:hover {
+        border-color: unset;
+    }
+
+    .bd-content .sd-tab-set>input:checked+label {
+        border: 1px solid var(--dwave-color-medium-blue-45);
+        margin-bottom: 0;
+        border-top-left-radius: 0;
+        border-top-right-radius: 0;
+    }
+
+    .sd-container-fluid {
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+    }
+
+    .sd-card-body {
+        padding: 0.6rem !important;
+    }
+}
+
+/* grid-item-card */
+img.sd-card-img-top {
+    height: 4.5rem;
+    width: fit-content;
+    margin: 1.4rem auto 0.4rem;
+    background: none !important;
+}
+
+.sd-card-body .sd-card-title {
+    font-size: 1rem;
+}
+
+div.sd-card.sd-card-hover .sd-card-body .sd-card-title {
+    color: var(--pst-color-link);
+}
+
+div.sd-card.sd-card-hover .sd-card-body .sd-card-title a {
+    text-decoration: none;
+}
+
+div.sd-card .sd-card-body.docutils {
+    text-align: center;
+    background-color: var(--pst-color-panel-background);
+}
+
+.sd-tab-set div.sd-card.sd-card-hover.docutils:not(:hover) {
+    border-color: var(--pst-color-background);
+}
+
+div.sd-card:not(.sd-card-hover).docutils {
+    border-color: var(--pst-color-border);
+}
+
+div.sd-card.docutils {
+    border-radius: 1.2rem;
+    border-width: 1px;
+    background-color: var(--pst-color-background);
+    transition: all 0.2s ease-in;
+}
+
+/* Dropdown */
+details.sd-dropdown summary.sd-card-header span.sd-summary-icon {
+    font-size: 1.3rem;
+    color: var(--pst-color-link)
+}
+
+details.sd-dropdown.sd-sphinx-override summary.sd-card-header,
+details.sd-dropdown summary.sd-card-header+div.sd-summary-content {
+    border: 1px solid var(--pst-color-border) !important;
+}
+
+details.sd-dropdown summary.sd-card-header+div.sd-summary-content {
+    border-top: 0 !important;
+    border-radius: 0 0 0.6rem 0.6rem;
+}
+
+details.sd-dropdown.sd-sphinx-override summary.sd-card-header {
+    background-color: var(--dwave-bg) !important;
+    transition: border-color 0.2s ease-in;
+    overflow: hidden;
+}
+
+details.sd-dropdown.sd-sphinx-override summary.sd-card-header:hover {
+    border-color: var(--pst-color-link) !important;
+}
+
+details.sd-dropdown {
+    box-shadow: var(--dwave-shadow-leap) !important;
+}
+
+details.sd-dropdown svg {
+    fill: var(--pst-color-link);
+    transition: opacity 0.2s ease-in, transform 0.2s ease-in;
+}
+
+details.sd-dropdown:not([open])>.sd-card-header,
+details.sd-dropdown {
+    border-radius: 0.6rem !important;
+}
+
+details.sd-dropdown[open]>.sd-card-header {
+    border-radius: 0.6rem 0.6rem 0 0;
+}
+
+/* Note */
+.admonition, div.admonition {
+    border-left: none;
+    border-radius: 0.6rem;
+}
+
+.admonition>.admonition-title:before, div.admonition>.admonition-title:before {
+    border-bottom: 1px solid var(--pst-color-border);
+}
+
+.table {
+    border: 0;
+}
+
+.table thead tr, .table tbody tr:nth-child(odd) {
+    background-color: unset;
+}
+
+.table tbody tr:nth-child(2n) {
+    background-color: unset;
+}
+
+.table thead tr, .table td, .table td~td, .table th, .table th~th {
+    border-width: 0 0 1px 0;
+    border-bottom-color: var(--dwave-color-dark-gray-40);
+}
