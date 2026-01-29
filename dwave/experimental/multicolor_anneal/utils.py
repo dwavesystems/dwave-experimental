@@ -46,12 +46,12 @@ def qubit_to_Advantage2_annealing_line(n: int | tuple, shape: tuple) -> int:
         and lines
 
         >>> from dwave.system import DWaveSampler
-        >>> from dwave.experimental import multicolor_anneal, qubit_to_Advantage2_annealing_line
+        >>> import dwave.experimental.multicolor_anneal as mca
 
         >>> qpu = DWaveSampler()             # doctest: +SKIP
-        >>> annealing_lines = multicolor_anneal.get_properties(qpu)            # doctest: +SKIP
+        >>> annealing_lines = mca.get_properties(qpu)            # doctest: +SKIP
         >>> if len(annealing_lines) == 6:            # doctest: +SKIP
-        >>>     assert(all(qubit_to_Advantage2_annealing_line(n)==al_idx for al_idx, al in enumerate(annealing_lines) for n in al['qubits']))            # doctest: +SKIP
+        >>>     assert(all(mca.qubit_to_Advantage2_annealing_line(n)==al_idx for al_idx, al in enumerate(annealing_lines) for n in al['qubits']))            # doctest: +SKIP
     """
 
     if isinstance(n, tuple):

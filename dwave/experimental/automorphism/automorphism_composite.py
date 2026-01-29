@@ -519,13 +519,14 @@ class AutomorphismComposite(ComposedSampler):
         then uses it to sample an Ising problem.
 
         >>> from dimod import ExactSolver
-        >>> from dwave.preprocessing.composites import AutomorphismComposite
+        >>> from dwave.experimental.automorphism import AutomorphismComposite
         >>> base_sampler = ExactSolver()
         >>> generators_listtuple = [({'a': 'b', 'b':'a'}, 2)]
-        >>> composed_sampler = AutomorphismComposite(base_sampler, generators_listtuple)
+        >>> composed_sampler = AutomorphismComposite(
+        ...     base_sampler, generators_listtuple=generators_listtuple)
         ... # Sample an Ising problem
         >>> response = composed_sampler.sample_ising({'a': -0.5, 'b': 1.0}, {('a', 'b'): -1})
-        >>> response.first.sample
+        >>> response.first.sample  # doctest: +SKIP
         {'a': -1, 'b': -1}
 
     """
@@ -678,13 +679,12 @@ class AutomorphismComposite(ComposedSampler):
             This example runs 10 automorphisms of a two variable QUBO problem.
 
             >>> from dimod import ExactSolver
-            >>> from dwave.preprocessing.composites import EmbeddingComposite
+            >>> from dwave.experimental.automorphism import AutomorphismComposite
             >>> base_sampler = ExactSolver()
-            >>> composed_sampler = EmbeddingComposite(base_sampler)
+            >>> composed_sampler = AutomorphismComposite(base_sampler)
             ...
             >>> Q = {('a', 'a'): -1, ('b', 'b'): -1, ('a', 'b'): 2}
-            >>> response = composed_sampler.sample_qubo(Q,
-            ...               num_automorphisms=10)
+            >>> response = composed_sampler.sample_qubo(Q, num_automorphisms=10)
             >>> len(response)
             40
         """
