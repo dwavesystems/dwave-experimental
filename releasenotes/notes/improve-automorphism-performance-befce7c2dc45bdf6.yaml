@@ -1,0 +1,18 @@
+---
+features:
+  - |
+    Improve the performance of the automorphism submodule by using an optimized
+    color refinement algorithm, doing more efficient pruning using existing
+    automorphisms without changing the base, and by comparing graphs by their
+    refinement history instead of their adjacency matrix. Additionally, graphs
+    with disjoint components are handled more efficiently by determining if
+    components are isomorphic and explicitly handling "swap" automorphisms
+    between components.
+  - |
+    Add support for returning a mapping to the original graph labels, as well
+    as vertex and edge orbits expressed in the original graph labels.
+fixes:
+  - |
+    Fix a bug where generators could be missed if coset representatives could
+    belong to multiple left transversals, potentially undercounting the number
+    of automorphisms for certain types of graphs.
