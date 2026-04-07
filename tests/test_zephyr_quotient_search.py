@@ -17,13 +17,14 @@ import unittest
 
 import networkx as nx
 import numpy as np
-
 from dwave_networkx import zephyr_graph
 from dwave_networkx.generators._zephyr_playground import (
     ZephyrSearchMetadata, zephyr_quotient_search)
 
 
-def generate_faulty_zephyr_graph(m, t, proportion, uniform_proportion, seed=None):
+def generate_faulty_zephyr_graph(
+    m: int, t: int, proportion: float, uniform_proportion: float, seed: int | None = None
+) -> nx.Graph:
     """Create a Zephyr graph with simulated hardware faults.
 
     Nodes are deleted in two phases: (1) ``round(proportion * uniform_proportion * N)`` nodes are
@@ -62,22 +63,22 @@ def generate_faulty_zephyr_graph(m, t, proportion, uniform_proportion, seed=None
     # Phase 1: uniform random deletion
     n_uniform = round(proportion * uniform_proportion * N)
     uniform_indices = rng.choice(N, size=n_uniform, replace=False)
-    deleted = {all_nodes[i] for i in uniform_indices}
+    deleted_nodes = {all_nodes[i] for i in uniform_indices}
 
     # Phase 2: iterative distance-based deletion with dynamic updates
     n_distance = round(proportion * (1 - uniform_proportion) * N)
     deleted_distance = set()
 
-    if n_distance > 0 and deleted:
+    if n_distance > 0 and deleted_nodes:
         # cumulative_dist[v] stores sum(dist(v, d) for d in current deleted set D)
         cumulative_dist = {node: 0.0 for node in all_nodes}
-        for deleted_node in deleted:
+        for deleted_node in deleted_nodes:
             distances = nx.single_source_shortest_path_length(full_graph, deleted_node)
             for node, dist in distances.items():
                 cumulative_dist[node] += dist
 
         for _ in range(n_distance):
-            current_deleted = deleted | deleted_distance
+            current_deleted = deleted_nodes | deleted_distance
             remaining = [node for node in all_nodes if node not in current_deleted]
             if not remaining:
                 break
@@ -99,7 +100,7 @@ def generate_faulty_zephyr_graph(m, t, proportion, uniform_proportion, seed=None
                 cumulative_dist[node] += dist
 
     faulty_graph = full_graph.copy()
-    faulty_graph.remove_nodes_from(deleted | deleted_distance)
+    faulty_graph.remove_nodes_from(deleted_nodes | deleted_distance)
     return faulty_graph
 
 

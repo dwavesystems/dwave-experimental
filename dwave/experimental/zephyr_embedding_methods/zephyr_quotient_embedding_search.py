@@ -18,7 +18,6 @@ from typing import Callable, Literal, get_args
 
 import networkx as nx
 import numpy as np
-from dwave.embedding import verify_embedding
 from dwave_networkx import zephyr_coordinates, zephyr_graph
 
 __all__ = ["zephyr_quotient_search"]
@@ -34,11 +33,11 @@ ZephyrSearchMetadata = namedtuple(
 )
 
 
-def _validate_graph_inputs(source: nx.Graph, target: nx.Graph):
+def _validate_graph_inputs(source: nx.Graph, target: nx.Graph) -> None:
     """Validate that source and target are Zephyr NetworkX graphs.
 
     Both source and target graphs must be networkx graph instances with a 'family' metadata key
-    set to 'zephyr'. Each graph must also contain 'rows', 'tile' and 'labels metadata keys.
+    set to 'zephyr'. Each graph must also contain 'rows', 'tile' and 'labels' metadata keys.
 
     Args:
         source (nx.Graph): Source Zephyr graph.
@@ -64,7 +63,8 @@ def _validate_graph_inputs(source: nx.Graph, target: nx.Graph):
 
 
 def _extract_graph_properties(source: nx.Graph, target: nx.Graph) -> tuple[int, int, int]:
-    """Extract and validate Zephyr graph properties, returning ``(m, tp, t)``.
+    """Extract and validate Zephyr graph properties, returning ``(rows, tile count, and target
+    tile count)``.
 
     Each graph must contain required metadata fields: 'rows' (number of rows) and 'tile'
     (tile count). All metadata values must be positive integers. The source and target graphs must
@@ -76,12 +76,13 @@ def _extract_graph_properties(source: nx.Graph, target: nx.Graph) -> tuple[int, 
         target (nx.Graph): Target Zephyr graph.
 
     Returns:
-        tuple[int, int, int]: ``(m, tp, t)`` where ``m`` is rows,
-            ``tp`` is source tile count, and ``t`` is target tile count.
+        tuple[int, int, int]: source Zephyr rows, source tile count and target tile count.
 
     Raises:
         TypeError: If metadata values are not integers.
-        ValueError: If graph metadata is missing or incompatible.
+        KeyError: If rows or tile metadata is missing from either graph.
+        ValueError: If rows or tile metadata are not compatible, i.e., not the same in the case of
+            rows, or if the target tile count is less than the source tile count.
     """
     m = source.graph["rows"]
     tp = source.graph["tile"]
@@ -381,7 +382,7 @@ def _node_search(
 
         F_q = \{m \in V(S) \setminus B_q : m \in \operatorname{dom}(\phi)\},
 
-    where :math:`\phi` is the current embedding`. Then
+    where :math:`\phi` is the current embedding. Then
 
     .. math::
 
@@ -442,7 +443,7 @@ def _node_search(
         if expand_boundary_search:
             if w == 0:
                 ksymmetric = False
-                # brrow candidates from adjacent internal column
+                # borrow candidates from adjacent internal column
                 proposals += list(_boundary_proposals(u, 1, tp, t, embedding, j, z))
             elif w == 2 * m:
                 ksymmetric = False
@@ -522,7 +523,7 @@ def _rail_search(
         \{(u, w_t, k_t, j, z) : j \in \{0,1\},\ z \in \{0,\dots,m-1\}\}.
 
     We can define its objective for ``yield_type='edge'`` as the number of edges preserved within
-    that rail, i.e., the numbe of edges in the target subgraph induced by the proposed rail, or
+    that rail, i.e., the number of edges in the target subgraph induced by the proposed rail, or
     equivalently the number of edges in the source rail (which is fixed) that are preserved by the
     proposal:
 
@@ -570,7 +571,7 @@ def _rail_search(
             :math:`w` is at a boundary. Defaults to ``True``.
         ksymmetric (bool): If ``True``, treat source :math:`k` order as interchangeable when scoring
             rails. Defaults to ``False``.
-        yield_type (str): ``"node"``, ``"edge"``, or ``"rail-edge"``. Defaults to ``"edge"``.
+        yield_type (YieldType): ``"node"``, ``"edge"``, or ``"rail-edge"``. Defaults to ``"edge"``.
 
     Returns:
         Embedding: Updated embedding.
@@ -713,7 +714,7 @@ def zephyr_quotient_search(
     tiles. It is designed for defective targets where a direct identity map may lose
     nodes or edges.
 
-    The search is organised around the **quotient graph** of the Zephyr topology, formed by
+    The search is organized around the **quotient graph** of the Zephyr topology, formed by
     contracting fine-grained coordinate indices so that each equivalence class maps to a single
     quotient node. Two coarsenings are used:
 
@@ -725,7 +726,7 @@ def zephyr_quotient_search(
       :math:`(k, j, z)` variation.
 
     The function can be used in (1) node-level mode (``quotient_search='by_quotient_node'``), where
-    each quotient node block :math:`(u,w,j,z)` is optimised by choosing target candidates with the
+    each quotient node block :math:`(u,w,j,z)` is optimized by choosing target candidates with the
     same :math:`(u,w,j,z)` and selecting the highest-yield proposals; (2) rail-level mode
     (``quotient_search='by_quotient_rail'``): optimise each quotient rail block :math:`(u,w,:)` by
     selecting rails :math:`(u,w_t,k_t)` that maximise yield.; and (3) hybrid mode
