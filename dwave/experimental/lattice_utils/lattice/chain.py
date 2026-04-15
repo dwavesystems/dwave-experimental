@@ -23,11 +23,14 @@ class Chain(Lattice):
     def __init__(self, **kwargs):
         periodic: tuple[bool, ...] = kwargs.pop("periodic", (True,))
         self.geometry_name: str = "Chain"
+        self.num_spins = kwargs["dimensions"][0]
         super().__init__(periodic=periodic, **kwargs)
 
     def generate_edges(self) -> Iterator[tuple[int, int]]:
         """Yield edges for a 1D chain lattice."""
-        for i in range(self.dimensions[0] - 1):
+        n = self.dimensions[0]
+        for i in range(n - 1):
             yield (i, i + 1)
-        if self.periodic[0]:
-            yield (i + 1, 0)
+
+        if self.periodic[0] and n > 1:
+            yield (n - 1, 0)

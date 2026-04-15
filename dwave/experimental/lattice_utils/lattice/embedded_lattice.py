@@ -51,6 +51,8 @@ class EmbeddedLattice(Lattice):
         self.logical_lattice: Lattice = logical_lattice_class(**logical_lattice_kwargs)
         self.chain_nodes: dict[tuple[int, Integral]] = chain_nodes
         self.chain_coupling: float = -kwargs.pop("chain_strength", 2)
+        if not hasattr(self, "num_spins"):
+            self.num_spins = sum(len(c) for c in chain_nodes.values())
         kwargs.setdefault("periodic", self.logical_lattice.periodic)
         super().__init__(**kwargs)
 
@@ -151,7 +153,7 @@ class EmbeddedLattice(Lattice):
                 for v in range(len(self.chain_nodes))
             ]
         )
-        voted_samples = np.sign(voted_samples + np.random.rand(*voted_samples.shape)).T
+        voted_samples = np.sign(voted_samples + np.random.rand(*voted_samples.shape) - 0.5).T
 
         return dimod.SampleSet.from_samples(voted_samples, vartype=dimod.SPIN, energy=0)
 

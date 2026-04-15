@@ -18,7 +18,6 @@ from collections.abc import Hashable
 from numbers import Integral
 
 import dimod
-#import matplotlib.pyplot as plt
 from minorminer.utils.parallel_embeddings import find_multiple_embeddings
 import networkx as nx
 import numpy as np
@@ -39,15 +38,13 @@ class Lattice():
 
         self.periodic: tuple[bool, ...] = kwargs.get("periodic", [False] * len(self.dimensions))
         self.edge_list: list[tuple[Hashable, Hashable]] = list(self.generate_edges())
-        if len(self.edge_list) > 0:
-            self.num_spins: Integral = np.max(np.asarray(self.edge_list)) + 1
+
+        if not hasattr(self, "num_spins"):
+            raise AttributeError(f"{type(self).__name__} subclass must initialize self.num_spins")
 
         self.num_edges: int = len(self.edge_list)
         self.orbit_type: str = kwargs.get("orbit_type", "singleton")
-        self.initialize_orbits(
-            kwargs.get("qubit_orbits"),
-            kwargs.get("coupler_orbits"),
-        )
+        self.initialize_orbits(kwargs.get("qubit_orbits"), kwargs.get("coupler_orbits"))
 
     def embed_lattice(
         self,

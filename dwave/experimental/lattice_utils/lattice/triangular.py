@@ -33,6 +33,7 @@ class Triangular(Lattice):
         periodic = kwargs.pop("periodic", (True, False))
         self.geometry_name: str = "Triangular"
         self.halve_boundary_couplers: bool = kwargs.pop("halve_boundary_couplers", False)
+        self.num_spins = kwargs["dimensions"][0] * kwargs["dimensions"][1]
         self.sublattice: NDArray | None = None
         self.integer_coords: list[tuple[int, int]] | None = None
         self.xy_coords: list[tuple[float, float]] | None = None
@@ -117,6 +118,7 @@ class DimerizedTriangular(EmbeddedLattice):
             for v in range(np.prod(kwargs["dimensions"]))
         }
         self.geometry_name: str  = "DimerizedTriangular"
+        self.num_spins = 2 * int(np.prod(kwargs["dimensions"]))
         logical_lattice_kwargs = kwargs.copy()
         logical_lattice_kwargs.update({"ignore_embedding": True})
         super().__init__(
