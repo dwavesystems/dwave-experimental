@@ -233,9 +233,10 @@ def shim_flux_biases(
         >>> import numpy as np
         >>> import dimod
         >>> from dwave.system import DWaveSampler
+        >>> from dwave.experimental.fast_reverse_anneal import SOLVER_FILTER
         >>> from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_phi
         ...
-        >>> qpu = DWaveSampler()        # doctest: +SKIP
+        >>> qpu = DWaveSampler(solver=SOLVER_FILTER)        # doctest: +SKIP
         >>> bqm = dimod.BQM.from_ising({q: 0 for q in qpu.nodelist}, {})    # doctest: +SKIP
         >>> alpha_phi = qubit_freezeout_alpha_phi()  # Unoptimized to the experiment, for demonstration purposes.
         >>> ls = [alpha_phi]*5
