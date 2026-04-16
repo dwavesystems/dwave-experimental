@@ -46,9 +46,9 @@ def _make_anneal_schedules(
     line_detector: int = 0,
     line_source: int = 3,
 ):
-    """Set annealing schedules suitable for Larmour precision.
+    """Set annealing schedules suitable for Larmor precision.
 
-    See documentation for Larmour precession example, the same
+    See documentation for Larmor precession example, the same
     schedule is used.
     """
 
@@ -102,9 +102,9 @@ def _make_polarizing_schedules(
     sign_polarization: int = 1,
     times: list[float] | tuple[float] = (0.0, 1.0, 2.0, 6.0),
 ):
-    """Set polzarizing schedules suitable for Larmour precision.
+    """Set polarizing schedules suitable for Larmor precession.
 
-    See documentation for Larmour precession example, the same
+    See documentation for Larmor precession example, the same
     schedule is used."""
     if len(times) != 4:
         raise ValueError(
@@ -491,7 +491,7 @@ def main(
     anneal_offsets = [0.0] * qpu.properties["num_qubits"]
     flux_biases = [0.0] * qpu.properties["num_qubits"]
 
-    # See documented Larmour precession example
+    # See documented Larmor precession example
     qpu_parameters = dict(
         num_reads=500,
         answer_mode="raw",
