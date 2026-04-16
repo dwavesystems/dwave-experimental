@@ -53,7 +53,7 @@ def get_solver_name() -> str:
         >>> from dwave.experimental.fast_reverse_anneal import get_solver_name
         ...
         >>> print(get_solver_name())                # doctest: +SKIP
-        Advantage2_research1.4
+        Advantage2_research1
     """
     with Client.from_config() as client:
         solver = client.get_solver(**SOLVER_FILTER)
@@ -84,7 +84,7 @@ def get_parameters(sampler: Optional[Union[DWaveSampler, Solver, str]] = None,
         >>> from dwave.system import DWaveSampler
         >>> from dwave.experimental import fast_reverse_anneal as fra
         ...
-        >>> with DWaveSampler() as sampler:             # doctest: +SKIP
+        >>> with DWaveSampler(solver=fra.SOLVER_FILTER) as sampler: # doctest: +SKIP
         ...    param_info = fra.get_parameters(sampler)
     """
 
