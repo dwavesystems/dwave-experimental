@@ -48,10 +48,13 @@ def qubit_to_Advantage2_annealing_line(n: int | tuple, shape: tuple) -> int:
         >>> from dwave.system import DWaveSampler
         >>> import dwave.experimental.multicolor_anneal as mca
 
-        >>> qpu = DWaveSampler(solver=mca.SOLVER_FILTER)            # doctest: +SKIP
+        >>> qpu = DWaveSampler()            # doctest: +SKIP
         >>> annealing_lines = mca.get_properties(qpu)            # doctest: +SKIP
         >>> if len(annealing_lines) == 6:            # doctest: +SKIP
         >>>     assert(all(mca.qubit_to_Advantage2_annealing_line(n)==al_idx for al_idx, al in enumerate(annealing_lines) for n in al['qubits']))            # doctest: +SKIP
+
+        To explicitly select a solver that supports advanced annealing features, such as multi-color annealing, see
+        :attr:`~dwave.experimental.fast_reverse_anneal.api.SOLVER_FILTER`.
     """
 
     if isinstance(n, tuple):

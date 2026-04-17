@@ -82,10 +82,12 @@ def get_parameters(sampler: Optional[Union[DWaveSampler, Solver, str]] = None,
         sampler:
 
         >>> from dwave.system import DWaveSampler
-        >>> from dwave.experimental import fast_reverse_anneal as fra
         ...
-        >>> with DWaveSampler(solver=fra.SOLVER_FILTER) as sampler: # doctest: +SKIP
+        >>> with DWaveSampler() as sampler: # doctest: +SKIP
         ...    param_info = fra.get_parameters(sampler)
+
+        To explicitly select a solver that supports advanced annealing features, such as fast reverse anneal, see
+        :attr:`~dwave.experimental.fast_reverse_anneal.api.SOLVER_FILTER`.
     """
 
     # inelegant, but convenient extensions

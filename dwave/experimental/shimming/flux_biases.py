@@ -233,10 +233,9 @@ def shim_flux_biases(
         >>> import numpy as np
         >>> import dimod
         >>> from dwave.system import DWaveSampler
-        >>> from dwave.experimental.fast_reverse_anneal import SOLVER_FILTER
         >>> from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_phi
         ...
-        >>> qpu = DWaveSampler(solver=SOLVER_FILTER)        # doctest: +SKIP
+        >>> qpu = DWaveSampler()        # doctest: +SKIP
         >>> bqm = dimod.BQM.from_ising({q: 0 for q in qpu.nodelist}, {})    # doctest: +SKIP
         >>> alpha_phi = qubit_freezeout_alpha_phi()  # Unoptimized to the experiment, for demonstration purposes.
         >>> ls = [alpha_phi]*5
@@ -247,6 +246,9 @@ def shim_flux_biases(
         ...     learning_schedule=ls)
         ...
         >>> print(f"RMS magnetization by iteration: {np.sqrt(np.mean([np.array(v)**2 for v in mag_history.values()], axis=0))}") # doctest: +SKIP
+
+        To explicitly select a solver that supports advanced annealing features, such as fast reverse anneal, see
+        :attr:`~dwave.experimental.fast_reverse_anneal.api.SOLVER_FILTER`.
     """
 
     # Natural candidates for future feature enhancements:
