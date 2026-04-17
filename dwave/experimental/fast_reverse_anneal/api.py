@@ -23,7 +23,7 @@ from dwave.system import DWaveSampler
 __all__ = ['SOLVER_FILTER', 'get_solver_name', 'get_parameters']
 
 
-SOLVER_FILTER = dict(name__regex=r'Advantage2_prototype2.*|Advantage2_research1\..*')
+SOLVER_FILTER = dict(name__regex=r'Advantage2_prototype2.*|Advantage2_research1.*')
 """Filter for an available solver that supports advanced annealing features.
 
 Feature-based solver selection returns the first available solver that supports
@@ -53,7 +53,7 @@ def get_solver_name() -> str:
         >>> from dwave.experimental.fast_reverse_anneal import get_solver_name
         ...
         >>> print(get_solver_name())                # doctest: +SKIP
-        Advantage2_research1.4
+        Advantage2_research1
     """
     with Client.from_config() as client:
         solver = client.get_solver(**SOLVER_FILTER)
@@ -82,10 +82,12 @@ def get_parameters(sampler: Optional[Union[DWaveSampler, Solver, str]] = None,
         sampler:
 
         >>> from dwave.system import DWaveSampler
-        >>> from dwave.experimental import fast_reverse_anneal as fra
         ...
-        >>> with DWaveSampler() as sampler:             # doctest: +SKIP
+        >>> with DWaveSampler() as sampler: # doctest: +SKIP
         ...    param_info = fra.get_parameters(sampler)
+
+        To explicitly select a solver that supports advanced annealing features, such as fast reverse anneal, see
+        :attr:`~dwave.experimental.fast_reverse_anneal.api.SOLVER_FILTER`.
     """
 
     # inelegant, but convenient extensions
