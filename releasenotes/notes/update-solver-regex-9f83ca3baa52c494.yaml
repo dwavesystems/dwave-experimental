@@ -1,0 +1,6 @@
+---
+other:
+  - |
+    Update ``SOLVER_FILTER`` regex to correctly match the new naming pattern,
+    with minor version optional (using ``graph_id`` to track working graph
+    changes).
