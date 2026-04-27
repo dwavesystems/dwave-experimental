@@ -18,7 +18,7 @@ import numpy as np
 from minorminer import find_embedding
 from minorminer.utils.parallel_embeddings import find_sublattice_embeddings
 
-from dwave.experimental.zephyr_embedding_methods import zephyr_quotient_search
+from dwave.experimental.embedding_methods import zephyr_quotient_search
 
 seed = 12345
 rng = np.random.default_rng(seed)
