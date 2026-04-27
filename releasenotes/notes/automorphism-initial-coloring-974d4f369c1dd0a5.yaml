@@ -1,0 +1,7 @@
+---
+features:
+  - |
+    Add support for an optional ``graph_coloring`` parameter in
+    ``schreier_rep()``. When provided, only color-preserving automorphisms are
+    found. Coloring is into canonical certificates so that structurally
+    identical components with different colorings are correctly distinguished.
