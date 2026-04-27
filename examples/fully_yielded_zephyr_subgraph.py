@@ -12,13 +12,13 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
+import dwave_networkx as dnx
 import networkx as nx
 import numpy as np
 from minorminer import find_embedding
 from minorminer.utils.parallel_embeddings import find_sublattice_embeddings
 
-import dwave_networkx as dnx
-from dwave_networkx.generators._zephyr_playground import zephyr_quotient_search
+from dwave.experimental.zephyr_embedding_methods import zephyr_quotient_search
 
 seed = 12345
 rng = np.random.default_rng(seed)

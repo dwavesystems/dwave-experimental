@@ -13,11 +13,13 @@
 #    limitations under the License.
 
 import itertools
+import warnings
 from collections import namedtuple
 from typing import Callable, Literal, get_args
 
 import networkx as nx
 import numpy as np
+from dwave.embedding import verify_embedding
 from dwave_networkx import zephyr_coordinates, zephyr_graph
 
 __all__ = ["zephyr_quotient_search"]
@@ -241,10 +243,14 @@ def _ensure_coordinate_source(
         raise ValueError("source graph has unknown labelling scheme")
 
     _source = source.copy()
-    # Just in case the source graph is missing some nodes, we add the full canonical set implied by
-    # m and tp. However, this should not happen. Discuss with Jack why would this ever be needed.
-    # TODO: ask.
-    _source.add_nodes_from(source_nodes)
+    for n in source_nodes:
+        if not _source.has_node(n):
+            warnings.warn(
+                f"Source graph is missing expected node {n}. We are manually adding it to the "
+                "graph, along with any other missing nodes.", UserWarning
+            )
+            _source.add_nodes_from(source_nodes)
+            breakpoint()
 
     # If the labels are coordinate. Then we just return the graph as is and the identity function
     # for to_source:
@@ -712,7 +718,11 @@ def zephyr_quotient_search(
     This routine starts from a source Zephyr graph with ``m`` rows and ``tp`` tiles,
     and maps it into a target Zephyr graph with the same ``m`` rows and ``t >= tp``
     tiles. It is designed for defective targets where a direct identity map may lose
-    nodes or edges.
+    nodes or edges. Since a greedy method is used for embedding search, it is possible it fails to
+    find a 1:1 embedding where one is viable. A complete method such as
+    :code:minorminer.subgraph.find_subgraph may be more appropriate in a scenario such as this,
+    especially with customization of parameters to the target families. Similarly, when defect rates
+    are high direct use of :code: minorminer.find_embedding may be a more efficient strategy.
 
     The search is organized around the **quotient graph** of the Zephyr topology, formed by
     contracting fine-grained coordinate indices so that each equivalence class maps to a single
@@ -912,9 +922,12 @@ def zephyr_quotient_search(
         if num_yielded < starting_yield:
             raise ValueError("Greedy quotient search reduced the objective value")
 
+    # If there are unfeasible mappings to target nodes, the final working_embedding might contain
+    # entries that map to non-existent target nodes. We prune those out before returning the final
+    # embedding:
     pruned_embedding = {
         to_source(k): to_target(v) for k, v in working_embedding.items() if v in target_nodeset
-    }  # TODO:?: why would a target node in the working_embedding not be in the target_nodeset?
+    }
 
     # Convert to chain format for return value
     pruned_embedding = {k: (v,) for k, v in pruned_embedding.items()}

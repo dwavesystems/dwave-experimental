@@ -12,4 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from zephyr_quotient_embedding_search import *
+from .zephyr_quotient_embedding_search import *
