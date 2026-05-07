@@ -31,13 +31,14 @@ from dwave.experimental.lattice_utils.observable import (
     CouplerFrustration,
     SampleEnergy,
     BitpackedSpins,
-    ReferenceEnergy
+    ReferenceEnergy,
 )
 from dwave.experimental.lattice_utils.experiment.samplercall import SamplerCall
 
 __all__ = ['Experiment']
 
-class Experiment():
+
+class Experiment:
     """Base class for experiment in LatQA."""
 
     default_parameters = {
@@ -60,6 +61,7 @@ class Experiment():
         BitpackedSpins(),
         ReferenceEnergy(),
     }
+
     def __init__(self, inst: Lattice, sampler: dimod.Sampler, **kwargs):
         self.inst: Lattice = inst
         self.sampler: dimod.Sampler = sampler
@@ -85,7 +87,6 @@ class Experiment():
 
             self.param[field] = value
 
-
     def load_results(
         self,
         num_iterations: int = 100,
@@ -103,7 +104,7 @@ class Experiment():
                 iteration index. Otherwise the most recent ``num_iterations``
                 results are loaded.
             result_fields: Subset of fields to extract from each result file. If
-                ``None``, all fields present in the first result file are used. 
+                ``None``, all fields present in the first result file are used.
             quiet: If false, prints a message when each result file is loaded.
             ignore_shim: If true, the ``shimdata`` field is removed from the
                 returned results.
@@ -117,7 +118,9 @@ class Experiment():
 
         fnlist = self._get_sorted_results_file_list()
         if starting_iteration is not None:
-            fnlist = fnlist[max(starting_iteration, 0):max(starting_iteration + num_iterations, 0)]
+            fnlist = fnlist[
+                max(starting_iteration, 0) : max(starting_iteration + num_iterations, 0)
+            ]
         else:
             fnlist = fnlist[-num_iterations:]
 
@@ -140,7 +143,7 @@ class Experiment():
             results.append({k: data[k] for k in result_fields})
 
         if mod is not None:
-            return results[:mod * (len(results) // mod)]
+            return results[: mod * (len(results) // mod)]
 
         return results
 
@@ -261,8 +264,7 @@ class Experiment():
         sample_set = {}
         for iemb, sample_array in enumerate(sample_arrays):
             sample_set[iemb] = dimod.SampleSet.from_samples_bqm(
-                sample_array,
-                call.nominal_bqms[iemb]
+                sample_array, call.nominal_bqms[iemb]
             )
 
         results = {}
@@ -391,15 +393,17 @@ class Experiment():
 
     def _get_relative_data_path(self) -> str:
         """Make a subdirectory name for a sampler call's data."""
-        return "/".join([
-            self.inst._get_instance_pathstring(),
-            self._get_solver_pathstring(),
-            self._get_parameter_pathstring()
-        ])
+        return "/".join(
+            [
+                self.inst._get_instance_pathstring(),
+                self._get_solver_pathstring(),
+                self._get_parameter_pathstring(),
+            ]
+        )
 
     def _make_nominal_bqms(self) -> list[dimod.BQM]:
         """Make nominal BQMs (one per embedding) for the experiment."""
-        nominal_bqm = self.inst.make_nominal_bqm(seed=self.run_index)
+        nominal_bqm = self.inst.make_nominal_bqm()
 
         if not hasattr(self.inst, "embedding_list"):
             return [nominal_bqm]
@@ -521,8 +525,7 @@ class Experiment():
         elif "reinitialize_state" in self.param and ret["anneal_schedule"][0][1] == 1:
             # Set to None, meaning that it will be randomized.
             ret["initial_state"] = {
-                qubit: np.random.randint(2) * 2 - 1
-                for qubit in self.inst.embedding_list.ravel()
+                qubit: np.random.randint(2) * 2 - 1 for qubit in self.inst.embedding_list.ravel()
             }
 
         return ret
@@ -644,13 +647,11 @@ class Experiment():
 
             # Damp the couplers (push toward default value)
             if "coupler_damp" in self.param and self.param["coupler_damp"] > 0:
-                excess = (
+                excess = relative_coupler_strength[:, bin_edges] - np.mean(
                     relative_coupler_strength[:, bin_edges]
-                    - np.mean(relative_coupler_strength[:, bin_edges])
                 )
                 relative_coupler_strength[:, bin_edges] -= (
-                    np.multiply(coupler_signs[bin_edges], excess)
-                    * self.param["coupler_damp"]
+                    np.multiply(coupler_signs[bin_edges], excess) * self.param["coupler_damp"]
                 )
 
             # New truncation method... previous is buggy when we mix signs of nominal values.
@@ -663,9 +664,7 @@ class Experiment():
                     > 1
                 )
                 relative_coupler_strength[iemb, bin_edges[violators]] = (
-                    0.99999
-                    / nominal_values[bin_edges[violators]]
-                    / energy_scale
+                    0.99999 / nominal_values[bin_edges[violators]] / energy_scale
                 )
 
                 violators = (
@@ -675,9 +674,7 @@ class Experiment():
                     < -2
                 )
                 relative_coupler_strength[iemb, bin_edges[violators]] = (
-                    -1.99999
-                    / nominal_values[bin_edges[violators]]
-                    / energy_scale
+                    -1.99999 / nominal_values[bin_edges[violators]] / energy_scale
                 )
 
         # Renormalize each orbit after truncation
@@ -702,9 +699,7 @@ class Experiment():
                     > 1
                 )
                 relative_coupler_strength[iemb, bin_edges[violators]] = (
-                    0.99999
-                    / nominal_values[bin_edges[violators]]
-                    / energy_scale
+                    0.99999 / nominal_values[bin_edges[violators]] / energy_scale
                 )
 
                 violators = (
@@ -714,9 +709,7 @@ class Experiment():
                     < -2
                 )
                 relative_coupler_strength[iemb, bin_edges[violators]] = (
-                    -1.99999
-                    / nominal_values[bin_edges[violators]]
-                    / energy_scale
+                    -1.99999 / nominal_values[bin_edges[violators]] / energy_scale
                 )
 
         Q = nominal_values * relative_coupler_strength * energy_scale
@@ -726,7 +719,7 @@ class Experiment():
             raise ValueError(
                 "Effective coupler strengths violate hardware bounds: "
                 f"min={Q_min:.6f}, max={Q_max:.6f}"
-        )
+            )
 
     def _make_bqm(self, sampler_call: SamplerCall) -> dimod.BQM:
         """Construct a BQM for the current sampler call."""

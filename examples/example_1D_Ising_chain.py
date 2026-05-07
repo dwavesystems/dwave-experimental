@@ -25,6 +25,7 @@ import numpy as np
 from dwave.experimental.lattice_utils import lattice, experiment, observable
 from dwave.experimental.lattice_utils.utils import bootstrap, confidence_interval
 
+rng = np.random.default_rng(seed=0)
 # Set up a dict for collating kink densities
 kd_dict = {}
 kkc_dict = {}
@@ -38,6 +39,7 @@ samplers = [
 ]
 
 NUM_SPINS = 256
+#NUM_SPINS = 8
 
 # Two energy scales: one strong coupling and one weak coupling.
 ENERGY_SCALES = (-1.8, 0.1)
@@ -51,13 +53,15 @@ point_style = {"marker": 'o', "linestyle": ''}
 # Create a folder to save figures in if it doesn't already exist
 Path("figures").mkdir(exist_ok=True)
 
+data_root = Path(__file__).resolve().parents[1]
+
 for sampler in samplers:
 
     # Make a lattice instance for a periodic 256-spin chain, so we can embed it.
     inst = lattice.Chain(
         dimensions=(NUM_SPINS,),
+        data_root=data_root,
         periodic=(True,),
-        sampler=sampler,
         orbit_type="standard",
     )
 
@@ -134,7 +138,7 @@ for sampler in samplers:
         fig, axes = plt.subplots(3, 3, figsize=(16, 10))
         fig.suptitle(title, fontsize=16)
         rng = np.random.default_rng(0)
-        x = np.linspace(0, 2*np.pi, 400)
+        x = np.linspace(0, 2 * np.pi, 400)
         plt.tight_layout()
         plt.subplots_adjust(hspace=0.35, wspace=0.3, top=0.9)
 
@@ -153,9 +157,9 @@ for sampler in samplers:
             label="theory",
         )
 
-        #x = ANNEAL_TIMES
         M = np.asarray(frust)
-        bs = np.asarray([bootstrap(_, bootstrap_function=np.nanmedian, seed=None) for _ in M])
+
+        bs = np.asarray([bootstrap(_, rng, bootstrap_function=np.nanmedian) for _ in M])
         ci = np.asarray([confidence_interval(_) for _ in bs])
 
         errorbar_handle = ax.errorbar(
@@ -276,14 +280,11 @@ for isampler, sampler in enumerate(samplers):
 
         x = ANNEAL_TIMES
         M = kd_dict[sampler.solver.name, energy_scale]
-        bs = np.asarray([bootstrap(m, bootstrap_function=np.nanmedian, seed=None) for m in M])
+        bs = np.asarray([bootstrap(m, rng, bootstrap_function=np.nanmedian) for m in M])
         ci = np.asarray([confidence_interval(b) for b in bs])
 
         errorbar_handle = ax2[isampler].errorbar(
-            ANNEAL_TIMES,
-            ci[:, 0],
-            yerr=[ci[:, 1], ci[:, 2]],
-            **errorbar_style
+            ANNEAL_TIMES, ci[:, 0], yerr=[ci[:, 1], ci[:, 2]], **errorbar_style
         )
         ax2[isampler].plot(
             x,
@@ -303,7 +304,7 @@ plt.show()
 fig3, ax3 = plt.subplots(1, 2, figsize=(10, 8))
 dims = 'x'.join(map(str, inst.dimensions))
 time_ns = ANNEAL_TIMES[0] * 1000
-title=f"1D chain kink-kink correlator, {dims}, {time_ns:.1f} ns"
+title = f"1D chain kink-kink correlator, {dims}, {time_ns:.1f} ns"
 fig3.suptitle(title, fontsize=16)
 
 for isampler, sampler in enumerate(samplers):
@@ -323,14 +324,11 @@ for isampler, sampler in enumerate(samplers):
         x = np.arange(NUM_SPINS) * kd
         M = magnetization
 
-        bs = np.asarray([bootstrap(m, bootstrap_function=np.nanmedian, seed=None) for m in M])
+        bs = np.asarray([bootstrap(m, rng, bootstrap_function=np.nanmedian) for m in M])
         ci = np.asarray([confidence_interval(i) for i in bs])
 
         errorbar_handle = ax3[isampler].errorbar(
-            x,
-            ci[:, 0],
-            yerr=[ci[:, 1], ci[:, 2]],
-            **errorbar_style
+            x, ci[:, 0], yerr=[ci[:, 1], ci[:, 2]], **errorbar_style
         )
         ax3[isampler].plot(
             x,
@@ -338,7 +336,7 @@ for isampler, sampler in enumerate(samplers):
             marker='o',
             linestyle='',
             color=errorbar_handle[0]._color,
-            markerfacecolor=np.array(to_rgb(errorbar_handle[0]._color)) / 2 + 0.5
+            markerfacecolor=np.array(to_rgb(errorbar_handle[0]._color)) / 2 + 0.5,
         )
 
 filename = title

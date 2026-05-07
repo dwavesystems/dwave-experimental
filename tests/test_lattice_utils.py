@@ -82,6 +82,7 @@ def _make_sync_sampler(n_cols=128, solver_name="TestSolver"):
     Mimics the async response interface used by DWaveSampler: .done() and
     .samples() -> 2-D ndarray of shape (num_reads, n_cols).
     """
+
     class _Response:
         def done(self):
             return True
@@ -89,21 +90,17 @@ def _make_sync_sampler(n_cols=128, solver_name="TestSolver"):
         def samples(self, sorted_by=None):
             return np.ones((10, n_cols), dtype=float)
 
-    s = mock.MagicMock()
-    type(s).__name__ = "DWaveSampler"
-    s.solver.name = solver_name
-    s.nodelist = list(range(n_cols))
-    s.properties = {"num_qubits": n_cols}
-    s.sample.return_value = _Response()
-    return s
+    sampler = mock.MagicMock()
+    type(sampler).__name__ = "DWaveSampler"
+    sampler.solver.name = solver_name
+    sampler.nodelist = list(range(n_cols))
+    sampler.properties = {"num_qubits": n_cols}
+    sampler.sample.return_value = _Response()
+    return sampler
 
 
 def _make_mock_experiment(
-    inst,
-    energy_scale=1.0,
-    run_index=0,
-    num_random_instances=1,
-    extra_params=None
+    inst, energy_scale=1.0, run_index=0, num_random_instances=1, extra_params=None
 ):
     """Return a lightweight mock Experiment with .inst and .param."""
     exp = mock.MagicMock()
@@ -117,12 +114,11 @@ def _make_mock_experiment(
 
 def _make_embedded_chain(chain_nodes):
     return EmbeddedLattice(
-        logical_lattice_class=Chain,
-        logical_lattice_kwargs={
-            "dimensions": (len(chain_nodes),),
-            "periodic": (False,),
-            "ignore_embedding": True,
-        },
+        logical_lattice=Chain(
+            dimensions=(len(chain_nodes),),
+            periodic=(False,),
+            ignore_embedding=True,
+        ),
         chain_nodes=chain_nodes,
         dimensions=(sum(len(chain) for chain in chain_nodes.values()),),
         periodic=(False,),
@@ -131,26 +127,25 @@ def _make_embedded_chain(chain_nodes):
 
 class TestUtils(unittest.TestCase):
     def test_bootstrap_all_nan_skipnan(self):
-        result = bootstrap(np.array([np.nan, np.nan]), repetitions=5, skipnan=True)
+        rng = np.random.default_rng(seed=0)
+        result = bootstrap(np.array([np.nan, np.nan]), rng, repetitions=5, skipnan=True)
         self.assertEqual(len(result), 5)
         for val in result:
             self.assertTrue(np.isnan(val))
 
     def test_bootstrap_skipnan_false(self):
-        result = bootstrap(np.array([1.0, 2.0, np.nan]), repetitions=5, skipnan=False)
+        rng = np.random.default_rng(seed=0)
+        result = bootstrap(np.array([1.0, 2.0, np.nan]), rng, repetitions=5, skipnan=False)
         self.assertEqual(len(result), 5)
 
     def test_bootstrap_custom_function(self):
-        result = bootstrap(np.arange(20), repetitions=10, bootstrap_function=np.mean, seed=0)
+        rng = np.random.default_rng(seed=0)
+        result = bootstrap(np.arange(20), rng, repetitions=10, bootstrap_function=np.mean)
         self.assertEqual(len(result), 10)
 
-    def test_bootstrap_seed_reproducibility(self):
-        r1 = bootstrap(np.arange(10), repetitions=20, seed=123)
-        r2 = bootstrap(np.arange(10), repetitions=20, seed=123)
-        np.testing.assert_array_equal(r1, r2)
-
     def test_generate_bootstrap_indices_correct_count(self):
-        indices = list(generate_bootstrap_indices(10, 5, seed=0))
+        rng = np.random.default_rng(seed=0)
+        indices = list(generate_bootstrap_indices(10, 5, rng))
         self.assertEqual(len(indices), 5)
         for idx in indices:
             self.assertEqual(len(idx), 10)
@@ -307,8 +302,7 @@ class TestLattice(unittest.TestCase):
                 "dwave.experimental.lattice_utils.lattice.lattice.find_multiple_embeddings",
                 return_value=[emb_dict],
             ):
-                chain.embed_lattice(sampler, try_to_load=False, timeout=1,
-                                    data_root=Path(tmpdir))
+                chain.embed_lattice(sampler, try_to_load=False, timeout=1, data_root=Path(tmpdir))
             # Verify embedding was found and saved
             emb_path = chain._get_path(Path(tmpdir), "embedding", sampler_name="MockDWaveSampler")
             self.assertTrue(emb_path.exists())
@@ -342,6 +336,7 @@ class TestTriangular(unittest.TestCase):
         tri = _make_triangular(3, 3, periodic=(False, True))
         self.assertFalse(tri.periodic[0])
         self.assertTrue(tri.periodic[1])
+
 
 class TestDimerizedTriangular(unittest.TestCase):
     def test_basic_construction(self):
@@ -396,10 +391,12 @@ class TestEmbeddedLattice(unittest.TestCase):
 
     def test_unembed_sampleset(self):
         embedded = _make_embedded_chain({0: (0, 1), 1: (2, 3)})
-        samples = np.array([
-            [1, 1, -1, -1],
-            [1, -1, 1, -1],
-        ])
+        samples = np.array(
+            [
+                [1, 1, -1, -1],
+                [1, -1, 1, -1],
+            ]
+        )
         ss = dimod.SampleSet.from_samples(samples, vartype=dimod.SPIN, energy=0)
         with mock.patch(
             "dwave.experimental.lattice_utils.lattice.embedded_lattice.np.random.rand",
@@ -492,9 +489,7 @@ class TestObservables(unittest.TestCase):
         samples = np.ones((1, 4))
         ss = dimod.SampleSet.from_samples_bqm(samples, bqm)
         exp_pos = _make_mock_experiment(chain, energy_scale=1.0)
-        np.testing.assert_array_almost_equal(
-            SampleEnergy().evaluate(exp_pos, bqm, ss), [3.0]
-        )
+        np.testing.assert_array_almost_equal(SampleEnergy().evaluate(exp_pos, bqm, ss), [3.0])
 
     def test_bitpacked_spins(self):
         chain = Chain(dimensions=(4,), periodic=(False,))
@@ -505,7 +500,7 @@ class TestObservables(unittest.TestCase):
         packed, shape = BitpackedSpins().evaluate(exp, bqm, ss)
         self.assertEqual(shape, (2, 4))
         # Unpack and verify round-trip
-        unpacked = np.unpackbits(packed)[:shape[0] * shape[1]].reshape(shape)
+        unpacked = np.unpackbits(packed)[: shape[0] * shape[1]].reshape(shape)
         np.testing.assert_array_equal(unpacked, np.equal(samples, 1))
 
     def test_reference_energy_save_load_roundtrip(self):
@@ -943,8 +938,9 @@ class TestExperiment(unittest.TestCase):
         """run_iteration() exercises the full pipeline: build call, sample, parse, shim, save."""
         with tempfile.TemporaryDirectory() as tmpdir:
             chain = Chain(dimensions=(4,), periodic=(False,), lattice_data_root=Path(tmpdir))
-            exp = Experiment(chain, _make_sync_sampler(), results_root=tmpdir,
-                             anneal_time=1.0, max_iterations=1)
+            exp = Experiment(
+                chain, _make_sync_sampler(), results_root=tmpdir, anneal_time=1.0, max_iterations=1
+            )
             chain._load_embeddings = mock.MagicMock()
             finished = exp.run_iteration([{"energy_scale": 1.0, "anneal_time": 1.0}])
 
@@ -962,8 +958,9 @@ class TestExperiment(unittest.TestCase):
         """run_iteration() returns True when max_iterations already reached."""
         with tempfile.TemporaryDirectory() as tmpdir:
             chain = Chain(dimensions=(4,), periodic=(False,), lattice_data_root=Path(tmpdir))
-            exp = Experiment(chain, _make_sync_sampler(), results_root=tmpdir,
-                             anneal_time=1.0, max_iterations=0)
+            exp = Experiment(
+                chain, _make_sync_sampler(), results_root=tmpdir, anneal_time=1.0, max_iterations=0
+            )
             chain._load_embeddings = mock.MagicMock()
             finished = exp.run_iteration([{"energy_scale": 1.0, "anneal_time": 1.0}])
 
@@ -1022,6 +1019,7 @@ class TestExperiment(unittest.TestCase):
         exp.already_initialized = False
         shimdata = exp._get_shimdata()
         self.assertEqual(shimdata["total_iterations"], 0)
+
 
 class TestFastAnnealExperiment(unittest.TestCase):
     def test_default_params(self):

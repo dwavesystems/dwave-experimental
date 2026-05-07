@@ -26,12 +26,13 @@ from matplotlib.colors import to_rgb
 from dwave.experimental.lattice_utils import lattice, experiment, observable
 from dwave.experimental.lattice_utils.utils import bootstrap, confidence_interval
 
+rng = np.random.default_rng(seed=0)
+
 # Set up a dict for collating statistics
 m_dict = {}
 psi_dict = {}
 
-# Just an Advantage2 prototype.
-sampler = DWaveSampler(solver="Advantage2_system3.1")
+sampler = DWaveSampler(solver="Advantage2_system1")
 
 ANNEAL_TIMES = np.round(0.005 * np.logspace(0, 2, 17), 6)
 
@@ -40,10 +41,12 @@ point_style = {"marker": 'o', "linestyle": ''}
 # Create a folder to save figures in if it doesn't already exist
 Path("figures").mkdir(exist_ok=True)
 
+data_root = Path(__file__).resolve().parents[1]
+
 inst = lattice.DimerizedTriangular(
     dimensions=(9, 12),
+    data_root=data_root,
     periodic=(True, False),
-    sampler=sampler,
     orbit_type="explicit",
     halve_boundary_couplers=True,
     chain_strength=2,
@@ -114,12 +117,14 @@ for param in parameter_list:
     ene.append(np.array([np.mean(i["SampleEnergy"]) for i in res]))
     psi.append(np.asarray([i["TriangularOP"] for i in res]))
 
-title=f"DimerizedTriangular, {'x'.join([str(dim) for dim in inst.dimensions])}, " \
+title = (
+    f"DimerizedTriangular, {'x'.join([str(dim) for dim in inst.dimensions])}, "
     f"J={exp.param["energy_scale"]}, {sampler.solver.name}"
+)
 fig, axes = plt.subplots(3, 3, figsize=(16, 10))
 fig.suptitle(title, fontsize=16)
 rng = np.random.default_rng(0)
-x = np.linspace(0, 2*np.pi, 400)
+x = np.linspace(0, 2 * np.pi, 400)
 plt.tight_layout()
 plt.subplots_adjust(hspace=0.35, wspace=0.3, top=0.9, left=0.07, bottom=0.07)
 
@@ -127,7 +132,7 @@ ax = axes[0, 0]
 ax.loglog()
 
 M = np.asarray(opmag)
-bs = np.asarray([bootstrap(m, bootstrap_function=np.nanmedian, seed=None) for m in M])
+bs = np.asarray([bootstrap(m, rng, bootstrap_function=np.nanmedian) for m in M])
 ci = np.asarray([confidence_interval(i) for i in bs])
 
 errorbar_handle = ax.errorbar(ANNEAL_TIMES, ci[:, 0], yerr=[ci[:, 1], ci[:, 2]], **errorbar_style)
@@ -211,12 +216,12 @@ psi_dict[sampler.solver.name] = np.asarray(psi)
 
 # Now plot the order parameters together, for a nice comparison.
 fig2, ax2 = plt.subplots(2, 1, figsize=(8, 12))
-title=f'Triangular, global orbit, J={exp.param["energy_scale"]}'
+title = f'Triangular, global orbit, J={exp.param["energy_scale"]}'
 fig2.suptitle(title, fontsize=16)
 
 M = m_dict[sampler.solver.name]
 
-bs = np.asarray([bootstrap(m, bootstrap_function=np.nanmedian, seed=None) for m in M[:, :5]])
+bs = np.asarray([bootstrap(m, rng, bootstrap_function=np.nanmedian) for m in M[:, :5]])
 ci = np.asarray([confidence_interval(i) for i in bs])
 errorbar_handle = ax2[0].errorbar(
     ANNEAL_TIMES,
@@ -234,7 +239,7 @@ ax2[0].plot(
     label="first 5 iterations of shim",
     **point_style,
 )
-bs = np.asarray([bootstrap(m, bootstrap_function=np.nanmedian, seed=None) for m in M[:, -5:]])
+bs = np.asarray([bootstrap(m, rng, bootstrap_function=np.nanmedian) for m in M[:, -5:]])
 ci = np.asarray([confidence_interval(i) for i in bs])
 errorbar_handle = ax2[0].errorbar(
     ANNEAL_TIMES,

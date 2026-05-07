@@ -13,21 +13,65 @@
 # limitations under the License.
 
 from collections.abc import Iterator
+from pathlib import Path
+
+from numpy.typing import NDArray
 
 from dwave.experimental.lattice_utils.lattice import Lattice
 
 __all__ = ['Chain']
 
-class Chain(Lattice):
 
-    def __init__(self, **kwargs):
-        periodic: tuple[bool, ...] = kwargs.pop("periodic", (True,))
-        self.geometry_name: str = "Chain"
-        self.num_spins = kwargs["dimensions"][0]
-        super().__init__(periodic=periodic, **kwargs)
+class Chain(Lattice):
+    """One-dimensional chain lattice.
+
+    This class represents a 1D chain of spins, where each spin is connected to
+    its nearest neighbors. The chain can be periodic (forming a ring) or
+    non-periodic (open chain) based on the `periodic` parameter.
+
+    Args:
+        dimensions: One-element tuple giving the number of spins in the chain.
+        periodic: One-element tuple indicating whether the chain is periodic.
+        data_root: A string or Path to the root directory for storing lattice data.
+        orbit_type: A string specifying the type of orbits to compute for the
+            lattice.
+        qubit_orbits: Explicit qubit orbit labels, used only when ``orbit_type == "explicit"``.
+            Must have length equal to the number of spins in the lattice.
+        coupler_orbits: Explicit coupler orbit labels, used only when ``orbit_type == "explicit"``.
+            Must have length equal to the number of edges in the lattice.
+    """
+
+    def __init__(
+        self,
+        *,
+        dimensions: tuple[int],
+        data_root: str | Path,
+        periodic: tuple[bool] = (True,),
+        orbit_type: str = "singleton",
+        qubit_orbits: NDArray | None = None,
+        coupler_orbits: NDArray | None = None,
+    ):
+        self.geometry_name = "Chain"
+        self.num_spins = dimensions[0]
+        if len(dimensions) != 1:
+            raise ValueError(f"Chain requires dimensions of length 1, got {len(dimensions)}.")
+
+        super().__init__(
+            dimensions=dimensions,
+            periodic=periodic,
+            data_root=data_root,
+            orbit_type=orbit_type,
+            qubit_orbits=qubit_orbits,
+            coupler_orbits=coupler_orbits,
+        )
 
     def generate_edges(self) -> Iterator[tuple[int, int]]:
-        """Yield edges for a 1D chain lattice."""
+        """Yield edges for a 1D chain lattice.
+
+        Returns:
+            An iterator of tuples, where each tuple represents an edge between
+            two spins in the chain.
+        """
         n = self.dimensions[0]
         for i in range(n - 1):
             yield (i, i + 1)
