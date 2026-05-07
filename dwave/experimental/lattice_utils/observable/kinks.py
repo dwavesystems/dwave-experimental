@@ -22,6 +22,7 @@ from dwave.experimental.lattice_utils.observable.observable import Observable
 
 __all__ = ['KinkKinkCorrelator']
 
+
 class KinkKinkCorrelator(Observable):
     """For 1D chains."""
 

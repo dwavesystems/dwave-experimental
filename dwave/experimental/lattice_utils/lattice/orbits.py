@@ -29,11 +29,16 @@ __all__ = [
     'get_orbits',
 ]
 
+
 def reindex(mapping: dict[Hashable, int]) -> dict[Hashable, int]:
     """Reindex dictionary values to consecutive integers starting at zero.
-    
+
     Args:
         mapping: Dictionary whose values represent indices or labels.
+
+    Returns:
+        A new dictionary with the same keys as `mapping` but with values reindexed
+        to consecutive integers starting at zero.
     """
     value_mapping = {v: i for i, v in enumerate(dict.fromkeys(mapping.values()))}
     return {k: value_mapping[v] for k, v in mapping.items()}
@@ -41,34 +46,28 @@ def reindex(mapping: dict[Hashable, int]) -> dict[Hashable, int]:
 
 def make_signed_bqm(bqm: dimod.BQM) -> dimod.BQM:
     """Construct a signed expansion of a BQM.
-    
+
     Takes a bqm and duplicates every spin s into two copies corresponding to
-    s and -s.
-    Each field h gets mapped to two opposing fields:
-     h(s1) = -h(s2)
-    each coupler gets mapped to four couplers:
-     J(s1,s2) = J(-s1,-s2) = -J(s1,-s2) = -J(-s1,s2)
+    s and -s. Each field h gets mapped to two opposing fields:
+        h(s1) = -h(s2)
+    Each coupler gets mapped to four couplers:
+        J(s1,s2) = J(-s1,-s2) = -J(s1,-s2) = -J(-s1,s2)
 
     Args:
         bqm: Input binary quadratic model.
 
     Returns:
         A new BQM with duplicated variables representing both signs of each spin.
-     """
-    # Nodes and edges added in a seemingly ugly way in order to get the order right.
+    """
     ret = dimod.BinaryQuadraticModel(vartype="SPIN")
     for var in bqm.variables:
         ret.add_variable(f"p{var}", bqm.linear[var])
-    for var in bqm.variables:
         ret.add_variable(f"m{var}", -bqm.linear[var])
 
     for u, v in bqm.quadratic:
         ret.add_quadratic(f"p{u}", f"p{v}", bqm.quadratic[(u, v)])
-    for u, v in bqm.quadratic:
         ret.add_quadratic(f"m{u}", f"m{v}", bqm.quadratic[(u, v)])
-    for u, v in bqm.quadratic:
         ret.add_quadratic(f"p{u}", f"m{v}", -bqm.quadratic[(u, v)])
-    for u, v in bqm.quadratic:
         ret.add_quadratic(f"m{u}", f"p{v}", -bqm.quadratic[(u, v)])
 
     return ret
@@ -94,7 +93,7 @@ def get_bqm_orbits(
     Returns:
         A tuple ``(qubit_orbits, coupler_orbits)`` where ``qubit_orbits`` maps
         each node to an integer orbit label and ``coupler_orbits`` maps each
-        edge to an integer orbit label. 
+        edge to an integer orbit label.
     """
     # The function first adds auxiliary elements to a BQM
     graph = nx.Graph()
@@ -170,20 +169,24 @@ def get_unsigned_bqm_orbits(
     """Convert orbits for a signed BQM into orbits for the corresponding unsigned BQM.
 
     Assumes that orbits are given for a signed BQM, and turns them into signed
-    orbits for an unsigned BQM. We also need to keep track of self-symmetric pairs
-    of spins.
+    orbits for an unsigned BQM.
+
+    Coupler orbits are combined so that the orbit index of (p1,p2) is the same as
+    the orbit index of (m1,m2) and the orbit index of (p1,m2) is the same as the
+    orbit of index (m1,p2). This is because these pairs are related by a symmetry
+    of the unsigned BQM that flips both spins, and thus should be in the same orbit.
 
     Args:
         signed_qubit_orbits: Mapping from signed variable labels to orbit indices.
         signed_coupler_orbits: Mapping from signed coupler pairs to orbit indices.
         bqm: Original unsigned BQM.
 
-    Returns: 
+    Returns:
         A tuple ``(qubit_orbits, coupler_orbits)`` where ``qubit_orbits`` maps
         each original variable to its orbit index and ``coupler_orbits`` maps
-        each coupling to its orbit index. 
+        each coupling to its orbit index.
     """
-    # Combine coupler orbits so that O(p1p2)=O(m1m2) and O(p1m2)=O(m1p2)
+    coupler_orbits={}
     for u, v in bqm.quadratic:
         signed_coupler_orbits[(f"p{u}", f"p{v}")] = min(
             signed_coupler_orbits[(f"p{u}", f"p{v}")],
@@ -191,19 +194,17 @@ def get_unsigned_bqm_orbits(
         )
         signed_coupler_orbits[(f"m{u}", f"m{v}")] = signed_coupler_orbits[(f"p{u}", f"p{v}")]
 
-        signed_coupler_orbits[(f"m{v}", f"p{u}")] = min(
-            signed_coupler_orbits[(f"m{v}", f"p{u}")],
+        signed_coupler_orbits[(f"p{u}", f"m{v}")] = min(
+            signed_coupler_orbits[(f"p{u}", f"m{v}")],
             signed_coupler_orbits[(f"m{u}", f"p{v}")],
         )
-        signed_coupler_orbits[(f"m{u}", f"p{v}")] = signed_coupler_orbits[(f"m{v}", f"p{u}")]
+        signed_coupler_orbits[(f"m{u}", f"p{v}")] = signed_coupler_orbits[(f"p{u}", f"m{v}")]
+
+        coupler_orbits[(u, v)] = signed_coupler_orbits[(f"p{u}", f"p{v}")]
 
     qubit_orbits = {}
     for v in bqm.linear:
         qubit_orbits[v] = signed_qubit_orbits[(f"p{v}")]
-
-    coupler_orbits = {}
-    for u, v in bqm.quadratic:
-        coupler_orbits[(u, v)] = signed_coupler_orbits[(f"p{u}", f"p{v}")]
 
     return reindex(qubit_orbits), reindex(coupler_orbits)
 
@@ -214,12 +215,12 @@ def get_orbits(bqm: dimod.BQM, edge_list: list[int, int]) -> tuple[NDArray, NDAr
     Args:
         bqm: Ising model to analyze
         edge_list
-    
+
     Returns:
         A tuple ``(qubit_orbits_array, coupler_orbits_array)`` where
         ``qubit_orbits_array`` is a 1-D array of length ``num_spins`` mapping
         each variable index to an orbit index, and ``coupler_orbits_array`` is a
-        1-D array of length ``len(edge_list)`` mappig each entry of ``edge_list``
+        1-D array of length ``len(edge_list)`` mapping each entry of ``edge_list``
         to an orbit index.
     """
     signed_bqm = make_signed_bqm(bqm)

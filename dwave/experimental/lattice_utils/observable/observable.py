@@ -33,6 +33,7 @@ __all__ = [
     'ReferenceEnergy',
 ]
 
+
 class Observable(ABC):
     """The observable class does not take any parameters.  Its primary
     functionality is through the required 'evaluate' method, which requires
@@ -40,6 +41,7 @@ class Observable(ABC):
     which provides the samples on which we compute the observable.  Output is a
     numpy array of arbitrary type (usually float).
     """
+
     def __init__(self):
         self.name: str = type(self).__name__
 
@@ -55,6 +57,7 @@ class Observable(ABC):
 
 class QubitMagnetization(Observable):
     """Compute the mean magnetization of each qubit."""
+
     def evaluate(
         self,
         experiment: Experiment,
@@ -67,6 +70,7 @@ class QubitMagnetization(Observable):
 
 class CouplerCorrelation(Observable):
     """Compute pairwise spin correlations for each coupler."""
+
     def evaluate(
         self,
         experiment: Experiment,
@@ -85,6 +89,7 @@ class CouplerCorrelation(Observable):
 
 class CouplerFrustration(Observable):
     """Compute the mean coupler frustration for each edge."""
+
     def evaluate(
         self,
         experiment: Experiment,
@@ -98,10 +103,9 @@ class CouplerFrustration(Observable):
 
         # Surprisingly, it's faster to multiply the whole matrix.
         spin_product = np.matmul(sample_array.T, sample_array)[row, col] / len(sample_array)
-        coupler_signs = (
-            np.sign([bqm.quadratic[edge] for edge in experiment.inst.edge_list])
-            * np.sign(experiment.param["energy_scale"])
-        )
+        coupler_signs = np.sign(
+            [bqm.quadratic[edge] for edge in experiment.inst.edge_list]
+        ) * np.sign(experiment.param["energy_scale"])
 
         return spin_product * coupler_signs / 2 + 1 / 2
 
@@ -111,6 +115,7 @@ class SampleEnergy(Observable):
 
     Energies exclude the magnitude of ``energy_scale`` but include its sign.
     """
+
     def evaluate(
         self,
         experiment: Experiment,
@@ -122,6 +127,7 @@ class SampleEnergy(Observable):
 
 class BitpackedSpins(Observable):
     """Return bitpacked spins and a tuple of the array size."""
+
     def evaluate(
         self,
         experiment: Experiment,
@@ -140,7 +146,9 @@ class BitpackedSpins(Observable):
 
 class ReferenceEnergy(Observable):
     """Return a cached reference energy, computing it and saving it if needed."""
-    def evaluate(self,
+
+    def evaluate(
+        self,
         experiment: Experiment,
         bqm: dimod.BQM,
         sample_set: dimod.SampleSet,
@@ -219,7 +227,7 @@ def get_reference_energy_path(
     dummy_experiment_data_dict: dict[str, Any] | None = None,
 ) -> Path:
     """Return the path to the reference energy file for the given experiment and BQM.
-    
+
     This needs to be fixed if you have something not in the instance
     pathstring that needs to be taken into account, for example if the ground-state
     energies depend on the chip.
@@ -239,11 +247,16 @@ def get_reference_energy_path(
         }
 
     if root is None:
-        root = experiment_data_dict["inst"].lattice_data_root
+        root = experiment_data_dict["inst"].data_root
     else:
         root = Path(root)
 
-    path = root / "reference_energies" / experiment_data_dict["inst"]._get_instance_pathstring()
+    path = (
+        root
+        / "lattice_data"
+        / "reference_energies"
+        / experiment_data_dict["inst"]._get_instance_pathstring()
+    )
 
     # Use hash.  BQM is not hashable so use the experiment.inst data to generate a tuple.
     bqm_as_tuple = tuple(bqm.linear[v] for v in sorted(bqm.variables)) + tuple(

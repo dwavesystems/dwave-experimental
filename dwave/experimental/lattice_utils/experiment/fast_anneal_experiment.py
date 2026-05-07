@@ -19,10 +19,11 @@ from dwave.experimental.lattice_utils.observable import (
     CouplerFrustration,
     SampleEnergy,
     BitpackedSpins,
-    ReferenceEnergy
+    ReferenceEnergy,
 )
 
 __all__ = ['FastAnnealExperiment']
+
 
 class FastAnnealExperiment(Experiment):
     # Set default parameters

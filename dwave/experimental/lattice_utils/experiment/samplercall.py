@@ -18,6 +18,7 @@ import dimod
 
 __all__ = ['SamplerCall']
 
+
 @dataclass
 class SamplerCall:
     """Data class for managing asynchronous sampler calls."""

@@ -12,22 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""What do we want here?
 
-- A class that handles embedded models.
-- Perhaps called FixedEmbeddingModel
-- Should have a function called get_chain_connections, which takes an edge and
-returns a list or tuple of adjacent indices.  For example, in the 3D dimer class,
-x,y, and z-couplings would return
-((1,1))
-((0,0))
-((0,1),(1,0))
-respectively.
-A chain coupling (edge=(u,v) where u==v) can, in this case, return ((0,1)).
-"""
 from itertools import combinations, product
 from numbers import Integral
-from typing import Any
 from collections.abc import Iterator, Hashable
 
 import dimod
@@ -38,17 +25,37 @@ from dwave.experimental.lattice_utils.lattice import Lattice
 
 __all__ = ['EmbeddedLattice']
 
+
 class EmbeddedLattice(Lattice):
-    """Specifics should depend on the embedding.  Should this have a logical
-    model as an attribute? Let's try."""
+    """Embed a logical lattice onto a physical lattice using chains.
+
+    Logical nodes are represented by chains of physical spins. Subclasses can
+    specialize ``get_chain_connectivity`` to describe how spins within a chain,
+    and between neighboring logical chains, should be connected.
+
+    For example, a dimer-style embedding might map different logical couplings to
+    different physical index pairs. In a 3D dimer class, x-, y-, and z-couplings
+    could return ``((1, 1),)``, ``((0, 0),)``, and ``((0, 1), (1, 0))``,
+    respectively. A chain coupling, where the logical edge is ``(u, u)``, could
+    return ``((0, 1),)``.
+
+    Args:
+        logical_lattice: The logical lattice instance to embed.
+        chain_nodes: Mapping from logical nodes to their physical chains.
+    """
+
     def __init__(
         self,
-        logical_lattice_class: Lattice,
-        logical_lattice_kwargs: dict[str, Any],
+        logical_lattice: Lattice,
         chain_nodes: dict[int, tuple[int, Integral]],
         **kwargs,
     ):
-        self.logical_lattice: Lattice = logical_lattice_class(**logical_lattice_kwargs)
+        if not isinstance(logical_lattice, Lattice):
+            raise TypeError("logical_lattice must be a Lattice instance.")
+
+        self.logical_lattice = logical_lattice
+        if hasattr(self.logical_lattice, "logical_lattice"):
+            raise NotImplementedError("Nested embedded lattices not supported.")
         self.chain_nodes: dict[tuple[int, Integral]] = chain_nodes
         self.chain_coupling: float = -kwargs.pop("chain_strength", 2)
         if not hasattr(self, "num_spins"):
@@ -56,8 +63,24 @@ class EmbeddedLattice(Lattice):
         kwargs.setdefault("periodic", self.logical_lattice.periodic)
         super().__init__(**kwargs)
 
-    def get_chain_connectivity(self, u, v=None):
-        """Should also work for chains!  These can be thought of as self-loops."""
+    def get_chain_connectivity(
+        self,
+        u: Hashable,
+        v: Hashable | None = None,
+    ) -> tuple[tuple[int, int], ...]:
+        """Get the connectivity for a given edge in the logical lattice.
+
+        Args:
+            u: The first node in the logical edge.
+            v: The second node in the logical edge. If None, this is treated as
+                a chain edge (u == v).
+        Returns:
+            A tuple of tuples, where each inner tuple represents a pair of indices
+            in the chainscorresponding to u and v that should be connected. For
+            a chain edge (u == v or v is None), this will return pairs of indices
+            within the same chain. For a logical edge (u != v), this will return
+            pairs of indices between the two chains.
+        """
         # Interior chain connectivity. Generic version: add all possible edges.
         if u == v or v is None:
             return tuple(combinations(range(len(self.chain_nodes[u])), 2))
@@ -66,7 +89,12 @@ class EmbeddedLattice(Lattice):
         return tuple(product(range(len(self.chain_nodes[u])), range(len(self.chain_nodes[v]))))
 
     def generate_edges(self) -> Iterator[tuple[Hashable, Hashable]]:
-        """Yield physical edges for the embedded lattice."""
+        """Yield physical edges for the embedded lattice.
+        
+        Returns:
+            An iterator of tuples, where each tuple represents an edge between
+            two spins in the physical lattice.
+        """
         logical_bqm = self.logical_lattice.make_nominal_bqm()
 
         # Now embed it.  First make embedded spins and connect the chains.
@@ -82,7 +110,15 @@ class EmbeddedLattice(Lattice):
                 yield u_chain[edge[0]], v_chain[edge[1]]
 
     def make_nominal_bqm(self, **kwargs) -> dimod.BQM:
-        """Construct and embed the nominal BQM."""
+        """Construct and embed the nominal BQM.
+
+        Args:
+            kwargs: Keyword arguments to pass to the logical lattice's
+                `make_nominal_bqm` method.
+
+        Returns:
+            A dimod.BQM representing the embedded nominal BQM.
+        """
         if hasattr(self, "fixed_seed"):
             self.logical_lattice.fixed_seed = self.fixed_seed
             kwargs.pop("seed", None)
@@ -90,7 +126,16 @@ class EmbeddedLattice(Lattice):
         return self.embed_bqm(self.logical_lattice.make_nominal_bqm(**kwargs))
 
     def embed_bqm(self, logical_bqm: dimod.BQM) -> dimod.BQM:
-        """Embed a logical BQM onto the physical lattice."""
+        """Embed a logical BQM onto the physical lattice.
+
+        Args:
+            logical_bqm: A dimod.BQM representing the BQM defined on the logical
+                variable space of the embedded lattice.
+
+        Returns:
+            A dimod.BQM representing the embedded BQM defined on the physical
+            variable space of the embedded lattice.
+        """
         # First make embedded spins and connect the chains.
         embedded_bqm = dimod.BQM(vartype="SPIN")
         embedded_variables = np.concatenate(list(self.chain_nodes.values()))
@@ -124,7 +169,15 @@ class EmbeddedLattice(Lattice):
         return embedded_bqm
 
     def unembed_bqm(self, embedded_bqm: dimod.BQM) -> dimod.BQM:
-        """Unembed an embedded BQM back onto the logical variable space."""
+        """Unembed an embedded BQM back onto the logical variable space.
+
+        Args:
+            embedded_bqm: A dimod.BQM representing the BQM defined on the physical
+                variable space of the embedded lattice.
+
+        Returns:
+            A dimod.BQM representing the unembedded logical BQM.
+        """
         logical_bqm = dimod.BQM(vartype="SPIN")
         for v in range(self.logical_lattice.num_spins):
             logical_bqm.add_variable(v)
@@ -138,13 +191,21 @@ class EmbeddedLattice(Lattice):
 
         for u, v in embedded_bqm.quadratic:
             if which_spin[u] != which_spin[v]:
-                bias_uv =  embedded_bqm.quadratic[u, v]
+                bias_uv = embedded_bqm.quadratic[u, v]
                 logical_bqm.add_quadratic(which_spin[u], which_spin[v], bias_uv)
 
         return logical_bqm
 
     def unembed_sampleset(self, sampleset: dimod.SampleSet) -> dimod.SampleSet:
-        """Unembed a SampleSet using majority vote with random tie-breaking."""
+        """Unembed a SampleSet using majority vote with random tie-breaking.
+
+        Args:
+            sampleset: A dimod.SampleSet representing samples in the physical
+                variable space.
+
+        Returns:
+            A dimod.SampleSet representing the unembedded logical samples.
+        """
         sample_array = dimod.as_samples(sampleset)[0].T
 
         voted_samples = np.asarray(
@@ -158,7 +219,14 @@ class EmbeddedLattice(Lattice):
         return dimod.SampleSet.from_samples(voted_samples, vartype=dimod.SPIN, energy=0)
 
     def embed_sample(self, sample: NDArray) -> NDArray:
-        """Embed a logical sample onto the physical lattice."""
+        """Embed a logical sample onto the physical lattice.
+
+        Args:
+            sample: A NumPy array representing a sample in the logical variable space.
+
+        Returns
+            A NumPy array representing the embedded physical sample.
+        """
         ret = np.zeros(self.num_spins)
         for spin, chain in self.chain_nodes.items():
             ret[np.array(chain)] = sample[spin]
@@ -166,7 +234,14 @@ class EmbeddedLattice(Lattice):
         return ret
 
     def unembed_sample(self, sample: NDArray) -> NDArray:
-        """Unembed a physical sample using majority vote with random tie-breaking."""
+        """Unembed a physical sample using majority vote with random tie-breaking.
+
+        Args:
+            sample: A NumPy array representing a sample in the physical variable space.
+
+        Returns:
+            A NumPy array representing the unembedded logical sample.
+        """
         ret = np.zeros(self.logical_lattice.num_spins)
         for spin, chain in self.chain_nodes.items():
             ret[spin] = np.sign(np.sum(sample[np.array(chain)]) + np.random.rand() - 0.5)

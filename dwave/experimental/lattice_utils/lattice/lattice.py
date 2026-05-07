@@ -14,8 +14,9 @@
 
 import os
 from pathlib import Path
-from collections.abc import Hashable
-from numbers import Integral
+from collections.abc import Iterator, Hashable
+from abc import ABC, abstractmethod
+import warnings
 
 import dimod
 from minorminer.utils.parallel_embeddings import find_multiple_embeddings
@@ -28,30 +29,62 @@ from dwave.experimental.lattice_utils.lattice.optimize import optimize
 
 __all__ = ['Lattice']
 
-class Lattice():
-    """Base class for instances in LatQA."""
 
-    def __init__(self, **kwargs):
+class Lattice(ABC):
+    """An abstract base class for representing lattice geometries used in lattice-utils experiments.
 
-        self.dimensions: tuple[int, ...] = kwargs["dimensions"]
-        self.lattice_data_root: Path = kwargs.get("lattice_data_root", Path.cwd() / "lattice_data")
+    Subclasses are resonsible for defining the lattice geometry itself. In particular,
+    a subclass must:
 
-        self.periodic: tuple[bool, ...] = kwargs.get("periodic", [False] * len(self.dimensions))
+    - Implement the ``generate_edges`` method, which yields the edges of the lattice as pairs
+    - Initialize the ``self.num_spins`` attribute in the constructor, which is used by the base class
+    - set any geometry-specific identifiers such as ``self.geometry_name``
+
+    Args:
+        dimensions: Tuple specifying the size of the lattice in each dimension.
+        data_root: Root directory for loading and saving lattice data such as embeddings and orbits.
+        periodic: Tuple indicating whether each dimension is periodic (True) or open (False).
+        orbit_type: Method for determining qubit and coupler orbits. Must be one of "global",
+            "standard", "singleton", or "explicit". See ``initialize_orbits`` for details.
+        qubit_orbits: Explicit qubit orbit labels, used only when ``orbit_type == "explicit"``.
+            Must have length equal to the number of spins in the lattice.
+        coupler_orbits: Explicit coupler orbit labels, used only when ``orbit_type == "explicit"``.
+            Must have length equal to the number of edges in the lattice.
+    """
+
+    def __init__(
+        self,
+        *,
+        dimensions: tuple[int, ...],
+        data_root: str | Path,
+        periodic: tuple[bool, ...] | None = None,
+        orbit_type: str = "singleton",
+        qubit_orbits: NDArray | None = None,
+        coupler_orbits: NDArray | None = None,
+    ):
+        self.dimensions = dimensions
+        self.data_root = Path(data_root)
+
+        self.periodic = periodic if periodic is not None else tuple(False for _ in dimensions)
         self.edge_list: list[tuple[Hashable, Hashable]] = list(self.generate_edges())
 
         if not hasattr(self, "num_spins"):
             raise AttributeError(f"{type(self).__name__} subclass must initialize self.num_spins")
 
         self.num_edges: int = len(self.edge_list)
-        self.orbit_type: str = kwargs.get("orbit_type", "singleton")
-        self.initialize_orbits(kwargs.get("qubit_orbits"), kwargs.get("coupler_orbits"))
+        self.orbit_type: str = orbit_type
+        self.initialize_orbits(qubit_orbits, coupler_orbits)
+
+    @abstractmethod
+    def generate_edges(self) -> Iterator[tuple[Hashable, Hashable]]:
+        """Yield the edges for this lattice."""
+        raise NotImplementedError
 
     def embed_lattice(
         self,
         sampler: dimod.Sampler,
         try_to_load: bool = True,
         timeout: int = 10,
-        data_root: str | Path | None = None,
         max_number_of_embeddings: int | None = None,
         min_number_of_embeddings: int = 1,
         exclude_qubits: list = [],
@@ -64,7 +97,6 @@ class Lattice():
             try_to_load: If True, attempt to load embeddings from disk before
                 trying to find them.
             timeout: Time limit for the embedding search, in seconds.
-            data_root: Root directory for loading and saving embedding data.
             max_number_of_embeddings: Maximum number of embeddings to search for.
             min_number_of_embeddings: Minimum number of embeddings required to save.
             exclude_qubits: Qubits to remove from the sampler graph before searching
@@ -76,33 +108,26 @@ class Lattice():
 
         if try_to_load:
             try:
-                self._load_embeddings(sampler, data_root)
-                filename = self._make_filename(
-                    "embedding",
-                    data_root=data_root,
-                    sampler=sampler,
-                )
-                print(f"Loaded embedding from file {filename}")
+                self._load_embeddings(sampler)
                 return
             except FileNotFoundError:
-                pass
+                warnings.warn("No embedding file found.")
 
         embedding_dicts = find_multiple_embeddings(
             graph_bqm,
             graph_sampler,
             max_num_emb=max_number_of_embeddings,
-            embedder_kwargs={'timeout':timeout}
+            embedder_kwargs={'timeout': timeout},
         )
         if not embedding_dicts:
-            raise ValueError("No Embeddings Found")
+            raise ValueError("No embeddings found")
 
         embeddings = np.stack([list(emb.values()) for emb in embedding_dicts])
         if len(embeddings) >= min_number_of_embeddings and np.prod(embeddings.shape):
-            self._save_embeddings(sampler, embeddings, data_root=data_root)
+            self._save_embeddings(sampler, embeddings)
 
-        return
-
-    def make_nominal_bqm(self, **kwargs) -> dimod.BQM:
+    #def make_nominal_bqm(self, **kwargs) -> dimod.BQM:
+    def make_nominal_bqm(self) -> dimod.BQM:
         """Construct a default nominal BQM coupling strength values set to +1.
 
         Args:
@@ -135,21 +160,20 @@ class Lattice():
         orbit and all chain couplers in another.
         -``standard``: Load previously computed automorphism-based orbits, or
             compute them and save them if unavailable.
-        -``explicit``: use the orbit assignments provided via ``qubit_orbits``
+        -``singleton``: Put each qubit and coupler in its own orbit.
+        -``explicit``: Use the orbit assignments provided via ``qubit_orbits``
             and ``coupler_orbits``.
 
         Args:
             qubit_orbits: Explicit qubit orbit labels, used only when
                 ``self.orbit_type == "explicit"``. Must have length ``self.num_spins``.
-            coupler_orbits: Explicit coupler orbit labels. Used only when 
+            coupler_orbits: Explicit coupler orbit labels. Used only when
                 ``self.orbit_type == "explicit"``. Must have length ``self.num_edges``.
         """
         if self.orbit_type == "global":
             self.qubit_orbits = np.zeros(self.num_spins, dtype=int)
 
             if hasattr(self, "logical_lattice"):
-                if hasattr(self.logical_lattice, "logical_lattice"):
-                    raise NotImplementedError  # Nested embedded lattices not supported.
                 which_chain = {v: key for key, val in self.chain_nodes.items() for v in val}
                 self.coupler_orbits = np.zeros(self.num_edges, dtype=int)
 
@@ -163,7 +187,7 @@ class Lattice():
             try:
                 self._load_orbits()
             except FileNotFoundError:
-                print('Calculating orbits...')
+                # calculating orbits
                 bqm = self.make_nominal_bqm()
                 self.qubit_orbits, self.coupler_orbits = get_orbits(bqm, self.edge_list)
                 self._save_orbits()
@@ -174,19 +198,25 @@ class Lattice():
 
         elif self.orbit_type == "explicit":
             if qubit_orbits is not None and coupler_orbits is not None:
-                assert len(qubit_orbits) == self.num_spins
-                assert len(coupler_orbits) == self.num_edges
+                if len(qubit_orbits) != self.num_spins:
+                    raise ValueError(
+                        f"qubit_orbits must have length {self.num_spins}, got {len(qubit_orbits)}."
+                    )
+                if len(coupler_orbits) != self.num_edges:
+                    raise ValueError(
+                        f"coupler_orbits must have length {self.num_edges}, "
+                        f"got {len(coupler_orbits)}."
+                    )
             self.qubit_orbits = qubit_orbits
             self.coupler_orbits = coupler_orbits
         else:
             raise ValueError(
-                f'Unknown orbit type {self.orbit_type}.' \
+                f'Unknown orbit type {self.orbit_type}. '
                 'Must be "global", "standard", "singleton", or "explicit".'
             )
 
     def _get_path(
         self,
-        root: Path | None,
         kind: str,
         sampler_name: str | None = None,
         extra_subdir: str | Path | None = None,
@@ -198,66 +228,49 @@ class Lattice():
         class_subdir = Path(self.geometry_name)
         if extra_subdir is not None:
             class_subdir = class_subdir / extra_subdir
-        if root is None:
-            root = Path(__file__).parent.parent / "data"
 
-        if sampler_name is None:
-            path = Path(root) / kind / class_subdir / self._get_size_pathstring()
-        else:
-            path = Path(root) / kind / class_subdir / sampler_name / self._get_size_pathstring()
+        base_dir = self.data_root / "lattice_data" / kind / class_subdir
+        if sampler_name is not None:
+            base_dir = base_dir / sampler_name
 
-        return path.with_suffix(".txt")
+        filename = f"{self._get_size_pathstring()}.txt"
+        return base_dir / filename
 
-    def _make_filename(
-        self,
-        kind: str,
-        sampler: dimod.Sampler | None = None,
-        data_root: str | Path | None = None,
-    ) -> Path:
+    def _make_filename(self, kind: str, sampler: dimod.Sampler | None = None) -> Path:
         """Construct a data filename for the specified sampler and data type."""
-        if data_root is None:
-            data_root = self.lattice_data_root
         if sampler is None:
-            return self._get_path(data_root, kind)
+            return self._get_path(kind)
 
         if type(sampler).__name__ == "MockDWaveSampler":
-            return self._get_path(data_root, kind, sampler_name="MockDWaveSampler")
-        return self._get_path(data_root, kind, sampler_name=sampler.solver.name)
+            return self._get_path(kind, sampler_name="MockDWaveSampler")
+        return self._get_path(kind, sampler_name=sampler.solver.name)
 
-    def _save_embeddings(
-        self,
-        sampler: dimod.Sampler,
-        embeddings: NDArray,
-        data_root: str | Path | None = None,
-    ) -> None:
+    def _save_embeddings(self, sampler: dimod.Sampler, embeddings: NDArray) -> None:
         """Save embedding data to disk."""
-        cache_filename = self._make_filename("embedding", sampler=sampler, data_root=data_root)
+        cache_filename = self._make_filename("embedding", sampler=sampler)
         os.makedirs(cache_filename.parent, exist_ok=True)
         np.savetxt(cache_filename, embeddings, fmt="%d")
-        print(f"Saved {len(embeddings)} embeddings to file {cache_filename}")
 
-    def _load_embeddings(self, sampler: str, data_root: str | Path | None = None, **kwargs) -> None:
+    def _load_embeddings(self, sampler: str) -> None:
         """Load embedding data."""
-        filename = self._make_filename("embedding", sampler=sampler, data_root=data_root)
+        filename = self._make_filename("embedding", sampler=sampler)
         self.embedding_list = np.atleast_2d(np.loadtxt(filename, dtype=int))
 
-    def _save_orbits(self, data_root: str | Path | None = None) -> None:
+    def _save_orbits(self) -> None:
         """Save qubit and coupler orbits to disk."""
-        cache_filename = self._make_filename("orbits", data_root=data_root)
+        cache_filename = self._make_filename("orbits")
         cache_dir = cache_filename.parent / cache_filename.stem
         os.makedirs(cache_dir, exist_ok=True)
         np.savetxt(cache_dir / "qubit_orbits.txt", self.qubit_orbits, fmt="%d")
         np.savetxt(cache_dir / "coupler_orbits.txt", self.coupler_orbits, fmt="%d")
-        print(f"Saved orbits to folder {cache_dir}")
 
-    def _load_orbits(self, data_root: str | Path | None = None, **kwargs) -> None:
+    def _load_orbits(self) -> None:
         """Load qubit and coupler orbits."""
-        cache_filename = self._make_filename("orbits", data_root=data_root)
+        cache_filename = self._make_filename("orbits")
         cache_dir = cache_filename.parent / cache_filename.stem
 
         self.qubit_orbits = np.loadtxt(cache_dir / "qubit_orbits.txt", dtype=int)
         self.coupler_orbits = np.loadtxt(cache_dir / "coupler_orbits.txt", dtype=int)
-        print(f'Loaded orbits from {cache_dir}')
 
     def _get_instance_pathstring(self) -> str:
         """Construct an instance-specific pathstring.

@@ -24,8 +24,10 @@ from dwave.experimental.lattice_utils.observable.observable import Observable
 
 __all__ = ['TriangularOP']
 
+
 class TriangularOP(Observable):
     """For triangular lattices.  Unembeds if possible."""
+
     def evaluate(
         self,
         experiment: Experiment,
