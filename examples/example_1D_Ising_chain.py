@@ -34,12 +34,11 @@ kkc_dict = {}
 
 # Two samplers: an Advantage2 prototype and an Advantage system.
 samplers = [
-    DWaveSampler(solver="Advantage2_system3.1"),
+    DWaveSampler(solver="Advantage2_system1"),
     DWaveSampler(solver="Advantage_system4.1"),
 ]
 
 NUM_SPINS = 256
-#NUM_SPINS = 8
 
 # Two energy scales: one strong coupling and one weak coupling.
 ENERGY_SCALES = (-1.8, 0.1)
@@ -79,23 +78,21 @@ for sampler in samplers:
 
     # Here we will do some shimming: flux bias shim and coupler shim.  We will
     # run two energy scales: a very strong one (negative, ferromagnetic) and a
-    # very weak one (positive, antiferromagnetic).  Positive and negative energy
+    # very weak one (positive, antiferromagnetic). Positive and negative energy
     # scales are equivalent by gauge transformation, but we run the strong coupling
     # on the FM side because the maximum FM magnitude (-2) is larger than the
     # maximum AFM magnitude (+1).
     for energy_scale in ENERGY_SCALES:
-        exp = experiment.FastAnnealExperiment(
-            inst=inst,
-            sampler=sampler,
-            loop_data_files=30,
-            max_iterations=5,
+        config = experiment.FastAnnealExperimentConfig(
             energy_scale=energy_scale,
             coupler_shim_step=0.05,
             flux_bias_shim_step=1e-6,
         )
+        exp = experiment.Experiment(inst=inst, sampler=sampler, max_iterations=5, config=config)
+
         # Every experiment has an attribute (a set) of observables to compute and
         # save while the experiment runs.Here we can add non-default observables.
-        # In this case we will add the kink-kink correlator (CITE).  The observable
+        # In this case we will add the kink-kink correlator.  The observable
         # object is designed to provide a standard interface for adding whatever
         # experiment-specific observables you might require.
         exp.observables_to_collect.add(observable.KinkKinkCorrelator())
@@ -103,7 +100,7 @@ for sampler in samplers:
         # Make parameter list. We will only vary anneal time.
         parameter_list = [{"anneal_time": time} for time in ANNEAL_TIMES]
 
-        for _ in range(20):
+        for _ in range(20): #TODO clean this up?
             done = exp.run_iteration(parameter_list)
             if done:
                 break
@@ -122,7 +119,7 @@ for sampler in samplers:
         fbshim = []  # flux bias shim
         kkc = []  # kink-kink correlator
         for param in parameter_list:
-            exp.apply_param(param)
+            exp.apply_param(param) #TODO clean this up?
             res = exp.load_results(num_iterations=1000)
 
             frust.append(np.array([np.mean(it["CouplerFrustration"]) for it in res]))

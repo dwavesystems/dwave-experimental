@@ -15,7 +15,7 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeAlias
 
 import numpy as np
 from numpy.typing import NDArray
@@ -33,15 +33,19 @@ __all__ = [
     'ReferenceEnergy',
 ]
 
+ObservableResult: TypeAlias = (
+    NDArray
+    | float
+    | int
+    | tuple[NDArray, tuple[int, int]]
+)
 
 class Observable(ABC):
-    """The observable class does not take any parameters.  Its primary
-    functionality is through the required 'evaluate' method, which requires
-    parameters 'experiment' and 'bqm' defining the context, and 'sample_set'
-    which provides the samples on which we compute the observable.  Output is a
-    numpy array of arbitrary type (usually float).
+    """Abstract base class for observables in lattice experiments.
+    
+    Each observable should inherit from this class and implement the 'evaluate'
+    method, which computes the observable from a given sample set.
     """
-
     def __init__(self):
         self.name: str = type(self).__name__
 
@@ -51,7 +55,7 @@ class Observable(ABC):
         experiment: Experiment,
         bqm: dimod.BQM,
         sample_set: dimod.SampleSet,
-    ) -> NDArray:
+    ) -> ObservableResult:
         raise NotImplementedError
 
 
@@ -79,10 +83,9 @@ class CouplerCorrelation(Observable):
     ) -> NDArray:
         sample_array = dimod.as_samples(sample_set)[0].astype(float)
         if len(experiment.inst.edge_list) == 0:
-            return []
-        row, col = np.asarray(experiment.inst.edge_list).T
+            return np.empty(0, dtype=float)
 
-        # Surprisingly, it's faster to multiply the whole matrix.
+        row, col = np.asarray(experiment.inst.edge_list).T
         spin_product = np.matmul(sample_array.T, sample_array)[row, col] / len(sample_array)
         return spin_product
 
@@ -98,10 +101,9 @@ class CouplerFrustration(Observable):
     ) -> NDArray:
         sample_array = dimod.as_samples(sample_set)[0].astype(float)
         if len(experiment.inst.edge_list) == 0:
-            return []
-        row, col = np.asarray(experiment.inst.edge_list).T
+            return np.empty(0, dtype=float)
 
-        # Surprisingly, it's faster to multiply the whole matrix.
+        row, col = np.asarray(experiment.inst.edge_list).T
         spin_product = np.matmul(sample_array.T, sample_array)[row, col] / len(sample_array)
         coupler_signs = np.sign(
             [bqm.quadratic[edge] for edge in experiment.inst.edge_list]
@@ -155,8 +157,10 @@ class ReferenceEnergy(Observable):
         path: str | Path | None = None,
         inst: Lattice | None = None,
     ) -> float:
-
-        if path is None:
+        """Get the reference energy for the given BQM, computing and caching it if needed."""
+        if path is not None:
+            path = Path(path)
+        else:
             path = get_reference_energy_path(experiment, bqm=bqm)
 
         if path.exists():
@@ -166,8 +170,12 @@ class ReferenceEnergy(Observable):
         # And if we can't load, we generate a reference sample.
         if experiment is not None:
             energy, sample, method_string = experiment.inst._optimize(bqm)
-        else:
+        elif inst is not None:
             energy, sample, method_string = inst._optimize(bqm)
+        else:
+            raise ValueError(
+                "Must provide either an experiment or a lattice to compute reference energy."
+            )
 
         self.save(path, energy, sample, method_string)
 
@@ -180,8 +188,11 @@ class ReferenceEnergy(Observable):
         path: str | Path | None = None,
     ) -> tuple[float, NDArray, str]:
         """Load and get the full data tuple, not just the energy."""
-        if path is None:
+        if path is not None:
+            path = Path(path)
+        else:
             path = get_reference_energy_path(experiment, bqm=bqm)
+
         with open(path, "r") as f:
             method_string = f.readline().strip()
             energy = float(f.readline().strip())
@@ -192,6 +203,7 @@ class ReferenceEnergy(Observable):
 
     def save(self, path: str | Path, energy: float, sample: NDArray, method_string: str) -> None:
         """Save the reference energy to disk."""
+        path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         np.savetxt(path, sample, fmt="%d", header=f"{method_string}\n{energy}", comments="")
 
@@ -207,8 +219,10 @@ class ReferenceEnergy(Observable):
         Use this when you get an energy that is lower than the reference energy.
         We want to keep the old method string unless it is specified.
         """
-        reference_energy, _, reference_method_string = self.load(experiment, bqm, path)
+        if path is not None:
+            path = Path(path)
 
+        reference_energy, _, reference_method_string = self.load(experiment, bqm, path)
         new_energy = bqm.energy(sample)
 
         if new_energy < reference_energy:
@@ -228,12 +242,19 @@ def get_reference_energy_path(
 ) -> Path:
     """Return the path to the reference energy file for the given experiment and BQM.
 
-    This needs to be fixed if you have something not in the instance
-    pathstring that needs to be taken into account, for example if the ground-state
-    energies depend on the chip.
+    This should be revised if relevant factors are not captured in the instance
+    pathstring, for example when ground-state energies depend on the specific chip.
+
+    Args:
+        experiment: The experiment for which to get the reference energy path.
+        root: Optional root directory to use instead of the experiment's data root.
+        bqm: The BQM for which to get the reference energy path.
+
+    Returns:
+        The path to the reference energy file.
     """
     if bqm is None:
-        raise NotImplementedError  # defunct.
+        raise NotImplementedError("Must provide a BQM to get the reference energy path.")
 
     # Allow for generation of dummy experiment data without all the overhead,
     # for running without an actual experiment.
@@ -258,7 +279,7 @@ def get_reference_energy_path(
         / experiment_data_dict["inst"]._get_instance_pathstring()
     )
 
-    # Use hash.  BQM is not hashable so use the experiment.inst data to generate a tuple.
+    # Use hash. BQM is not hashable so use the experiment.inst data to generate a tuple.
     bqm_as_tuple = tuple(bqm.linear[v] for v in sorted(bqm.variables)) + tuple(
         bqm.quadratic[e] for e in experiment_data_dict["inst"].edge_list
     )

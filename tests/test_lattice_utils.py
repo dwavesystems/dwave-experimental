@@ -690,22 +690,6 @@ class TestExperiment(unittest.TestCase):
             with self.assertRaises(ValueError):
                 exp.apply_param({"energy_scale": 1.0})
 
-    def test_spin_reversal_disabled(self):
-        chain = Chain(dimensions=(4,), periodic=(True,))
-        sampler = _make_mock_sampler()
-        exp = Experiment(chain, sampler)
-        self.assertIsNone(exp._get_spin_reversal_transform())
-
-    def test_spin_reversal_enabled_with_seed(self):
-        chain = Chain(dimensions=(4,), periodic=(True,))
-        sampler = _make_mock_sampler(num_qubits=8)
-        exp = Experiment(chain, sampler)
-        exp.param["spin_reversal_transform"] = True
-        exp.param["spin_reversal_transform_seed"] = 42
-        srt1 = exp._get_spin_reversal_transform()
-        srt2 = exp._get_spin_reversal_transform()
-        self.assertEqual(srt1, srt2)
-
     def test_initial_shim_no_embeddings(self):
         chain = Chain(dimensions=(4,), periodic=(True,))
         sampler = _make_mock_sampler()
@@ -929,7 +913,6 @@ class TestExperiment(unittest.TestCase):
             "total_iterations": 0,
             "relative_coupler_strength": np.ones((1, chain.num_edges)),
         }
-        sc.spin_reversal_transform = None
 
         bqm = exp._make_bqm(sc)
         self.assertGreater(len(bqm.quadratic), 0)
@@ -995,22 +978,6 @@ class TestExperiment(unittest.TestCase):
         results = {"CouplerFrustration": np.random.rand(1, chain.num_edges)}
         exp._update_coupler_shim(sc, results)
         self.assertEqual(sc.shimdata["relative_coupler_strength"].shape, (1, chain.num_edges))
-
-    def test_parse_results_with_spin_reversal(self):
-        chain = Chain(dimensions=(4,), periodic=(False,))
-        chain.embedding_list = np.array([[0, 1, 2, 3]])
-        sampler = _make_mock_sampler()
-        exp = Experiment(chain, sampler)
-        exp.run_index = 0
-        bqm = chain.make_nominal_bqm()
-        samples = np.ones((10, 4))
-        ss = dimod.SampleSet.from_samples_bqm(samples, bqm)
-
-        sc = SamplerCall(run_index=0)
-        sc.nominal_bqms = [bqm]
-        sc.spin_reversal_transform = {0: True, 1: False, 2: True, 3: False}
-        results = exp.parse_results(sc, ss)
-        self.assertIn("QubitMagnetization", results)
 
     def test_get_shimdata_not_initialized(self):
         chain = Chain(dimensions=(4,), periodic=(True,))

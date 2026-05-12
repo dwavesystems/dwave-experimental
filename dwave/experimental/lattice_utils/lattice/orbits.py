@@ -19,7 +19,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
-from dwave.experimental.lattice_utils.lattice.automorphism import schreier_rep
+from dwave.experimental.automorphism import schreier_rep
 
 __all__ = [
     'reindex',

@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 from datetime import datetime
 from typing import Any
+from dataclasses import dataclass
 
 import dimod
 import numpy as np
@@ -35,72 +36,74 @@ from dwave.experimental.lattice_utils.observable import (
 )
 from dwave.experimental.lattice_utils.experiment.samplercall import SamplerCall
 
-__all__ = ['Experiment']
+__all__ = ['Experiment', 'ExperimentConfig']
+
+@dataclass
+class ExperimentConfig:
+    """Container for the parameters that define an experiment."""
+    energy_scale: float = 1.0
+    num_reads: int = 100
+    anneal_time: float = 1.0
+    num_random_instances: int | None = 1
+    readout_thermalization: int = 100
+    flux_bias_shim_step: float = 0.0
+    coupler_shim_step: float = 0.0
+    anneal_offset_shim_step: float = 0.0
+    target_magnetization: float = 0.0
 
 
 class Experiment:
-    """Base class for experiment in LatQA."""
+    """Base class for running experiments on lattice instances.
 
-    default_parameters = {
-        "energy_scale": 1.0,
-        "num_reads": 100,
-        "anneal_time": 1.0,
-        "num_random_instances": 1,
-        "readout_thermalization": 100,
-        "flux_bias_shim_step": 0.0,
-        "coupler_shim_step": 0.0,
-        "anneal_offset_shim_step": 0.0,
-        "target_magnetization": 0.0,
-    }
+    Includes common functionality for managing parameters, running iterations,
+    parsing results, and saving data.
+    
+    Args:
+        inst: The lattice instance to run the experiment on.
+        sampler: The dimod sampler to use for sampling.
+        max_iterations: The maximum number of iterations to run the experiment for.
+        config: An ExperimentConfig object containing experiment parameters.
+    """
 
-    observables_to_collect = {
-        QubitMagnetization(),
-        CouplerCorrelation(),
-        CouplerFrustration(),
-        SampleEnergy(),
-        BitpackedSpins(),
-        ReferenceEnergy(),
-    }
-
-    def __init__(self, inst: Lattice, sampler: dimod.Sampler, **kwargs):
-        self.inst: Lattice = inst
-        self.sampler: dimod.Sampler = sampler
-        self.param: dict = {}
-        self.already_initialized: bool = False  # until evidenced
-
-        # Any forced types that might be required.
-        self.typedict: dict[str, float] = {"energy_scale": float}
-
-        self.experiment_results_root: Path = Path(
-            kwargs.get("results_root", Path.cwd() / "results")
-        ).resolve()
-
-        self.loop_data_files: int = kwargs.get("loop_data_files", 1000000000)
-        self.max_iterations: int | None = kwargs.get("max_iterations", None)
-
-        # Apply parameters
-        for field, default in self.default_parameters.items():
-            value = kwargs.get(field, default)
-
-            if field in kwargs and field in self.typedict:
-                value = self.typedict[field](value)
-
-            self.param[field] = value
+    def __init__(
+        self,
+        *,
+        inst: Lattice,
+        sampler: dimod.Sampler,
+        max_iterations: int | None = None,
+        config: ExperimentConfig,
+    ):
+        self.inst = inst
+        self.sampler = sampler
+        self.param = dict(vars(config))
+        self.experiment_results_root = inst.data_root / "results"
+        self.data_path = None
+        self.run_index = 0
+        self.config = config
+        self.max_iterations = max_iterations
+        self.already_initialized: bool = False
+        self.observables_to_collect = {
+            QubitMagnetization(),
+            CouplerCorrelation(),
+            CouplerFrustration(),
+            SampleEnergy(),
+            BitpackedSpins(),
+            ReferenceEnergy(),
+        }
 
     def load_results(
         self,
         num_iterations: int = 100,
-        starting_iteration: int | None = None,
-        result_fields: dict[str, Any] | None = None,
+        start_iteration: int | None = None,
+        result_fields: list[str] | None = None,
         quiet: bool = True,
         ignore_shim: bool = False,
-        mod: int | None = None,
-    ) -> dict[str, Any]:
+    ) -> list[dict[str, Any]]:
         """Load results from the highest-numbered iterations of the experiment.
 
         Args:
             num_iterations: Maximum number of iterations to load.
-            starting_iteration: If provided, load results starting from this
+            start_iteration: If provided, load results starting from this
                 iteration index. Otherwise the most recent ``num_iterations``
                 results are loaded.
             result_fields: Subset of fields to extract from each result file. If
@@ -108,19 +111,13 @@ class Experiment:
             quiet: If false, prints a message when each result file is loaded.
             ignore_shim: If true, the ``shimdata`` field is removed from the
                 returned results.
-            mod: If provided, the returned list is truncated so its length is
-                divisable by ``mod``.
 
         Returns:
             A list of dictionaries containing the results for each iteration.
         """
-        self._set_run_index()  # this is the NEXT run index.
-
         fnlist = self._get_sorted_results_file_list()
-        if starting_iteration is not None:
-            fnlist = fnlist[
-                max(starting_iteration, 0) : max(starting_iteration + num_iterations, 0)
-            ]
+        if start_iteration is not None:
+            fnlist = fnlist[max(start_iteration, 0) : max(start_iteration + num_iterations, 0)]
         else:
             fnlist = fnlist[-num_iterations:]
 
@@ -142,34 +139,23 @@ class Experiment:
 
             results.append({k: data[k] for k in result_fields})
 
-        if mod is not None:
-            return results[: mod * (len(results) // mod)]
-
         return results
 
-    def apply_param(self, param: dict[str, float]) -> bool:
+    def apply_param(self, param: dict[str, float]) -> None:
         """Apply a parameter configuration to the experiment.
+
+        Parameters are formatted to ensure filename consistency, which can be
+        important for loading data.
 
         Args:
             param: Dictionary of parameter values to apply to the experiment.
-                Keys correspond to parameter names and values are converted to
-                the appropriate type if a converted is defined in ``self.typedict``.
-
-        Returns:
-            A boolean value corresponding to whether or not the experiment has
-            already completed all required iterations for this parameter
-            configuration.
         """
-        # Reformat for filename consistency; can be important for loading data.
         param = self._format_parameter_list([param])[0]
         for param_name, param_val in param.items():
-            if param_name in self.typedict:
-                self.param[param_name] = self.typedict[param_name](param_val)
-            else:
-                self.param[param_name] = param_val
+            self.param[param_name] = param_val
 
         self.data_path = self.experiment_results_root / self._get_relative_data_path()
-        self.already_initialized = self._set_run_index()
+        self.already_initialized = self._prepare_run_index()
 
     def run_iteration(self, parameter_list: list, **kwargs) -> bool:
         """Run one experiment iteration for each parameter set in ``parameter_list``.
@@ -217,18 +203,21 @@ class Experiment:
 
         # Get and manage all the results
         while response_dict:
+            made_progress = False
+
             for index, val in response_dict.items():
 
                 if val.done():
                     self.apply_param(parameter_list[index])
-
-                    # Get the results and update the shim
-                    results = self.parse_results(call_dict[index], response_dict[index])
+                    results = self.parse_results(call_dict[index], val)
                     self._update_shim(call_dict[index], results)
                     savedata = self._generate_data_to_save(call_dict[index], results)
                     self._save_results(savedata, quiet=True)
                     del response_dict[index]
+                    made_progress = True
                     break
+
+            if not made_progress:
                 time.sleep(0.1)  # Waiting for results to come in
 
         return False
@@ -237,8 +226,7 @@ class Experiment:
         """Parse a sampler response into per-embedding observable results.
 
         Args:
-            call: Sampler call metadata, cinluding the nominal BQMs and any
-            applied spin-reversal transform.
+            call: Sampler call metadata, inluding the nominal BQMs
             response: Raw sample set returned by the sampler.
 
         Returns:
@@ -249,17 +237,8 @@ class Experiment:
             embedding_list = self.inst.embedding_list
             myarr = response.samples(sorted_by=None)
             sample_arrays = [myarr[:, emb].copy() for emb in embedding_list]
-
-            if call.spin_reversal_transform is not None:
-                for iemb, emb in enumerate(embedding_list):
-                    for iv, v in enumerate(emb):
-                        if call.spin_reversal_transform[v]:
-                            sample_arrays[iemb][:, iv] *= -1
         else:
             sample_arrays = [response.samples(sorted_by=None)[:, np.arange(self.inst.num_spins)]]
-
-            if call.spin_reversal_transform is not None:
-                raise NotImplementedError
 
         sample_set = {}
         for iemb, sample_array in enumerate(sample_arrays):
@@ -308,37 +287,30 @@ class Experiment:
 
     def _get_sorted_results_file_list(self) -> list[str]:
         """Return result filenames sorted lexicographically."""
-        fnlist = list(self.data_path.glob("iter*"))
+        fnlist = list(self.data_path.glob("iter*.pkl.lzma"))
         fnlist.sort()
         return [str(fn) for fn in fnlist]
 
-    def _set_run_index(self) -> bool:
-        """Set the run index (data file index, iteration number) for the parameterization.
+    def _get_next_run_index(self) -> tuple[int, bool]:
+        """Get the next run index based on the existing files in the data path."""
+        if not self.data_path.exists():
+            return 0, False
 
-        Uses the name of the most recently modified file in
-        the folder. Also creates the data path if it doesn't exist. Return value
-        is boolean, whether the iterations have already been started or not.
-        """
-        # If the path doesn't exist, create it and set the run index to zero.
-        if self.data_path.exists() is False:
-            os.makedirs(self.data_path)
-            self.run_index = 0
-            return False
-
-        fnlist = list(self.data_path.glob("iter*"))
+        fnlist = list(self.data_path.glob("iter*.pkl.lzma"))
         if not fnlist:
-            self.run_index = 0
-            return False
+            return 0, False
 
-        # Folder exists and is nonempty.
-        # Only complication is looping; we set the flag to True if we overflow mod
-        fnlist.sort(key=lambda x: os.path.getmtime(x))
-        latest_file_iter = int(fnlist[-1].stem.split(".")[0][4:])
-        self.run_index = np.max([0, np.mod(latest_file_iter + 1, self.loop_data_files)])
-        if self.run_index < latest_file_iter:
-            self.has_looped = True
+        latest_file_iter = max(int(fn.stem.split(".")[0][4:]) for fn in fnlist)
+        return latest_file_iter + 1, True
 
-        return True
+    def _prepare_run_index(self) -> bool:
+        """Prepare the run index for the next iteration, creating the data path if needed."""
+        if self.data_path is None:
+            raise RuntimeError("No parameterization selected. Call apply_param() first.")
+
+        self.data_path.mkdir(parents=True, exist_ok=True)
+        self.run_index, already_initialized = self._get_next_run_index()
+        return already_initialized
 
     def _get_solver_pathstring(self) -> str:
         """Construct a pathstring for the solver.
@@ -368,16 +340,7 @@ class Experiment:
         """
         energy_scale = self.param["energy_scale"]
 
-        if type(self.sampler).__name__ in [
-            "SimulatedAnnealingSampler",
-            "SimulatedQuantumAnnealingSampler",
-            "RotorSampler",
-            "ParallelTemperingSampler",
-            "DiscreteSimulatedBifurcationSampler",
-        ]:
-            # Applies to Monte Carlo dynamics, for example
-            pathstring = f'energyscale{energy_scale:0.3}/nsweeps{self.param["num_sweeps"]:010d}mcs'
-        elif "anneal_time" in self.param:
+        if "anneal_time" in self.param:
             pathstring = f'energyscale{energy_scale:0.3}/atime{self.param["anneal_time"]:010.6f}us'
         elif "anneal_schedule" in self.param:
             pathstring = f'energyscale{energy_scale:0.3}/asched{self.param["anneal_schedule"]}'
@@ -418,10 +381,12 @@ class Experiment:
         sampler_call = SamplerCall(run_index=self.run_index)
         sampler_call.nominal_bqms = self._make_nominal_bqms()
         sampler_call.shimdata = self._get_shimdata()
-        sampler_call.spin_reversal_transform = self._get_spin_reversal_transform()
 
         # Here we can find out that we're finished.
-        if sampler_call.shimdata["total_iterations"] >= self.max_iterations:
+        if (
+            self.max_iterations is not None
+            and sampler_call.shimdata["total_iterations"] >= self.max_iterations
+        ):
             return None
 
         sampler_call.bqm = self._make_bqm(sampler_call)
@@ -440,8 +405,6 @@ class Experiment:
         """
         ret = parameter_list.copy()
         for entry in ret:
-            if "target_s" in entry:
-                entry["target_s"] = np.round(entry["target_s"], 4)
             if "anneal_time" in entry:
                 entry["anneal_time"] = np.round(entry["anneal_time"], 6)
             if "anneal_schedule" in entry:
@@ -501,32 +464,10 @@ class Experiment:
             if "anneal_offsets" in kwargs["shimdata"]:
                 ret["anneal_offsets"] = list(kwargs["shimdata"]["anneal_offsets"])
 
-        if "num_sweeps" in self.param:
-            ret["num_sweeps"] = self.param["num_sweeps"]
-        elif "target_s" in self.param and "dwell_time" in self.param:  # fast reverse anneal
-            ret["x_target_s"] = self.param["target_s"]
-            ret["x_dwell_time"] = self.param["dwell_time"]
-            ret["anneal_schedule"] = self.param["anneal_schedule"]
-        elif "anneal_schedule" in self.param:
-            ret["anneal_schedule"] = self.param["anneal_schedule"]
-        elif self.param.get("fast_anneal", False):
+        if self.param.get("fast_anneal", False):
             ret["fast_anneal"] = True
-            ret["annealing_time"] = self.param["anneal_time"]
-        else:
-            ret["annealing_time"] = self.param["anneal_time"]
 
-        if "reinitialize_state" in self.param and ret["anneal_schedule"][0][1] == 1:
-            ret["reinitialize_state"] = self.param.get("reinitialize_state", False)
-            if ret["reinitialize_state"] is None:
-                ret["reinitialize_state"] = False
-
-        if self.param.get("initial_state", None) is not None and ret["anneal_schedule"][0][1] == 1:
-            ret["initial_state"] = self.param["initial_state"]
-        elif "reinitialize_state" in self.param and ret["anneal_schedule"][0][1] == 1:
-            # Set to None, meaning that it will be randomized.
-            ret["initial_state"] = {
-                qubit: np.random.randint(2) * 2 - 1 for qubit in self.inst.embedding_list.ravel()
-            }
+        ret["annealing_time"] = self.param["anneal_time"]
 
         return ret
 
@@ -552,8 +493,7 @@ class Experiment:
 
     def _get_latest_iteration_filename(self) -> Path:
         """Return the filename of the most recently completed iteration."""
-        file_name = f"iter{np.mod(self.run_index - 1, self.loop_data_files):05d}.pkl.lzma"
-        return self.data_path / file_name
+        return self.data_path / f"iter{self.run_index - 1:05d}.pkl.lzma"
 
     def _load_shim(self):
         """Load shim data from the most recently completed iteration."""
@@ -615,7 +555,6 @@ class Experiment:
         step_size: float | None = None,
     ) -> None:
         """Update relative coupler strength based on measured frustration."""
-        # Ok, let's use orbits and stuff.
         orbits = self.inst.coupler_orbits
         energy_scale = self.param["energy_scale"]
         relative_coupler_strength = sampler_call.shimdata["relative_coupler_strength"]
@@ -630,12 +569,11 @@ class Experiment:
         normalization_basis = np.ones_like(orbits, dtype=bool)
 
         # Assume we have multiple embeddings of the same BQM.
-        assert (
-            len(sampler_call.nominal_bqms) == 1
-            or sampler_call.nominal_bqms[0] == sampler_call.nominal_bqms[1]
-        ), "Case for distinct embedded BQMs not implemented yet."
+        bqms = sampler_call.nominal_bqms
+        if len(bqms) > 1 and any(bqm != bqms[0] for bqm in bqms[1:]):
+            raise NotImplementedError("Case for distinct embedded BQMs not implemented yet.")
 
-        bqm = sampler_call.nominal_bqms[0]
+        bqm = bqms[0]
         nominal_values = np.array([bqm.quadratic[edge] for edge in self.inst.edge_list])
         coupler_signs = np.sign(nominal_values)
         for orbit_bin in range(max(orbits) + 1):
@@ -743,11 +681,6 @@ class Experiment:
         for iemb, emb in enumerate(self.inst.embedding_list):
             nominal_bqm = sampler_call.nominal_bqms[iemb].copy()
 
-            if sampler_call.spin_reversal_transform is not None:
-                for iv, v in enumerate(emb):
-                    if sampler_call.spin_reversal_transform[v]:
-                        nominal_bqm.flip_variable(iv)
-
             for v in range(self.inst.num_spins):
                 # Don't touch degree-zero spins.  Relevant to partial yield.
                 if nominal_bqm.degree(v) > 0:
@@ -762,19 +695,3 @@ class Experiment:
                 bqm.add_quadratic(emb[edge[0]], emb[edge[1]], bias)
 
         return bqm
-
-    def _get_spin_reversal_transform(self) -> dict[int, bool] | None:
-        """Generate a spin-reversal transform for the current sampler."""
-        if self.param.get("spin_reversal_transform", False):
-            seed = self.param.get("spin_reversal_transform_seed", None)
-            rng = np.random.default_rng(seed)
-            flips = rng.random(len(self.sampler.nodelist)) > 0.5
-
-            spin_reversal_transform = {v: False for v in self.sampler.nodelist}
-            for iv, v in enumerate(self.sampler.nodelist):
-                if flips[iv]:
-                    spin_reversal_transform[v] = True
-
-            return spin_reversal_transform
-
-        return None
