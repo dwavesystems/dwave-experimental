@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""For triangular order parameters"""
-
 from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
@@ -26,7 +24,7 @@ __all__ = ['TriangularOP']
 
 
 class TriangularOP(Observable):
-    """For triangular lattices.  Unembeds if possible."""
+    """For calculating the order parameter of triangular lattices."""
 
     def evaluate(
         self,
@@ -34,12 +32,24 @@ class TriangularOP(Observable):
         bqm: BQM,
         sample_set: dimod.SampleSet,
     ) -> NDArray:
+        """Calculate the triangular lattice order parameter.
 
+        This observable uses the three-sublattice complex order parameter described in
+        `King et al. (2023) <https://doi.org/10.3389/fcomp.2023.1238988>_`.
+
+        Args:
+            experiment: The experiment object containing the context for this observable.
+            bqm: The binary quadratic model corresponding to the problem instance.
+            sample_set: The samples on which to compute the order parameter.
+
+        Returns:
+            A numpy array containing the order parameter values for each sample.
+        """
+
+        # If the lattice is an embedded lattice then the BQM and sampleset must be unembedded.
         if hasattr(experiment.inst, "logical_lattice"):
-            # If the lattice is an embedded lattice
             lbqm = experiment.inst.unembed_bqm(bqm)
 
-            # unembed the sample set.
             lss = experiment.inst.unembed_sampleset(sample_set)
             triangular_sublattice = experiment.inst.logical_lattice.sublattice
         else:
@@ -48,8 +58,12 @@ class TriangularOP(Observable):
 
         sample_array = dimod.as_samples(lss)[0]
 
-        for edge in lbqm.quadratic:
-            assert triangular_sublattice[edge[0]] != triangular_sublattice[edge[1]]
+        for u, v in lbqm.quadratic:
+            if triangular_sublattice[u] == triangular_sublattice[v]:
+                raise ValueError(
+                    "Invalid triangular sublattice assignment: edge "
+                    f"({u}, {v}) connects nodes in the same sublattice"
+                )
 
         sublattice_mags = np.zeros((sample_array.shape[0], 3), dtype=float)
         for sublattice in range(3):
@@ -58,6 +72,6 @@ class TriangularOP(Observable):
             )
 
         angles = np.array(np.exp([0.0, 1.0j * 4 * np.pi / 3, 1.0j * 2 * np.pi / 3])).T
-        op = np.matmul(sublattice_mags, angles).ravel() / np.sqrt(3)
+        order_parameter = np.matmul(sublattice_mags, angles).ravel() / np.sqrt(3)
 
-        return op
+        return order_parameter

@@ -28,10 +28,10 @@ __all__ = ['Triangular', 'DimerizedTriangular']
 
 class Triangular(Lattice):
     """Triangular lattice class.
-    
+
     This class represents a 2D triangular lattice, where each node is connected
     to its six nearest neighbors (except at boundaries, if not periodic).
-    
+
     Args:
         dimensions: Two-element tuple giving the number of spins in the y and x
             dimensions.
@@ -176,7 +176,7 @@ class Triangular(Lattice):
 
 class DimerizedTriangular(EmbeddedLattice):
     """Dimerized triangular lattice class.
-    
+
     This class represents a dimerized version of the 2D triangular lattice,
     where each node in the logical lattice is represented by a chain of two spins
     in the physical lattice.

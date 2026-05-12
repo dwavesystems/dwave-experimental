@@ -126,7 +126,6 @@ class Lattice(ABC):
         if len(embeddings) >= min_number_of_embeddings and np.prod(embeddings.shape):
             self._save_embeddings(sampler, embeddings)
 
-    #def make_nominal_bqm(self, **kwargs) -> dimod.BQM:
     def make_nominal_bqm(self) -> dimod.BQM:
         """Construct a default nominal BQM coupling strength values set to +1.
 

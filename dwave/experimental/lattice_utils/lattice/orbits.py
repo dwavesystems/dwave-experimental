@@ -19,7 +19,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
-from dwave.experimental.lattice_utils.lattice.automorphism import schreier_rep
+from dwave.experimental.automorphism import schreier_rep
 
 __all__ = [
     'reindex',
@@ -186,7 +186,7 @@ def get_unsigned_bqm_orbits(
         each original variable to its orbit index and ``coupler_orbits`` maps
         each coupling to its orbit index.
     """
-    coupler_orbits={}
+    coupler_orbits = {}
     for u, v in bqm.quadratic:
         signed_coupler_orbits[(f"p{u}", f"p{v}")] = min(
             signed_coupler_orbits[(f"p{u}", f"p{v}")],

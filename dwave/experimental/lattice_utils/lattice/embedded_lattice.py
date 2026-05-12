@@ -90,7 +90,7 @@ class EmbeddedLattice(Lattice):
 
     def generate_edges(self) -> Iterator[tuple[Hashable, Hashable]]:
         """Yield physical edges for the embedded lattice.
-        
+
         Returns:
             An iterator of tuples, where each tuple represents an edge between
             two spins in the physical lattice.

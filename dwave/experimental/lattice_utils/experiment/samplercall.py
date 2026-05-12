@@ -36,4 +36,3 @@ class SamplerCall:
         self.shimdata: dict = {} if shimdata is None else shimdata
         self.nominal_bqms: list = [] if nominal_bqms is None else nominal_bqms
         self.sampler_params: dict = {} if sampler_params is None else sampler_params
-        self.spin_reversal_transform: None = None

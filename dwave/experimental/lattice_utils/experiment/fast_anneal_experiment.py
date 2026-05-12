@@ -12,45 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from dwave.experimental.lattice_utils.experiment import Experiment
-from dwave.experimental.lattice_utils.observable import (
-    QubitMagnetization,
-    CouplerCorrelation,
-    CouplerFrustration,
-    SampleEnergy,
-    BitpackedSpins,
-    ReferenceEnergy,
-)
+from dataclasses import dataclass
 
-__all__ = ['FastAnnealExperiment']
+from dwave.experimental.lattice_utils.experiment import ExperimentConfig
+
+__all__ = ['FastAnnealExperimentConfig']
 
 
-class FastAnnealExperiment(Experiment):
-    # Set default parameters
-    default_parameters = {
-        "energy_scale": 1.0,
-        "automorph_embeddings": False,
-        "spin_reversal_transform": False,
-        "spin_reversal_transform_seed": None,
-        "num_reads": 100,
-        "num_random_instances": None,
-        "readout_thermalization": 100,
-        "fast_anneal": True,
-        "anneal_time": 1.0,
-        "flux_bias_shim_step": 0.0,
-        "coupler_shim_step": 0.0,
-        "coupler_damp": 0.0,
-        "anneal_offset_shim_step": 0.0,
-        "anneal_offset_damp": 0.0,
-        "individual_qubit_anneal_offsets": None,
-        "target_magnetization": 0.0,
-        "logical_software": False,
-    }
-    observables_to_collect = {
-        QubitMagnetization(),
-        CouplerCorrelation(),
-        CouplerFrustration(),
-        SampleEnergy(),
-        BitpackedSpins(),
-        ReferenceEnergy(),
-    }
+@dataclass
+class FastAnnealExperimentConfig(ExperimentConfig):
+    """Configuration class for Fast Anneal Experiments."""
+
+    fast_anneal: bool = True
+    automorph_embeddings: bool = False
+    coupler_damp: float = 0.0
+    anneal_offset_damp: float = 0.0
+    individual_qubit_anneal_offsets: list[float] | None = None
+    logical_software: bool = False
