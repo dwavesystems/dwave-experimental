@@ -64,7 +64,7 @@ class ShimmingMockSampler(MockDWaveSampler):
             },
         )
         super().__init__(**kwargs)
-        self.parameters["x_polarizing_schedules"] = ["parameters"]
+        self.parameters["x_polarizing_schedule"] = ["parameters"]
         num_qubits = self.properties["num_qubits"]
         if flux_biases_baseline is None:
             self.flux_biases_baseline = [1e-5] * num_qubits
@@ -72,7 +72,7 @@ class ShimmingMockSampler(MockDWaveSampler):
             self.flux_biases_baseline = flux_biases_baseline
         self.sampler_type = "mock"
         self.mocked_parameters.add("flux_biases")
-        self.mocked_parameters.add("x_polarizing_schedules")
+        self.mocked_parameters.add("x_polarizing_schedule")
 
     def sample(self, bqm, **kwargs):
         """Sample with flux_biases transformed to Ising model linear biases."""
