@@ -38,6 +38,18 @@ from dwave.experimental.lattice_utils.experiment.samplercall import SamplerCall
 
 __all__ = ['Experiment', 'ExperimentConfig']
 
+@dataclass
+class ExperimentConfig:
+    """Container for the parameters that define an experiment."""
+    energy_scale: float = 1.0
+    num_reads: int = 100
+    anneal_time: float = 1.0
+    num_random_instances: int | None = 1
+    readout_thermalization: int = 100
+    flux_bias_shim_step: float = 0.0
+    coupler_shim_step: float = 0.0
+    anneal_offset_shim_step: float = 0.0
+    target_magnetization: float = 0.0
 
 @dataclass
 class ExperimentConfig:

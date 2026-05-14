@@ -42,7 +42,6 @@ class Observable(ABC):
     Each observable should inherit from this class and implement the 'evaluate'
     method, which computes the observable from a given sample set.
     """
-
     def __init__(self):
         self.name: str = type(self).__name__
 
