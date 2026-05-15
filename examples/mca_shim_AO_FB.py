@@ -42,7 +42,7 @@ from dwave.experimental.shimming import shim_flux_biases
 def _make_anneal_schedules(
     exp_feature_info: list,
     target_c: float = 0.37,
-    times: list[float] | tuple[float] = (0.0, 1.0, 2.0, 3.02, 4.0, 5.0, 6.0),
+    times: list[float] | tuple[float] = (0.0, 1.0, 21.0, 22.0, 23.0, 24.0, 25.0),
     line_detector: int = 0,
     line_source: int = 3,
 ):
@@ -98,7 +98,7 @@ def _make_anneal_schedules(
 def _make_polarizing_schedule(
     *,
     sign_polarization: int = 1,
-    times: list[float] | tuple[float] = (0.0, 1.0, 1.01, 6.0),
+    times: list[float] | tuple[float] = (0.0, 1.0, 2.0, 25.0),
 ):
     """Set polarizing schedules suitable for Larmor precession.
 
