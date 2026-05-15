@@ -180,7 +180,7 @@ class FluxBiases(unittest.TestCase):
         nq = sampler.properties["num_qubits"]
         sampling_params = {
             "flux_biases": [0] * nq,
-            "x_polarizing_schedules": [[[0.0, 0.0], [1.0, 0.0]]] * 6,
+            "x_polarizing_schedule": [[0.0, 0.0], [1.0, 0.0]],
         }
         _, fbh, mh = shim_flux_biases(
             bqm,
@@ -213,7 +213,7 @@ class FluxBiases(unittest.TestCase):
 
         sampling_params = {
             "flux_biases": [0] * nq,
-            "x_polarizing_schedules": [[[0.0, 0.0], [1.0, 0.0]]] * 6,
+            "x_polarizing_schedule": [[0.0, 0.0], [1.0, 0.0]],
             "initial_state": {0: 1},
         }
         _, fbh, mh = shim_flux_biases(
@@ -230,7 +230,7 @@ class FluxBiases(unittest.TestCase):
 
         sampling_params = {
             "flux_biases": [1] * nq,
-            "x_polarizing_schedules": [[[0.0, 0.0], [1.0, 0.0]]] * 6,
+            "x_polarizing_schedule": [[0.0, 0.0], [1.0, 0.0]],
         }
         _, fbh, mh = shim_flux_biases(
             bqm,
@@ -246,7 +246,7 @@ class FluxBiases(unittest.TestCase):
 
         sampling_params = {
             "flux_biases": [0] * nq,
-            "x_polarizing_schedules": [[[0.0, 0.0], [1.0, 1.0]]] * 6,
+            "x_polarizing_schedule": [[0.0, 0.0], [1.0, 1.0]],
         }
         _, fbh, mh = shim_flux_biases(
             bqm,

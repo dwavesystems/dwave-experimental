@@ -1,0 +1,6 @@
+---
+features:
+  - |
+    Switch to using the global polarization schedule (``x_polarizing_schedule``),
+    instead of the deprecated per-anneal-line schedule (``x_polarizing_schedules``).
+    See `#49 <https://github.com/dwavesystems/dwave-experimental/issues/49>`_.

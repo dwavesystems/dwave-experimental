@@ -42,7 +42,7 @@ from dwave.experimental.shimming import shim_flux_biases
 def _make_anneal_schedules(
     exp_feature_info: list,
     target_c: float = 0.37,
-    times: list[float] | tuple[float] = (0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0),
+    times: list[float] | tuple[float] = (0.0, 1.0, 21.0, 22.0, 23.0, 24.0, 25.0),
     line_detector: int = 0,
     line_source: int = 3,
 ):
@@ -95,29 +95,27 @@ def _make_anneal_schedules(
     return anneal_schedules
 
 
-def _make_polarizing_schedules(
-    line_source: int,
-    num_lines: int = 6,
+def _make_polarizing_schedule(
     *,
     sign_polarization: int = 1,
-    times: list[float] | tuple[float] = (0.0, 1.0, 2.0, 6.0),
+    times: list[float] | tuple[float] = (0.0, 1.0, 2.0, 25.0),
 ):
     """Set polarizing schedules suitable for Larmor precession.
 
     See documentation for Larmor precession example, the same
-    schedule is used."""
+    schedule is used.
+    """
     if len(times) != 4:
         raise ValueError(
             "Expecting 2 unpolarized times, followed by two polarized times"
         )
-    polarization_schedules = [[[t, 0] for t in times] for _ in range(num_lines)]
-    polarization_schedules[line_source] = [
+    polarization_schedule = [
         [times[0], 1],
         [times[1], 1],
         [times[2], 0],
         [times[3], 0],
     ]
-    return polarization_schedules
+    return polarization_schedule
 
 
 def _calc_anneal_offsets(
@@ -483,9 +481,7 @@ def main(
         line_detector=line_detector,
         target_c=target_c,
     )
-    x_polarizing_schedules = _make_polarizing_schedules(
-        line_source=line_source, num_lines=num_lines
-    )
+    x_polarizing_schedule = _make_polarizing_schedule()
     x_schedule_delays = [0.0] * num_lines
 
     anneal_offsets = [0.0] * qpu.properties["num_qubits"]
@@ -498,7 +494,7 @@ def main(
         x_disable_filtering=True,
         x_schedule_delays=x_schedule_delays,
         x_anneal_schedules=x_anneal_schedules,
-        x_polarizing_schedules=x_polarizing_schedules,
+        x_polarizing_schedule=x_polarizing_schedule,
         flux_biases=flux_biases,
         anneal_offsets=anneal_offsets,
     )

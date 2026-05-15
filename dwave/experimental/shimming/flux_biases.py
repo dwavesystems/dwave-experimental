@@ -136,7 +136,7 @@ def shim_flux_biases(
     case the hypergradient method is not used.
 
     Symmetry can be broken by the choice of initial condition in reverse
-    annealing, non-zero :math:`h`, :ref:`parameter_polarizing_schedules`, or
+    annealing, non-zero :math:`h`, :ref:`parameter_polarizing_schedule`, or
     non-zero flux biases over unshimmed fluxes. You can collect data for two
     experiments, with inverted symmetry breaking between them, anticipating zero
     magnetization in the experimental average rather than per experiment.
@@ -290,8 +290,8 @@ def shim_flux_biases(
         if hnonzero:
             bqm = bqm.copy()
         reverseanneal = "initial_state" in sampling_params
-        polarizedmca = "x_polarizing_schedules" in sampling_params and any(
-            v != 0 for wfm in sampling_params["x_polarizing_schedules"] for _, v in wfm
+        polarizedmca = "x_polarizing_schedule" in sampling_params and any(
+            v != 0 for _, v in sampling_params["x_polarizing_schedule"]
         )
     else:
         fbnonzero = hnonzero = reverseanneal = polarizedmca = False
@@ -345,9 +345,8 @@ def shim_flux_biases(
                     for i in unshimmed_variables:
                         flux_biases[i] *= -1
                 if polarizedmca:
-                    sampling_params["x_polarizing_schedules"] = [
-                        [(t, -v) for t, v in wfm]
-                        for wfm in sampling_params["x_polarizing_schedules"]
+                    sampling_params["x_polarizing_schedule"] = [
+                        (t, -v) for t, v in sampling_params["x_polarizing_schedule"]
                     ]
                 ss = sampler.sample(bqm, flux_biases=flux_biases, **sampling_params)
                 all_mags = np.sum(
