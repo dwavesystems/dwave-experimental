@@ -28,16 +28,17 @@ def qubit_to_Advantage2_annealing_line(
 ) -> int:
     """Return the annealing line associated to an Advantage2 qubit
 
-    Advantage2 processors can allow for multicolor annealing based in
+    Advantage2 processors can allow multicolor annealing based in
     some cases on a 6-line control scheme. Compatibility with this
     scheme should be confirmed using a solver API or release notes.
     Based on the Zephyr coordinate system (u,w,k,j,z), a qubit
     can be uniquely assigned a color. u denotes qubit orientation
-    j and z control aligned-displacement on the processor. See also
-    dwave_networkx.zephyr_graph and dwave_networkx.zephyr_coordinates
+    while j and z control aligned displacement on the processor. See also
+    :func:`dwave_networkx.zephyr_graph` and
+    :func:`dwave_networkx.zephyr_coordinates`.
 
     Args:
-        n: qubit label, as an integer, or a Zephyr coordinate as a 5-tuple
+        n: Qubit label, as an integer, or a Zephyr coordinate as a 5-tuple.
         shape: Advantage2 processor shape, accessible as a solver
             property properties['topology']['shape']
         num_lines: number of annealing lines, may be 6 or 12.
@@ -50,7 +51,7 @@ def qubit_to_Advantage2_annealing_line(
         Retrieve MCA annealing lines' properties for a default solver, and
         if a 6 (or 12) color scheme is used confirm the programmatic mapping is
         in agreement with the multicolor annealing properties on all qubits
-        and lines
+        and lines.
 
         >>> from dwave.system import DWaveSampler
         >>> import dwave.experimental.multicolor_anneal as mca
@@ -60,8 +61,9 @@ def qubit_to_Advantage2_annealing_line(
         >>> num_lines = len(annealing_lines)            # doctest: +SKIP
         >>> assert(all(mca.qubit_to_Advantage2_annealing_line(n, shape, num_lines)==al_idx for al_idx, al in enumerate(annealing_lines) for n in al['qubits']))            # doctest: +SKIP
 
-        To explicitly select a solver that supports advanced annealing features, such as multi-color annealing, see
-        :attr:`~dwave.experimental.fast_reverse_anneal.api.SOLVER_FILTER`.
+        To explicitly select a solver that supports advanced annealing
+        features, such as multi-color annealing, see
+        :data:`~dwave.experimental.fast_reverse_anneal.api.SOLVER_FILTER`.
     """
 
     if isinstance(n, tuple):
@@ -94,8 +96,8 @@ def make_tds_graph(
             all target nodes.
 
     Returns:
-        A copy of the graph where edges from target nodes (n) are
-        added to ('target', n) and/or ('source', n) nodes.
+        A copy of the graph where each selected target node ``n`` is connected
+        to ``('detector', n)`` and/or ``('source', n)``.
 
     Raises:
         ValueError: If detected_nodes or sourced_nodes are not in the graph
@@ -133,18 +135,26 @@ def make_default_intervals(
     """Make default intervals for schedules construction.
 
     This routine sets up the quasi-static timescales on which the
-    the source is prepared in a polarized state, the polarizing bias
+    source is prepared in a polarized state, the polarizing bias
     is removed and the target is prepared.
-    
+
     Defaulting is designed with a view to Larmour precession examples in
-    :ref:`documentation<https://docs.dwavequantum.com/en/latest/quantum_research/experimental_research.html#multicolor-annealing>`
-    and to allow replication of :ref:`published experimental results<https://doi.org/10.48550/arXiv.2603.15534>`.
-    
+    :ref:`qpu_experimental_research_mca_example`
+    and to allow replication of the
+    `published experimental results <https://doi.org/10.48550/arXiv.2603.15534>`_.
+
     Args:
         post_polarization_delay: Time to wait in microseconds
             after polarization before starting variation of the target line.
-        polarization_schedule_step_size: Step size for polarization schedule. If None, defaults to post_polarization_delay.
-        anneal_schedule_step_size: Scale for anneal schedule step times. If None, defaults to post_polarization_delay.
+        polarization_schedule_step_size: Step size for the polarization
+            schedule. If None, defaults to ``post_polarization_delay``.
+        anneal_schedule_step_size: Step size for the anneal schedules. If
+            None, defaults to ``post_polarization_delay``.
+
+    Returns:
+        A 3-tuple containing ``polarized_preparation_interval``,
+        ``depolarization_interval``, and
+        ``depolarized_preparation_interval``.
     """
     if polarization_schedule_step_size is None:
         polarization_schedule_step_size = post_polarization_delay
@@ -167,7 +177,7 @@ def make_default_intervals(
     )
 
 
-def adapt_schedule_to_detector_delays(
+def standardize_schedule_endpoints(
     anneal_schedules: list[list[list[float]]], delay: float = 0.0
 ):
     """Adapt anneal schedules to account for a delayed measurement.
@@ -176,7 +186,8 @@ def adapt_schedule_to_detector_delays(
     support time plus a delay.
 
     Args:
-        anneal_schedules: List of anneal schedules, as returned by make_x_anneal_schedules.
+        anneal_schedules: List of anneal schedules, as returned by
+            :func:`make_tds_x_anneal_schedules`.
         delay: Delay in microseconds to apply to each anneal schedule.
             Inclusion of a delay on the order of microseconds prevents line
             desynchronization, filtering and other non-idealities from
@@ -196,7 +207,7 @@ def adapt_schedule_to_detector_delays(
     return anneal_schedules
 
 
-def make_x_anneal_schedules(
+def make_tds_x_anneal_schedules(
     exp_feature_info: list,
     target_lines: Iterable[int],
     target_c: float,
@@ -211,57 +222,60 @@ def make_x_anneal_schedules(
     use_overshoot: bool = False,
     post_pwl_delay: float = 1.0,
 ) -> list[list[list[float]]]:
-    """Set annealing schedules suitable target detector source experiments
+    """Set annealing schedules for target-detector-source experiments.
 
     Lines are designated as source, detector, target or neutral (unused).
-    The polarizing field (x_polarizing_schedule) is assumed to be on during
-    the prepartion_interval (if source_lines is not empty).
+    The polarizing schedule produced by :func:`make_tds_x_polarizing_schedule`
+    is assumed to define a polarized state during ``polarized_preparation_interval``
+    when ``source_lines`` is not empty.
     Source, detector and unused line qubits are quasistatically prepared
-    during the preparation_interval by setting the normalized control
-    bias to maxC or minC as appropriate.
-    The polarizing field (x_polarizing_schedule) is assumed to be turned off,
-    with a safe separation to the depolarized_preparation_interval.
-    Target line qubits are then quasistatically prepared to s_target.
+    during ``polarized_preparation_interval`` by setting the normalized
+    control bias to ``maxC`` or ``minC`` as appropriate.
+    The polarizing schedule is assumed to be turned off with a safe
+    separation before ``depolarized_preparation_interval``.
+    Target line qubits are then quasistatically prepared to ``target_c``.
     Source line qubits are then quenched to decouple them from the target.
-    Detector line qubits are (subject to some delay>0) quenched to measure
-    the target.
+    Detector line qubits are then quenched to measure the target.
 
     Defaulting is designed with a view to Larmour precession examples in
-    :ref:`documentation<https://docs.dwavequantum.com/en/latest/quantum_research/experimental_research.html#multicolor-annealing>`
-    and to allow replication of :ref:`published experimental results<https://doi.org/10.48550/arXiv.2603.15534>`.
+    :ref:`qpu_experimental_research_mca_example`
+    and to allow replication of the
+    `published experimental results <https://doi.org/10.48550/arXiv.2603.15534>`_.
     Modification of additional static programmable parameters such as
-    couplings(J), flux_biases and anneal_offsets is necessary as part
-    of experimental set up. These can interact with optimal choices
-    for the x_anneal_schedules.
+    ``couplings``, ``flux_biases``, and ``anneal_offsets`` is necessary as
+    part of experimental setup. These can interact with optimal choices for
+    the returned anneal schedules.
 
     Args:
-        exp_feature_info: List of dicts containing experimental feature info for each line, as returned by a solver's properties['annealing_lines'].
-        target_lines: Iterable of target line indices
+        exp_feature_info: List of dicts containing experimental feature
+            information for each line, as returned by `getProperties`.
+        target_lines: Iterable of target line indices.
         target_c: Schedule value at which the target is held.
-        detector_lines: Iterable of detector line indices
+        detector_lines: Iterable of detector line indices.
+        polarized_preparation_interval: Tuple ``(start, end)`` giving the
+            interval during which a polarizing signal is present. During this
+            interval, unused and detector lines are set to ``minC`` whereas
+            source lines are set to ``maxC``.
         detector_quench_time: Time at which to quench the detector line quench,
             in microseconds.
-        source_lines: Iterable of source line indices
-        polarized_preparation_interval: Tuple of (start, end) times for
-             line preparations whilst a polarizing signal is present,
-             in microseconds.
-             During this interval, unused and detector lines are set
-             to -minC, whereas source lines are set to maxC.
-        depolarized_preparation_interval: Tuple of (start, end) times for
-            preparation stages that occur after the x_polarizing_schedule is
-            returned to zero. This can be set to none, in which case
-            all lines are prepared during the polarized_preparation_interval.
-            Targets are set to target_c during this interval, other lines
-            are unchanged.
+        source_lines: Iterable of source line indices.
+        depolarized_preparation_interval: Tuple ``(start, end)`` for the
+            preparation stage that occurs after the polarizing schedule is
+            returned to zero. This can be set to None, in which case all lines
+            are prepared during ``polarized_preparation_interval``. Targets are
+            set to ``target_c`` during this interval; other lines are unchanged.
         source_quench_time: Time at which to quench the source line
-            from maxC to minC, in microseconds. If None, defaults
-            to detector_quench_time. Setting source_quench_time equal
-            to detector_quench_time is recommended - use of x_schedule_delays
-            allows higher fidelity variation of the relative timing.
+            from ``maxC`` to ``minC``, in microseconds. If None, defaults to
+            ``detector_quench_time``. Setting ``source_quench_time`` equal to
+            ``detector_quench_time`` is recommended as `x_schedule_delays` can
+            be used for higher fidelity variation of the time difference.
         use_common_bounds: Parameters can vary by line. When True is used,
             a set of common compatible values define all lines.
-        post_pwl_delay: time up to which schedules are defined, by extension
-            of the terminal values.
+        use_overshoot: Whether to use overshoot transitions for source and
+            detector quenches. This mode is not yet implemented.
+        post_pwl_delay: Additional delay, in microseconds, used to extend the
+            terminal values of all schedules to a common endpoint.
+
     Returns:
         A piecewise linear schedule for all lines.
     """
@@ -384,14 +398,14 @@ def make_x_anneal_schedules(
             anneal_schedules[line] = [[0.0, 0.0]] + anneal_schedules[line]
 
     # Create regular gapped end point.
-    anneal_schedules = adapt_schedule_to_detector_delays(
+    anneal_schedules = standardize_schedule_endpoints(
         anneal_schedules, post_pwl_delay
     )
 
     return anneal_schedules
 
 
-def make_polarizing_schedule(
+def make_tds_x_polarizing_schedule(
     sign_polarization: Literal[-1, 1] = 1,
     depolarization_time: float = 6.0,
     polarizing_time_step: float = 1.0,
@@ -404,11 +418,14 @@ def make_polarizing_schedule(
     Args:
         sign_polarization: Sign of the initial polarization, +1 or -1.
         depolarization_time: Time at which the polarizing schedule
-            is returned to 0. This should be specified in microseconds
-            as a multiple of minPolarizationTimeStep.
+            is returned to 0, in microseconds.
         polarizing_time_step: Time required to reach zero from the
-            initial polarization, in microseconds. This should be
-            greater than or equal to minPolarizationTimeStep.
+            initial polarization, in microseconds. This should be at least the
+            minimum polarization time step supported by the solver.
+
+    Returns:
+        A piecewise-linear polarizing schedule beginning at time 0 with
+        ``sign_polarization`` and returning to 0 at ``depolarization_time``.
     """
     if depolarization_time < 2 * polarizing_time_step:
         raise ValueError(
@@ -439,7 +456,7 @@ if __name__ == "__main__":
         depolarization_time + post_polarization_delay + quasistatic_time_step,
     )
     detector_quench_time = depolarized_preparation_interval[1] + quasistatic_time_step
-    x_polarizing_schedule = make_polarizing_schedule(
+    x_polarizing_schedule = make_tds_x_polarizing_schedule(
         sign_polarization=-1,
         depolarization_time=depolarization_time,
         polarizing_time_step=quasistatic_time_step,
@@ -449,7 +466,7 @@ if __name__ == "__main__":
     qpu = DWaveSampler(solver="Advantage2_system1_x_internal")
     exp_feature_info = get_properties(qpu)
 
-    x_anneal_schedules = make_x_anneal_schedules(
+    x_anneal_schedules = make_tds_x_anneal_schedules(
         exp_feature_info,
         target_lines=(0,),
         depolarized_preparation_interval=depolarized_preparation_interval,
