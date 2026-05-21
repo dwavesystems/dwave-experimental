@@ -321,13 +321,13 @@ def make_tds_x_anneal_schedules(
             raise ValueError(
                 "Must specify polarized_preparation_interval if source_lines is not empty."
             )
-        if polarized_preparation_interval[1] - polarized_preparation_interval[0] < min(
-            min_time_steps[l] for l in source_lines
-        ):
-            raise ValueError(
-                "polarized_preparation_interval must have duration compatible with min step ."
-            )
-        times += list(polarized_preparation_interval)
+    if polarized_preparation_interval[1] - polarized_preparation_interval[0] < min(
+        min_time_steps[l] for l in all_lines - target_lines
+    ):
+        raise ValueError(
+            "polarized_preparation_interval must have duration compatible with min step ."
+        )
+    times += list(polarized_preparation_interval)
     if not target_lines:
         raise ValueError("At least one target line must be specified.")
     if not depolarized_preparation_interval:
