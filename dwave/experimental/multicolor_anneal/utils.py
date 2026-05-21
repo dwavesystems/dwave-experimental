@@ -135,6 +135,11 @@ def make_default_intervals(
     This routine sets up the quasi-static timescales on which the
     the source is prepared in a polarized state, the polarizing bias
     is removed and the target is prepared.
+    
+    Defaulting is designed with a view to Larmour precession examples in
+    :ref:`documentation<https://docs.dwavequantum.com/en/latest/quantum_research/experimental_research.html#multicolor-annealing>`
+    and to allow replication of :ref:`published experimental results<https://doi.org/10.48550/arXiv.2603.15534>`.
+    
     Args:
         post_polarization_delay: Time to wait in microseconds
             after polarization before starting variation of the target line.
@@ -197,24 +202,24 @@ def make_x_anneal_schedules(
     target_c: float,
     detector_lines: Iterable[int],
     polarized_preparation_interval: tuple[float, float],
+    detector_quench_time: float,
     *,
     source_lines: Iterable[int] = tuple(),
-    detector_quench_time: float = 0.0,
     depolarized_preparation_interval: tuple[float, float] | None = None,
     source_quench_time: float = None,
     use_common_bounds: bool = True,
     use_overshoot: bool = False,
     post_pwl_delay: float = 1.0,
 ) -> list[list[list[float]]]:
-    """Set annealing schedules suitable for Larmour precision.
+    """Set annealing schedules suitable target detector source experiments
 
     Lines are designated as source, detector, target or neutral (unused).
-    The polarizing field (x_polarizing_bias) is assumed to be on during
+    The polarizing field (x_polarizing_schedule) is assumed to be on during
     the prepartion_interval (if source_lines is not empty).
     Source, detector and unused line qubits are quasistatically prepared
     during the preparation_interval by setting the normalized control
     bias to maxC or minC as appropriate.
-    The polarizing field (x_polarizing_bias) is assumed to be turned off,
+    The polarizing field (x_polarizing_schedule) is assumed to be turned off,
     with a safe separation to the depolarized_preparation_interval.
     Target line qubits are then quasistatically prepared to s_target.
     Source line qubits are then quenched to decouple them from the target.
@@ -243,7 +248,7 @@ def make_x_anneal_schedules(
              During this interval, unused and detector lines are set
              to -minC, whereas source lines are set to maxC.
         depolarized_preparation_interval: Tuple of (start, end) times for
-            preparation stages that occur after the x_polarizing_bias is
+            preparation stages that occur after the x_polarizing_schedule is
             returned to zero. This can be set to none, in which case
             all lines are prepared during the polarized_preparation_interval.
             Targets are set to target_c during this interval, other lines
@@ -391,7 +396,7 @@ def make_polarizing_schedule(
     depolarization_time: float = 6.0,
     polarizing_time_step: float = 1.0,
 ):
-    """Set polarizing schedules suitable for Larmour precision.
+    """Set polarizing schedules suitable for target detector source experiments.
 
     Creates a polarized signal on all qubits that is held for some
     period and then reduced to zero at a given depolarization time.
