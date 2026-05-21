@@ -238,16 +238,16 @@ def make_x_anneal_schedules(
             in microseconds.
         source_lines: Iterable of source line indices
         polarized_preparation_interval: Tuple of (start, end) times for
-             line preparations whilst a polarizing signal is present, 
+             line preparations whilst a polarizing signal is present,
              in microseconds.
-             During this interval, unused and detector lines are set 
+             During this interval, unused and detector lines are set
              to -minC, whereas source lines are set to maxC.
         depolarized_preparation_interval: Tuple of (start, end) times for
             preparation stages that occur after the x_polarizing_bias is
             returned to zero. This can be set to none, in which case
             all lines are prepared during the polarized_preparation_interval.
             Targets are set to target_c during this interval, other lines
-            are unchanged. 
+            are unchanged.
         source_quench_time: Time at which to quench the source line
             from maxC to minC, in microseconds. If None, defaults
             to detector_quench_time. Setting source_quench_time equal
@@ -335,11 +335,14 @@ def make_x_anneal_schedules(
     # By default all lines are switched off during the preparation
     # window. This default is overwritten or augmented according
     # to the line class.
-    anneal_schedules = [[
-        [polarized_preparation_interval[0], 0.0],
-        [polarized_preparation_interval[1], minCs[line]],
-    ] for line in all_lines] 
-        
+    anneal_schedules = [
+        [
+            [polarized_preparation_interval[0], 0.0],
+            [polarized_preparation_interval[1], minCs[line]],
+        ]
+        for line in all_lines
+    ]
+
     for line in target_lines:
         # Turned slowly to target value:
         anneal_schedules[line] = [
@@ -369,15 +372,17 @@ def make_x_anneal_schedules(
                 [detector_quench_time, minCs[line]],
                 [detector_quench_time + min_time_steps[line], maxCs[line]],
             ]
-         
+
     # Set initial point to time 0 for all schedules.
     for line in all_lines:
         if anneal_schedules[line][0][0] != 0:
             anneal_schedules[line] = [[0.0, 0.0]] + anneal_schedules[line]
 
     # Create regular gapped end point.
-    anneal_schedules = adapt_schedule_to_detector_delays(anneal_schedules, post_pwl_delay)
-    
+    anneal_schedules = adapt_schedule_to_detector_delays(
+        anneal_schedules, post_pwl_delay
+    )
+
     return anneal_schedules
 
 
@@ -416,22 +421,27 @@ if __name__ == "__main__":
     from dwave.system import DWaveSampler
     from dwave.experimental.multicolor_anneal.api import get_properties
 
-    print('Module code added temporarily for testing purposes.')
-    print('To be moved in part to tests and examples.')
+    print("Module code added temporarily for testing purposes.")
+    print("To be moved in part to tests and examples.")
     quasistatic_time_step = 1.0
     post_polarization_delay = 20.0
-    polarized_preparation_interval=(2.0, 2.0 + quasistatic_time_step)
-    depolarization_time = polarized_preparation_interval[1] + 2.0 + quasistatic_time_step   
-    depolarized_preparation_interval = (depolarization_time + post_polarization_delay, depolarization_time + post_polarization_delay + quasistatic_time_step)
+    polarized_preparation_interval = (2.0, 2.0 + quasistatic_time_step)
+    depolarization_time = (
+        polarized_preparation_interval[1] + 2.0 + quasistatic_time_step
+    )
+    depolarized_preparation_interval = (
+        depolarization_time + post_polarization_delay,
+        depolarization_time + post_polarization_delay + quasistatic_time_step,
+    )
     detector_quench_time = depolarized_preparation_interval[1] + quasistatic_time_step
     x_polarizing_schedule = make_polarizing_schedule(
-        sign_polarization = -1,
-        depolarization_time = depolarization_time,
-        polarizing_time_step = quasistatic_time_step
+        sign_polarization=-1,
+        depolarization_time=depolarization_time,
+        polarizing_time_step=quasistatic_time_step,
     )
     print(x_polarizing_schedule)
 
-    qpu = DWaveSampler(solver='Advantage2_system1_x_internal')
+    qpu = DWaveSampler(solver="Advantage2_system1_x_internal")
     exp_feature_info = get_properties(qpu)
 
     x_anneal_schedules = make_x_anneal_schedules(
@@ -441,16 +451,26 @@ if __name__ == "__main__":
         detector_lines=(1,),
         detector_quench_time=detector_quench_time,
         source_lines=(2,),
-        polarized_preparation_interval = polarized_preparation_interval,
+        polarized_preparation_interval=polarized_preparation_interval,
         target_c=0.37,
         post_pwl_delay=quasistatic_time_step,
     )
     print(x_anneal_schedules)
 
     import matplotlib.pyplot as plt
+
     plt.figure()
     for line, schedule in enumerate(x_anneal_schedules):
-        plt.plot([x for x,_ in schedule], [y for _,y in schedule], label=f"Line {line}")
+        plt.plot(
+            [x for x, _ in schedule], [y for _, y in schedule], label=f"Line {line}"
+        )
+    plt.plot(
+        [x for x, _ in x_polarizing_schedule],
+        [y for _, y in x_polarizing_schedule],
+        label="Polarizing bias",
+        linestyle="dashed",
+        color="black",
+    )
     plt.xlabel("Time (microseconds)")
     plt.ylabel("Schedule value")
     plt.title("Example Anneal Schedules")
