@@ -351,7 +351,7 @@ def make_tds_x_anneal_schedules(
     if not sorted(times) == times:
         raise ValueError(
             "Times must be in non-decreasing order:"
-            " source preparation, target preparation, source/detector quenches."
+            " polarized preparation, depolarized preparation, then source/detector quenches."
         )
     if times[0] < 0:
         raise ValueError("Times must be non-negative.")
