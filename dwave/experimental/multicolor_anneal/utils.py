@@ -329,13 +329,15 @@ def make_tds_x_anneal_schedules(
         raise ValueError("At least one target line must be specified.")
     if not depolarized_preparation_interval:
         depolarized_preparation_interval = polarized_preparation_interval
+    else:
+        times += list(depolarized_preparation_interval)
+    
     if depolarized_preparation_interval[1] - depolarized_preparation_interval[0] < min(
         min_time_steps[l] for l in target_lines
     ):
         raise ValueError(
             "depolarized_preparation_interval must have duration compatible with min step ."
         )
-    times += list(depolarized_preparation_interval)
     if not detector_lines:
         raise ValueError("At least one detector line must be specified.")
     if not source_lines or source_quench_time is None:
