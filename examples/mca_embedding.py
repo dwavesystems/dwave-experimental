@@ -43,7 +43,6 @@ def main(
     detector_lines: None | tuple[int, ...] = None,
     source_lines: None | tuple[int, ...] = None,
     biclique_target_lines: set | None = None,
-    profile: str | None = None,
     num_lines: int | None = None,
 ):
     """Examples of multicolor annealing.
@@ -71,7 +70,6 @@ def main(
             using a defect-free Advantage2 processor graph at a
             Zephyr[6] scale, using the standard 6-anneal line scheme.
         solver: Name of the solver, or dictionary of characteristics.
-        profile: The name of the D-Wave client profile to use.
         detector_lines: The integer indices of the detector lines.
             By default 0 for a 6 annealing line scheme, and (0, 6)
             for a 12 annealing line scheme.
@@ -90,7 +88,7 @@ def main(
 
     # when available, use feature-based search to default the solver.
     if use_client:
-        qpu = DWaveSampler(solver=solver, profile=profile)
+        qpu = DWaveSampler(solver=solver)
         annealing_lines = get_properties(qpu)
         line_assignments = {
             n: al_idx for al_idx, al in enumerate(annealing_lines) for n in al["qubits"]
@@ -287,12 +285,6 @@ if __name__ == "__main__":
         default=SOLVER_FILTER,
     )
     parser.add_argument(
-        "--profile",
-        type=str,
-        help="Option to specify QPU profile when use_client is True, by default None.",
-        default=None,
-    )
-    parser.add_argument(
         "--num_lines",
         type=int,
         help="Option to specify the number of annealing lines when use_client is True, by default None.",
@@ -303,6 +295,5 @@ if __name__ == "__main__":
     main(
         use_client=args.use_client,
         solver=args.solver_name,
-        profile=args.profile,
         num_lines=args.num_lines,
     )
