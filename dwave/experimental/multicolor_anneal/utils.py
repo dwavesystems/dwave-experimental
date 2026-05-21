@@ -312,7 +312,6 @@ def make_tds_x_anneal_schedules(
     """
 
     num_lines = len(exp_feature_info)
-    print(num_lines)
     all_lines = set(range(num_lines))
     source_lines = set(source_lines)
     detector_lines = set(detector_lines)
