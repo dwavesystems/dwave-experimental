@@ -484,7 +484,7 @@ if __name__ == "__main__":
         polarized_preparation_interval,
         depolarization_interval,
         depolarized_preparation_interval,
-    ) = make_tds_intervals()  
+    ) = make_tds_intervals()
     detector_quench_time = depolarized_preparation_interval[1] + step
     x_polarizing_schedule = make_tds_x_polarizing_schedule(
         depolarization_interval=depolarization_interval,

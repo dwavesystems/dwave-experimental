@@ -243,6 +243,32 @@ def plot_shim(
     if fname is not None:
         plt.savefig(f"fb_{fname}")
 
+def _plot_tds_schedules(x_polarizing_schedule: list[list[float]],
+                        x_anneal_schedules: list[list[list[float]]],
+                        ):
+    """Plots the piecewise linear schedules used
+
+    Args:
+        x_polarizing_biases: The polarization signal.
+        x_anneal_schedules: The list of anneal schedules, one per line.
+    """
+    plt.figure()
+    plt.title('PWL waveforms')
+    for line, schedule in enumerate(x_anneal_schedules):
+        plt.plot(
+            [x for x, _ in schedule], [y for _, y in schedule], label=f"Line {line}"
+        )
+    plt.plot(
+        [x for x, _ in x_polarizing_schedule],
+        [y for _, y in x_polarizing_schedule],
+        label="Polarizing bias",
+        linestyle="dashed",
+        color="black",
+    )
+    plt.xlabel("Time (microseconds)")
+    plt.ylabel("Schedule value")
+    plt.legend()
+    plt.show()
 
 def _plot_tds_schedules(
     x_polarizing_schedule: list[list[float]],
@@ -486,7 +512,7 @@ def main(
         _fix_standard_c_range(x_anneal_schedules)
     _plot_tds_schedules(x_polarizing_schedule, x_anneal_schedules)
     x_schedule_delays = [0.0] * num_lines
-
+    
     anneal_offsets = [0.0] * qpu.properties["num_qubits"]
     flux_biases = [0.0] * qpu.properties["num_qubits"]
 
