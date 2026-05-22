@@ -21,7 +21,14 @@ import networkx as nx
 from dwave_networkx import zephyr_coordinates
 
 
-__all__ = ["qubit_to_Advantage2_annealing_line", "make_tds_graph", "make_tds_intervals", "make_tds_x_anneal_schedules", "make_tds_x_polarizing_schedule" ]
+__all__ = [
+    "qubit_to_Advantage2_annealing_line",
+    "make_tds_graph",
+    "make_tds_intervals",
+    "make_tds_x_anneal_schedules",
+    "make_tds_x_polarizing_schedule",
+    "standardize_schedule_endpoints",
+]
 
 Interval = tuple[float, float]
 LineFeatureInfo = dict[str, float]
@@ -183,10 +190,11 @@ def make_tds_intervals(
 
 
 def standardize_schedule_endpoints(
-        x_anneal_schedules: AnnealSchedules,
-        x_polarizing_schedule: Schedule | None = None,
-        *,
-        post_pwl_delay: float = 0.0, decimals = 0
+    x_anneal_schedules: AnnealSchedules,
+    x_polarizing_schedule: Schedule | None = None,
+    *,
+    post_pwl_delay: float = 0.0,
+    decimals=0,
 ) -> tuple[AnnealSchedules, AnnealSchedule]:
     """Adapt anneal schedules to account for a delayed measurement.
 
@@ -218,15 +226,15 @@ def standardize_schedule_endpoints(
         completion_time = max(completion_time, polarizing_schedule[-1][0])
     completion_time = completion_time + post_pwl_delay
     if decimals is not None:
-        completion_time = float(round(10**decimals*completion_time/10**decimals))
-    
+        completion_time = float(round(10**decimals * completion_time / 10**decimals))
+
     for anneal_schedule in anneal_schedules:
         if anneal_schedule[-1][0] != completion_time:
             anneal_schedule += [[completion_time, anneal_schedule[-1][1]]]
 
     if polarizing_schedule and polarizing_schedule[-1][0] != completion_time:
         polarizing_schedule.append([completion_time, polarizing_schedule[-1][1]])
-        
+
     return anneal_schedules, polarizing_schedule
 
 
@@ -422,7 +430,9 @@ def make_tds_x_anneal_schedules(
             anneal_schedules[line] = [[0.0, 0.0]] + anneal_schedules[line]
 
     # Create regular gapped end point.
-    anneal_schedules, _ = standardize_schedule_endpoints(anneal_schedules, post_pwl_delay=post_pwl_delay)
+    anneal_schedules, _ = standardize_schedule_endpoints(
+        anneal_schedules, post_pwl_delay=post_pwl_delay
+    )
 
     return anneal_schedules
 
@@ -464,18 +474,17 @@ if __name__ == "__main__":
 
     print("Module code added temporarily for testing purposes.")
     print("To be moved in part to tests and examples.")
-    
 
     qpu = DWaveSampler(solver="Advantage2_system1_x_internal")
     exp_feature_info = get_properties(qpu)
-    
+
     # Defaults are assumed conservative with respect to exp_feature_info requirements
     step = 2.0  # Quasi-static evolution time scale, match to minimum depolarization buffer for tidiness.
     (
         polarized_preparation_interval,
         depolarization_interval,
         depolarized_preparation_interval,
-    ) = make_tds_intervals()  
+    ) = make_tds_intervals()
     detector_quench_time = depolarized_preparation_interval[1] + step
     x_polarizing_schedule = make_tds_x_polarizing_schedule(
         depolarization_interval=depolarization_interval,
@@ -492,8 +501,7 @@ if __name__ == "__main__":
         post_pwl_delay=step,
     )
     x_anneal_schedules, x_polarizing_schedule = standardize_schedule_endpoints(
-        x_anneal_schedules,
-        x_polarizing_schedule
+        x_anneal_schedules, x_polarizing_schedule
     )
     # Adapt polarizing schedule
     import matplotlib.pyplot as plt

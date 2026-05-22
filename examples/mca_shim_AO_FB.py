@@ -36,89 +36,11 @@ from dwave.experimental.multicolor_anneal import (
     make_tds_intervals,
     make_tds_x_polarizing_schedule,
     make_tds_x_anneal_schedules,
-    qubit_to_Advantage2_annealing_line,
+    qubit_to_Advantage2_annealing_line, # Per comments, requires modification subject to dwave-experimental/pull/52
     SOLVER_FILTER,
+    standardize_schedule_endpoints,
 )
 from dwave.experimental.shimming import shim_flux_biases
-
-
-def _make_anneal_schedules(
-    exp_feature_info: list,
-    target_c: float = 0.37,
-    times: list[float] | tuple[float] = (0.0, 1.0, 21.0, 22.0, 23.0, 24.0, 25.0),
-    line_detector: int = 0,
-    line_source: int = 3,
-):
-    """Set annealing schedules suitable for Larmor precision.
-
-    See documentation for Larmor precession example, the same
-    schedule is used.
-    """
-
-    num_lines = len(exp_feature_info)
-    min_time_step = exp_feature_info[0]["minAnnealingTimeStep"]
-    if len(times) != 7 or np.min(np.diff(times)) < 2 * min_time_step:
-        raise ValueError("Format assumes 7 times each separated by atleast 2 minStep")
-
-    maxCs = {line: exp_feature_info[line]["maxC"] for line in range(num_lines)}
-    minCs = {line: exp_feature_info[line]["minC"] for line in range(num_lines)}
-
-    anneal_schedules = [
-        [
-            [times[0], 0.0],
-            [times[1], 0.0],
-            [times[2], 0.0],
-            [times[3], target_c],
-            [times[4], target_c],
-            [times[4] + min_time_step, target_c],
-            [times[5], target_c],
-            [times[6], 1.0],
-        ]
-    ] * num_lines
-    anneal_schedules[line_source] = [
-        [times[0], 0.0],
-        [times[1], maxCs[line_source]],
-        [times[2], maxCs[line_source]],
-        [times[3], maxCs[line_source]],
-        [times[4], maxCs[line_source]],
-        [times[4] + min_time_step, minCs[line_source]],
-        [times[5], minCs[line_source]],
-        [times[6], 1.0],
-    ]
-    anneal_schedules[line_detector] = [
-        [times[0], 0.0],
-        [times[1], minCs[line_detector]],
-        [times[2], minCs[line_detector]],
-        [times[3], minCs[line_detector]],
-        [times[4], minCs[line_detector]],
-        [times[4] + min_time_step, maxCs[line_detector]],
-        [times[5], maxCs[line_detector]],
-        [times[6], 1.0],
-    ]
-    return anneal_schedules
-
-
-def _make_polarizing_schedule(
-    *,
-    sign_polarization: int = 1,
-    times: list[float] | tuple[float] = (0.0, 1.0, 2.0, 25.0),
-):
-    """Set polarizing schedules suitable for Larmor precession.
-
-    See documentation for Larmor precession example, the same
-    schedule is used.
-    """
-    if len(times) != 4:
-        raise ValueError(
-            "Expecting 2 unpolarized times, followed by two polarized times"
-        )
-    polarization_schedule = [
-        [times[0], 1],
-        [times[1], 1],
-        [times[2], 0],
-        [times[3], 0],
-    ]
-    return polarization_schedule
 
 
 def _calc_anneal_offsets(
@@ -314,6 +236,32 @@ def plot_shim(
     if fname is not None:
         plt.savefig(f"fb_{fname}")
 
+def _plot_tds_schedules(x_polarizing_schedule: list[list[float]],
+                        x_anneal_schedules: list[list[list[float]]],
+                        ):
+    """Plots the piecewise linear schedules used
+
+    Args:
+        x_polarizing_biases: The polarization signal.
+        x_anneal_schedules: The list of anneal schedules, one per line.
+    """
+    plt.figure()
+    plt.title('PWL waveforms')
+    for line, schedule in enumerate(x_anneal_schedules):
+        plt.plot(
+            [x for x, _ in schedule], [y for _, y in schedule], label=f"Line {line}"
+        )
+    plt.plot(
+        [x for x, _ in x_polarizing_schedule],
+        [y for _, y in x_polarizing_schedule],
+        label="Polarizing bias",
+        linestyle="dashed",
+        color="black",
+    )
+    plt.xlabel("Time (microseconds)")
+    plt.ylabel("Schedule value")
+    plt.legend()
+    plt.show()
 
 def main(
     use_cache: bool = False,
@@ -477,16 +425,38 @@ def main(
     num_lines = len(exp_feature_info)
     cmap = plt.colormaps.get_cmap("plasma")
     line_color = [cmap(i / (num_lines - 1)) for i in range(num_lines)]
-
-    x_anneal_schedules = _make_anneal_schedules(
-        exp_feature_info,
-        line_source=line_source,
-        line_detector=line_detector,
-        target_c=target_c,
+    delay = 2.0  # Quasi-static buffering of preparation and measurement stage
+    
+    (
+        polarized_preparation_interval,
+        depolarization_interval,
+        depolarized_preparation_interval,
+    ) = make_tds_intervals()
+    detector_quench_time = depolarized_preparation_interval[1] + delay
+    x_polarizing_schedule = make_tds_x_polarizing_schedule(
+        depolarization_interval=depolarization_interval,
     )
-    x_polarizing_schedule = _make_polarizing_schedule()
+    x_anneal_schedules = make_tds_x_anneal_schedules(
+        exp_feature_info,
+        target_lines=set(range(num_lines))-{line_detector,line_source},
+        depolarized_preparation_interval=depolarized_preparation_interval,
+        detector_lines=(line_detector,),
+        detector_quench_time=detector_quench_time,
+        source_lines=(line_source,),
+        polarized_preparation_interval=polarized_preparation_interval,
+        target_c=target_c,
+        post_pwl_delay=delay,
+    )
+    
+    print(x_polarizing_schedule)
+    print(x_anneal_schedules)
+    x_anneal_schedules, x_polarizing_schedule = standardize_schedule_endpoints(
+        x_anneal_schedules,
+        x_polarizing_schedule
+    )
+    _plot_tds_schedules(x_polarizing_schedule, x_anneal_schedules)
     x_schedule_delays = [0.0] * num_lines
-
+    
     anneal_offsets = [0.0] * qpu.properties["num_qubits"]
     flux_biases = [0.0] * qpu.properties["num_qubits"]
 
@@ -529,7 +499,11 @@ def main(
     embs_by_line = {i: [] for i in range(num_lines)}
     for i, emb in enumerate(embs):
         q = emb[0][0]
-        embs_by_line[qubit_to_Advantage2_annealing_line(q, zephyr_shape, num_lines=num_lines)].append(emb)
+        # The 6-line scheme is used, requires update after merge of this pull-eqest Excepts due to absence of num_lines support https://github.com/dwavesystems/dwave-experimental/pull/52
+        # embs_by_line[qubit_to_Advantage2_annealing_line(q, zephyr_shape, num_lines=num_lines)].append(emb)
+        # Applies to all instances of qubit_to_anneal_line
+        embs_by_line[qubit_to_Advantage2_annealing_line(q, zephyr_shape)].append(emb)
+            
     embs = [emb for i in range(num_lines) for emb in embs_by_line[i]]
 
     sampler = ParallelEmbeddingComposite(qpu, embeddings=embs)
@@ -599,6 +573,7 @@ def main(
                 },
             )
             # shimmed_variables = {n for n in bqm_embedded.variables if qubit_to_Advantage2_annealing_line(n, zephyr_shape) == line_detector}
+            
             shimmed_variables = {
                 n
                 for n in bqm_embedded.variables
@@ -925,12 +900,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--no_flux_biases",
         action="store_true",
-        help="Add this flag to omit the data analsis with anneal_offsets set",
+        help="Add this flag to omit the flux_bias shimming calibration stage (simulaton run exclusively with flux_biases=[0.0]*num_qubits)",
     )
     parser.add_argument(
         "--no_anneal_offsets",
         action="store_true",
-        help="Add this flag to omit the data analsis with anneal_offsets set",
+        help="Add this flag to omit the data analsis with anneal_offsets set  (simulaton run exclusively with anneal_offsets=[0.0]*num_qubits)",
     )
 
     args = parser.parse_args()
