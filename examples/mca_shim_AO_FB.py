@@ -32,9 +32,12 @@ from dwave.system.composites import ParallelEmbeddingComposite
 from minorminer.utils.parallel_embeddings import find_multiple_embeddings
 from dwave.experimental.multicolor_anneal import (
     get_properties,
-    SOLVER_FILTER,
     make_tds_graph,
+    make_tds_intervals,
+    make_tds_x_polarizing_schedule,
+    make_tds_x_anneal_schedules,
     qubit_to_Advantage2_annealing_line,
+    SOLVER_FILTER,
 )
 from dwave.experimental.shimming import shim_flux_biases
 
@@ -526,7 +529,7 @@ def main(
     embs_by_line = {i: [] for i in range(num_lines)}
     for i, emb in enumerate(embs):
         q = emb[0][0]
-        embs_by_line[qubit_to_Advantage2_annealing_line(q, zephyr_shape)].append(emb)
+        embs_by_line[qubit_to_Advantage2_annealing_line(q, zephyr_shape, num_lines=num_lines)].append(emb)
     embs = [emb for i in range(num_lines) for emb in embs_by_line[i]]
 
     sampler = ParallelEmbeddingComposite(qpu, embeddings=embs)

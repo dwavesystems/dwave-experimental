@@ -20,7 +20,7 @@ import networkx as nx
 from dwave_networkx import zephyr_coordinates
 
 
-__all__ = ["qubit_to_Advantage2_annealing_line", "make_tds_graph"]
+__all__ = ["qubit_to_Advantage2_annealing_line", "make_tds_graph", "make_tds_intervals", "make_tds_x_anneal_schedules", "make_tds_x_polarizing_schedule" ]
 
 Interval = tuple[float, float]
 LineFeatureInfo = dict[str, float]
@@ -131,7 +131,7 @@ def make_tds_graph(
     return tds_graph, node_to_tds
 
 
-def make_default_tds_intervals(
+def make_tds_intervals(
     post_polarization_delay: float = 20.0,
     polarization_schedule_step_size: None | float = 2.0,
     anneal_schedule_step_size: None | float = None,
@@ -450,7 +450,7 @@ if __name__ == "__main__":
         polarized_preparation_interval,
         depolarization_interval,
         depolarized_preparation_interval,
-    ) = make_default_tds_intervals()
+    ) = make_tds_intervals()
     detector_quench_time = depolarized_preparation_interval[1] + step
     x_polarizing_schedule = make_tds_x_polarizing_schedule(
         depolarization_interval=depolarization_interval,
