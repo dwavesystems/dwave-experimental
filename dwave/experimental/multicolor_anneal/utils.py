@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from copy import deepcopy
+import math
 from typing import Iterable, Literal
 
 import networkx as nx
@@ -132,8 +133,8 @@ def make_tds_graph(
 
 
 def make_tds_intervals(
-    post_polarization_delay: float = 20.0,
-    polarization_schedule_step_size: None | float = 2.0,
+    post_depolarization_delay: float = 20.0,
+    polarizing_schedule_step_size: None | float = 2.0,
     anneal_schedule_step_size: None | float = None,
 ) -> tuple[Interval, Interval, Interval]:
     """Make default intervals for schedules construction.
@@ -148,27 +149,27 @@ def make_tds_intervals(
     `published experimental results <https://doi.org/10.48550/arXiv.2603.15534>`_.
 
     Args:
-        post_polarization_delay: Time to wait in microseconds
-            after polarization before starting variation of the target line.
-        polarization_schedule_step_size: Step size for the polarization
-            schedule. If None, defaults to ``post_polarization_delay``.
+        post_depolarization_delay: Time to wait in microseconds
+            after polarizing before starting variation of the target line.
+        polarizing_schedule_step_size: Step size for the polarizing
+            schedule. If None, defaults to ``post_depolarization_delay``.
         anneal_schedule_step_size: Step size for the anneal schedules. If
-            None, defaults to ``polarization_schedule_step_size``.
+            None, defaults to ``polarizing_schedule_step_size``.
 
     Returns:
         A 3-tuple containing ``polarized_preparation_interval``,
         ``depolarization_interval``, and
         ``depolarized_preparation_interval``.
     """
-    if polarization_schedule_step_size is None:
-        polarization_schedule_step_size = post_polarization_delay
+    if polarizing_schedule_step_size is None:
+        polarizing_schedule_step_size = post_depolarization_delay
     if anneal_schedule_step_size is None:
-        anneal_schedule_step_size = polarization_schedule_step_size
+        anneal_schedule_step_size = polarizing_schedule_step_size
 
     polarized_preparation_interval = (0.0, anneal_schedule_step_size)
-    tp = polarized_preparation_interval[-1] + polarization_schedule_step_size
-    depolarization_interval = (tp, tp + polarization_schedule_step_size)
-    ts = depolarization_interval[-1] + post_polarization_delay
+    tp = polarized_preparation_interval[-1] + polarizing_schedule_step_size
+    depolarization_interval = (tp, tp + polarizing_schedule_step_size)
+    ts = depolarization_interval[-1] + post_depolarization_delay
     depolarized_preparation_interval = (
         ts,
         ts + anneal_schedule_step_size,
@@ -182,33 +183,51 @@ def make_tds_intervals(
 
 
 def standardize_schedule_endpoints(
-    anneal_schedules: AnnealSchedules, delay: float = 0.0
-) -> AnnealSchedules:
+        x_anneal_schedules: AnnealSchedules,
+        x_polarizing_schedule: Schedule | None = None,
+        *,
+        post_pwl_delay: float = 0.0, decimals = 0
+) -> tuple[AnnealSchedules, AnnealSchedule]:
     """Adapt anneal schedules to account for a delayed measurement.
 
     All schedule lengths (max time) are reset to accommodate the largest
-    support time plus a delay.
+    support time plus a delay. The final time is rounded up to the nearest
+    microsecond.
 
     Args:
-        anneal_schedules: List of anneal schedules, as returned by
+        x_anneal_schedules: List of anneal schedules, as might
+            returned by :func:`make_tds_x_anneal_schedules`.
+        x_polarizing_schedules: Anneal schedule, as might be returned by
             :func:`make_tds_x_anneal_schedules`.
-        delay: Delay in microseconds to apply to each anneal schedule.
+        post_pwl_delay: Delay in microseconds to apply to each anneal schedule.
             Inclusion of a delay on the order of microseconds prevents line
             desynchronization, filtering and other non-idealities from
             interfering with waveform completion.
+        decimals: decimals to which the end point is rounded up. By default
+            to the nearest microsecond.
 
     Returns:
-        List of adapted anneal schedules.
+        tuple consisting of adapted anneal and polarizing schedules
     """
-    anneal_schedules = deepcopy(anneal_schedules)
-    if delay < 0.0:
+    anneal_schedules = deepcopy(x_anneal_schedules)
+    polarizing_schedule = deepcopy(x_polarizing_schedule)
+    if post_pwl_delay < 0.0:
         raise ValueError("delay must be non-negative.")
-    completion_time = max(pwl[-1][0] + delay for pwl in anneal_schedules)
+    completion_time = max(pwl[-1][0] for pwl in anneal_schedules)
+    if polarizing_schedule:
+        completion_time = max(completion_time, polarizing_schedule[-1][0])
+    completion_time = completion_time + post_pwl_delay
+    if decimals is not None:
+        completion_time = float(round(10**decimals*completion_time/10**decimals))
+    
     for anneal_schedule in anneal_schedules:
         if anneal_schedule[-1][0] != completion_time:
             anneal_schedule += [[completion_time, anneal_schedule[-1][1]]]
 
-    return anneal_schedules
+    if polarizing_schedule and polarizing_schedule[-1][0] != completion_time:
+        polarizing_schedule.append([completion_time, polarizing_schedule[-1][1]])
+        
+    return anneal_schedules, polarizing_schedule
 
 
 def make_tds_x_anneal_schedules(
@@ -403,7 +422,7 @@ def make_tds_x_anneal_schedules(
             anneal_schedules[line] = [[0.0, 0.0]] + anneal_schedules[line]
 
     # Create regular gapped end point.
-    anneal_schedules = standardize_schedule_endpoints(anneal_schedules, post_pwl_delay)
+    anneal_schedules, _ = standardize_schedule_endpoints(anneal_schedules, post_pwl_delay=post_pwl_delay)
 
     return anneal_schedules
 
@@ -431,12 +450,12 @@ def make_tds_x_polarizing_schedule(
         or depolarization_interval[1] - depolarization_interval[0] <= 0
     ):
         raise ValueError("depolarization_interval must have a positive duration.")
-    polarization_schedule = [
-        [0, sign_polarization],
+    polarizing_schedule = [
+        [0.0, sign_polarization],
         [depolarization_interval[0], sign_polarization],
         [depolarization_interval[1], 0],
     ]
-    return polarization_schedule
+    return polarizing_schedule
 
 
 if __name__ == "__main__":
@@ -445,20 +464,22 @@ if __name__ == "__main__":
 
     print("Module code added temporarily for testing purposes.")
     print("To be moved in part to tests and examples.")
+    
+
+    qpu = DWaveSampler(solver="Advantage2_system1_x_internal")
+    exp_feature_info = get_properties(qpu)
+    
+    # Defaults are assumed conservative with respect to exp_feature_info requirements
     step = 2.0  # Quasi-static evolution time scale, match to minimum depolarization buffer for tidiness.
     (
         polarized_preparation_interval,
         depolarization_interval,
         depolarized_preparation_interval,
-    ) = make_tds_intervals()
+    ) = make_tds_intervals()  
     detector_quench_time = depolarized_preparation_interval[1] + step
     x_polarizing_schedule = make_tds_x_polarizing_schedule(
         depolarization_interval=depolarization_interval,
     )
-
-    qpu = DWaveSampler(solver="Advantage2_system1_x_internal")
-    exp_feature_info = get_properties(qpu)
-
     x_anneal_schedules = make_tds_x_anneal_schedules(
         exp_feature_info,
         target_lines=(0,),
@@ -470,7 +491,11 @@ if __name__ == "__main__":
         target_c=0.37,
         post_pwl_delay=step,
     )
-
+    x_anneal_schedules, x_polarizing_schedule = standardize_schedule_endpoints(
+        x_anneal_schedules,
+        x_polarizing_schedule
+    )
+    # Adapt polarizing schedule
     import matplotlib.pyplot as plt
 
     plt.figure()
