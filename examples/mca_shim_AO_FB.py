@@ -15,8 +15,10 @@
 An example to show embedding for multicolor annealing.
 """
 
-import os
 import argparse
+import hashlib
+import json
+import os
 
 import pickle
 import pandas as pd
@@ -176,6 +178,8 @@ def plot_shim(
     flux_history: dict,
     num_experiments: int = 1,
     fname: str | None = None,
+    label: str = "",
+    max_qubit_labels: int = 10,
 ):
     """Plot the iterative flux_bias_shim process.
 
@@ -189,6 +193,9 @@ def plot_shim(
             be measured per step in flux_biases.
         fname: a filename to which to save data, mag or fb is prepended for
             the two plot types. By default no plots are created.
+        label: a label for the plots, used in legends.
+        max_qubit_labels: maximum number of qubit labels to include in legend,
+            if larger, defaults to no labels.
     """
     mag_array = np.array(list(mag_history.values()))
     flux_array = np.array(list(flux_history.values()))
@@ -220,8 +227,8 @@ def plot_shim(
         plt.xlabel("Shim iteration")
     else:
         plt.xlabel("Programming")
-        if mag_array.shape[0] < 10:
-            plt.legend(flux_history.keys(), title="Qubit index")
+        if mag_array.shape[0] <= max_qubit_labels:
+            plt.legend(flux_history.keys(), title=f"{label} Qubit index")
     plt.ylabel("Magnetization")
     if fname is not None:
         plt.savefig(f"mag_{fname}")
@@ -231,8 +238,8 @@ def plot_shim(
     plt.plot(flux_array.transpose())
     plt.xlabel("Shim iteration")
     plt.ylabel("Flux bias ($\\Phi_0$)")
-    if mag_array.shape[0] < 10:
-        plt.legend(flux_history.keys(), title="Qubit index")
+    if mag_array.shape[0] <= max_qubit_labels:
+        plt.legend(flux_history.keys(), title=f"{label} Qubit index")
     if fname is not None:
         plt.savefig(f"fb_{fname}")
 
@@ -263,11 +270,19 @@ def _plot_tds_schedules(x_polarizing_schedule: list[list[float]],
     plt.legend()
     plt.show()
 
+def _get_experiment_id(args):
+    print(vars(args))
+    args_string = json.dumps(vars(args), sort_keys=True)
+    return hashlib.sha256(args_string.encode("utf-8")).hexdigest()
+
+    
 def main(
-    use_cache: bool = False,
+    cache_str: str | None = None,
     solver: dict | str | None = None,
     line_detector: int = 0,
     line_source: int = 3,
+    seed: int | None = None,
+    max_num_embeddings: int | None = None,
     target_c: float = 0.37,
     no_flux_biases: bool = False,
     no_anneal_offsets: bool = False,
@@ -299,8 +314,8 @@ def main(
     maximized.
 
     Args:
-        use_cache:
-            Flag to enable caching of experimental data. If set to True a directory
+        cache_str:
+            A unique experimental idenfier. If not None a directory
             cache/ is created which is populated with experimental data. The cache
             is checked for compatible experimental data before running an experiment,
             and if compatible data is present the data is reloaded rather than
@@ -311,6 +326,10 @@ def main(
             The integer index of the detector line.
         line_source:
             The integer index of the source line.
+        seed:
+            Random seed used for embedding generation.
+        max_num_embeddings:
+            Maximum number of embeddings to find. If None, search for all available embeddings.
         target_c:
             normalized control bias at which the target qubits are held
         no_flux_biases:
@@ -340,8 +359,8 @@ def main(
 
     Raises:
         ValueError: If the number of lines is less than 3, or
-        if the line_detector or line_source is not in
-            the range [0, num_lines)
+        if {detector_line, source_line} is not a size 2 subset of
+        set(range(num_lines))
     """
     print(
         "A variety of plots are shown to demonstrate heuristic correction of "
@@ -448,8 +467,6 @@ def main(
         post_pwl_delay=delay,
     )
     
-    print(x_polarizing_schedule)
-    print(x_anneal_schedules)
     x_anneal_schedules, x_polarizing_schedule = standardize_schedule_endpoints(
         x_anneal_schedules,
         x_polarizing_schedule
@@ -460,7 +477,7 @@ def main(
     anneal_offsets = [0.0] * qpu.properties["num_qubits"]
     flux_biases = [0.0] * qpu.properties["num_qubits"]
 
-    # See documented Larmor precession example
+    # See documented Larmour precession example
     qpu_parameters = dict(
         num_reads=500,
         answer_mode="raw",
@@ -492,9 +509,23 @@ def main(
     target_graph.add_node(0)
     S, Snode_to_tds = make_tds_graph(target_graph)
     subgraph_kwargs = dict(node_labels=(Snode_to_tds, Tnode_to_tds), as_embedding=True)
-    embs = find_multiple_embeddings(
-        S, T, max_num_emb=None, embedder_kwargs=subgraph_kwargs, one_to_iterable=True
-    )
+    fn_cache = f"cache/emb_{cache_str}.pkl"
+    if cache_str:
+        os.makedirs(os.path.dirname(fn_cache), exist_ok=True)
+    if cache_str and os.path.isfile(fn_cache):
+        with open(fn_cache, "rb") as f:
+            embs = pickle.load(f)
+    else:
+        embs = find_multiple_embeddings(
+            S,
+            T,
+            max_num_emb=max_num_embeddings,
+            embedder_kwargs=subgraph_kwargs,
+            one_to_iterable=True,
+            seed=seed,
+        )
+        with open(fn_cache, "wb") as f:
+            pickle.dump(embs, f)
     # Reorder by target line for ease of analysis:
     embs_by_line = {i: [] for i in range(num_lines)}
     for i, emb in enumerate(embs):
@@ -553,12 +584,12 @@ def main(
     if not no_flux_biases:
         shimstr = "_FBshim"
         print(
-            "Shim detector and source flux biases for zero detector magnetization in"
-            " the limit of long delay."
+            "Shim flux biases for zero detector magnetization in"
+            " the limit of long delay (at equilibrium)."
         )
         print()
-        fn_cache = f"cache/FB_{solver}_D{line_detector}_S{line_source}_c{target_c}.npy"
-        if use_cache and os.path.isfile(fn_cache):
+        fn_cache = f"cache/FB_{cache_str}.npy"
+        if cache_str and os.path.isfile(fn_cache):
             with open(fn_cache, "rb") as f:
                 flux_biases, flux_history, mag_history = pickle.load(f)
         else:
@@ -572,18 +603,15 @@ def main(
                     for e, J in bqm.quadratic.items()
                 },
             )
-            # shimmed_variables = {n for n in bqm_embedded.variables if qubit_to_Advantage2_annealing_line(n, zephyr_shape) == line_detector}
-            
             shimmed_variables = {
                 n
                 for n in bqm_embedded.variables
                 if qubit_to_Advantage2_annealing_line(n, zephyr_shape) == line_detector
             }
-            # assert set(bqm_embedded.variables).issubset(qpu.nodelist)  # Paranoia
-            # assert all(T.has_edge(*e) for e in bqm_embedded.quadratic)  # Paranoia
+
             qpu_parameters["x_schedule_delays"][
                 line_detector
-            ] = 0.1  # Documented limit.
+            ] = 0.1  # Documented limit. TODO- grab from properties if possible.
             flux_biases, flux_history, mag_history = shim_flux_biases(
                 bqm=bqm_embedded,
                 sampler=qpu,
@@ -600,14 +628,14 @@ def main(
         shimstr = ""
     plt.show()
     print(f"Collect data for {len(embs)} parallel embeddings")
-    fn_cache = f"cache/{solver}_D{line_detector}_S{line_source}_c{target_c}_ti{delay_min}_tf{delay_max}{shimstr}.npy"
-    if use_cache and os.path.isfile(fn_cache):
+    fn_cache = f"cache/AO_It0_{cache_str}.npy"
+    if cache_str and os.path.isfile(fn_cache):
         mean_Z_detector = np.load(fn_cache)
     else:
         mean_Z_detector = run_parallel_experiment(
             sampler, bqm, qpu_parameters, delays, line_detector
         )
-        if use_cache:
+        if cache_str:
             os.makedirs(os.path.dirname(fn_cache), exist_ok=True)
             np.save(fn_cache, mean_Z_detector)
 
@@ -631,18 +659,18 @@ def main(
 
     plt.figure()
     plt.title("Time series for several qubits using distinct target lines")
-    line_targets = set()
+    plotted_embIs = set()
     for idx, emb in enumerate(embs):
         q = emb[0][0]
-        line_target = qubit_to_Advantage2_annealing_line(q, zephyr_shape)
-        if line_target not in line_targets:
+        plotted_embI = qubit_to_Advantage2_annealing_line(q, zephyr_shape)
+        if plotted_embI not in plotted_embIs:
             plt.plot(
                 delays * 1000,
                 mean_Z_detector[:, idx],
-                color=line_color[line_target],
-                label=f"target line {line_target}",
+                color=line_color[plotted_embI],
+                label=f"target line {plotted_embI}",
             )
-            line_targets.add(line_target)
+            plotted_embIs.add(plotted_embI)
     plt.ylabel("Detector magnetizations")
     plt.xlabel("Detector delay, ns")
     plt.legend()
@@ -684,16 +712,16 @@ def main(
     lines_represented = set()
     for i, emb in enumerate(embs):
         q = emb[0][0]
-        line_target = qubit_to_Advantage2_annealing_line(q, zephyr_shape)
-        if line_target in lines_represented:
+        plotted_embI = qubit_to_Advantage2_annealing_line(q, zephyr_shape)
+        if plotted_embI in lines_represented:
             label = None
         else:
-            label = f"target-qubit line={line_target}"
-            lines_represented.add(line_target)
+            label = f"target-qubit line={plotted_embI}"
+            lines_represented.add(plotted_embI)
         plt.plot(
             frequencies[: ld // 2],
             psd[i, : ld // 2],
-            color=line_color[line_target],
+            color=line_color[plotted_embI],
             label=label,
         )
     plt.plot(
@@ -741,18 +769,18 @@ def main(
 
         plt.figure()
         plt.title("Time series after anneal_offsets")
-        line_targets = set()
+        plotted_embIs = set()
         for i, emb in enumerate(embs):
             q = emb[0][0]
-            line_target = qubit_to_Advantage2_annealing_line(q, zephyr_shape)
-            if line_target not in line_targets:
+            plotted_embI = qubit_to_Advantage2_annealing_line(q, zephyr_shape)
+            if plotted_embI not in plotted_embIs:
                 plt.plot(
                     delays * 1000,
                     mean_Z_detector[:, i],
-                    color=line_color[line_target],
-                    label=f"target line {line_target}",
+                    color=line_color[plotted_embI],
+                    label=f"target line {plotted_embI}",
                 )
-                line_targets.add(line_target)
+                plotted_embIs.add(plotted_embI)
         plt.ylabel("Detector magnetizations")
         plt.xlabel("Detector delay, ns")
         plt.legend()
@@ -783,16 +811,16 @@ def main(
         lines_represented = set()
         for i, emb in enumerate(embs):
             q = emb[0][0]
-            line_target = qubit_to_Advantage2_annealing_line(q, zephyr_shape)
-            if line_target in lines_represented:
+            plotted_embI = qubit_to_Advantage2_annealing_line(q, zephyr_shape)
+            if plotted_embI in lines_represented:
                 label = None
             else:
-                label = f"target-qubit line={line_target}"
-                lines_represented.add(line_target)
+                label = f"target-qubit line={plotted_embI}"
+                lines_represented.add(plotted_embI)
             plt.plot(
                 frequencies[: ld // 2],
                 psd[i, : ld // 2],
-                color=line_color[line_target],
+                color=line_color[plotted_embI],
                 label=label,
             )
         plt.plot(
@@ -815,16 +843,16 @@ def main(
         lines_represented = set()
         for i, emb in enumerate(embs):
             q = emb[0][0]
-            line_target = qubit_to_Advantage2_annealing_line(q, zephyr_shape)
-            if line_target in lines_represented:
+            plotted_embI = qubit_to_Advantage2_annealing_line(q, zephyr_shape)
+            if plotted_embI in lines_represented:
                 label = None
             else:
-                label = f"target-qubit line={line_target}"
-                lines_represented.add(line_target)
+                label = f"target-qubit line={plotted_embI}"
+                lines_represented.add(plotted_embI)
             plt.plot(
                 anneal_offsets0[i],
                 anneal_offsets[i],
-                color=line_color[line_target],
+                color=line_color[plotted_embI],
                 marker="x",
                 label=label,
             )
@@ -847,7 +875,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--use_cache",
         action="store_true",
-        help="Add this flag to save experimental data, and reload when available at matched parameters",
+        help="Add this flag to save experimental data, and reload when available at command line parameters. Note that the QPU is identified only by the solver parameters - if graph_id changes new embeddings may be required.",
     )
     parser.add_argument(
         "--solver_name",
@@ -868,33 +896,45 @@ if __name__ == "__main__":
         default=3,  # First horizontal qubit line under 6-line control
     )
     parser.add_argument(
+        "--seed",
+        type=int,
+        help="Random seed for embedding generation.",
+        default=None,
+    )
+    parser.add_argument(
+        "--max_num_embeddings",
+        type=int,
+        help="Maximum number of embeddings to find. By default, all available embeddings are searched.",
+        default=None,
+    )
+    parser.add_argument(
         "--target_c",
         type=float,
-        help="target_c",
+        help="The normalized phi_cjj value for the target. This should correspond to a frequency A(c_target) of approximately 1 to 3GHz for reasonable performance. The fn_schedule file can be used to infer an approximate relationship between A(target_c) and target_c.",
         default=0.37,  # First horizontal qubit line under 6-line control
     )
     parser.add_argument(
         "--delay_min",
         type=float,
-        help="Initial delay time (us) for data collection",
-        default=0.005,  # Sufficient for decoupling from source
+        help="Initial delay time (us) for data collection.",
+        default=0.005,
     )
     parser.add_argument(
         "--delay_max",
         type=float,
-        help="Final delay time (us) for data collection",
-        default=0.015,  # Oscillations not completely decayed
+        help="Final delay time (us) for data collection.",
+        default=0.015,
     )
     parser.add_argument(
         "--delay_min_fit",
         type=float,
-        help="Initial delay time (us) for frequency estimation, by default matches delay_max_fit",
+        help="Initial delay time (us) for frequency estimation, by default matches delay_min.  This is ideally chosen to match the smallest delay for which the signal is not polarized.",
         default=None,  # Matches delay_min by default
     )
     parser.add_argument(
         "--delay_max_fit",
         type=float,
-        help="Final delay time (us) for frequency estimation, by default matches delay_max_fit",
+        help="Final delay time (us) for frequency estimation, by default matches delay_max_fit. This is ideally chosen to match the largest delay for which the signal is not dominated by noise, or can be smaller to accommodate reduced runtime.",
         default=None,  # Matches delay_max by default
     )
     parser.add_argument(
@@ -910,8 +950,12 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    if args.use_cache:
+        cache_str = _get_experiment_id(args)
+    else:
+        cache_str = None
     main(
-        use_cache=args.use_cache,
+        cache_str=cache_str,
         solver=args.solver_name,
         line_detector=args.line_detector,
         line_source=args.line_source,
