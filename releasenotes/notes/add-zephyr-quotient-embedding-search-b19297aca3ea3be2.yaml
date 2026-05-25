@@ -1,0 +1,6 @@
+---
+features:
+  - |
+    Add ``dwave.experimental.embedding_methods.zephyr_quotient_search`` for
+    finding fully yielded Zephyr-to-Zephyr subgraph embeddings on hardware
+    graphs, with configurable search strategy and yield objective.
