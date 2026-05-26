@@ -52,7 +52,7 @@ def qubit_to_Advantage2_annealing_line(
         >>> import dwave.experimental.multicolor_anneal as mca
         >>> qpu = DWaveSampler()            # doctest: +SKIP
         >>> annealing_lines = mca.get_properties(qpu)            # doctest: +SKIP
-        >>> shape = shape=qpu.properties['topology']['shape']
+        >>> shape = qpu.properties['topology']['shape']          # doctest: +SKIP
         >>> num_lines = len(annealing_lines)            # doctest: +SKIP
         >>> assert(all(mca.qubit_to_Advantage2_annealing_line(n, shape, num_lines)==al_idx for al_idx, al in enumerate(annealing_lines) for n in al['qubits']))            # doctest: +SKIP
 
