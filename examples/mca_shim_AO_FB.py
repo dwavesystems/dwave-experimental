@@ -38,7 +38,7 @@ from dwave.experimental.multicolor_anneal import (
     make_tds_intervals,
     make_tds_x_polarizing_schedule,
     make_tds_x_anneal_schedules,
-    qubit_to_Advantage2_annealing_line, # Per comments, requires modification subject to dwave-experimental/pull/52
+    qubit_to_Advantage2_annealing_line,  # Per comments, requires modification subject to dwave-experimental/pull/52
     SOLVER_FILTER,
     standardize_schedule_endpoints,
 )
@@ -243,9 +243,11 @@ def plot_shim(
     if fname is not None:
         plt.savefig(f"fb_{fname}")
 
-def _plot_tds_schedules(x_polarizing_schedule: list[list[float]],
-                        x_anneal_schedules: list[list[list[float]]],
-                        ):
+
+def _plot_tds_schedules(
+    x_polarizing_schedule: list[list[float]],
+    x_anneal_schedules: list[list[list[float]]],
+):
     """Plots the piecewise linear schedules used
 
     Args:
@@ -253,7 +255,7 @@ def _plot_tds_schedules(x_polarizing_schedule: list[list[float]],
         x_anneal_schedules: The list of anneal schedules, one per line.
     """
     plt.figure()
-    plt.title('PWL waveforms')
+    plt.title("PWL waveforms")
     for line, schedule in enumerate(x_anneal_schedules):
         plt.plot(
             [x for x, _ in schedule], [y for _, y in schedule], label=f"Line {line}"
@@ -268,14 +270,23 @@ def _plot_tds_schedules(x_polarizing_schedule: list[list[float]],
     plt.xlabel("Time (microseconds)")
     plt.ylabel("Schedule value")
     plt.legend()
-    plt.show()
+
 
 def _get_experiment_id(args):
     print(vars(args))
     args_string = json.dumps(vars(args), sort_keys=True)
     return hashlib.sha256(args_string.encode("utf-8")).hexdigest()
 
-    
+
+def _fix_standard_c_range(anneal_schedules):
+    for anneal_schedule in anneal_schedules:
+        for tc in anneal_schedule:
+            if tc[1] > 1.0:
+                tc[1] = 1.0
+            elif tc[1] < 0.0:
+                tc[1] = 0.0
+
+
 def main(
     cache_str: str | None = None,
     solver: dict | str | None = None,
@@ -291,6 +302,7 @@ def main(
     delay_min_fit: float | None = None,
     delay_max_fit: float | None = None,
     fn_schedule: str = "09-1317A-D_Advantage2_research1_4_annealing_schedule.xlsx",
+    use_01_c_range: bool = False,
 ):
     """Demonstrate t-d-s variability and mitigation strategies
 
@@ -445,7 +457,7 @@ def main(
     cmap = plt.colormaps.get_cmap("plasma")
     line_color = [cmap(i / (num_lines - 1)) for i in range(num_lines)]
     delay = 2.0  # Quasi-static buffering of preparation and measurement stage
-    
+
     (
         polarized_preparation_interval,
         depolarization_interval,
@@ -457,7 +469,7 @@ def main(
     )
     x_anneal_schedules = make_tds_x_anneal_schedules(
         exp_feature_info,
-        target_lines=set(range(num_lines))-{line_detector,line_source},
+        target_lines=set(range(num_lines)) - {line_detector, line_source},
         depolarized_preparation_interval=depolarized_preparation_interval,
         detector_lines=(line_detector,),
         detector_quench_time=detector_quench_time,
@@ -466,14 +478,15 @@ def main(
         target_c=target_c,
         post_pwl_delay=delay,
     )
-    
+
     x_anneal_schedules, x_polarizing_schedule = standardize_schedule_endpoints(
-        x_anneal_schedules,
-        x_polarizing_schedule
+        x_anneal_schedules, x_polarizing_schedule
     )
+    if use_01_c_range:
+        _fix_standard_c_range(x_anneal_schedules)
     _plot_tds_schedules(x_polarizing_schedule, x_anneal_schedules)
     x_schedule_delays = [0.0] * num_lines
-    
+
     anneal_offsets = [0.0] * qpu.properties["num_qubits"]
     flux_biases = [0.0] * qpu.properties["num_qubits"]
 
@@ -534,7 +547,7 @@ def main(
         # embs_by_line[qubit_to_Advantage2_annealing_line(q, zephyr_shape, num_lines=num_lines)].append(emb)
         # Applies to all instances of qubit_to_anneal_line
         embs_by_line[qubit_to_Advantage2_annealing_line(q, zephyr_shape)].append(emb)
-            
+
     embs = [emb for i in range(num_lines) for emb in embs_by_line[i]]
 
     sampler = ParallelEmbeddingComposite(qpu, embeddings=embs)
@@ -618,7 +631,7 @@ def main(
                 sampling_params=qpu_parameters,
                 shimmed_variables=shimmed_variables,
             )
-            if use_cache:
+            if cache_str:
                 os.makedirs(os.path.dirname(fn_cache), exist_ok=True)
                 with open(fn_cache, "wb") as f:
                     pickle.dump((flux_biases, flux_history, mag_history), f)
@@ -743,8 +756,8 @@ def main(
         )  # Per embedding
 
         print("Collect data with anneal offset compensation of frequency variation")
-        fn_cache = f"cache/{solver}_D{line_detector}_S{line_source}_c{target_c}_ti{delay_min}_tf{delay_max}{shimstr}_AO{delay_min_fit}_{delay_max_fit}.npy"
-        if use_cache and os.path.isfile(fn_cache):
+        fn_cache = f"cache/AO_It1_{cache_str}.npy"
+        if cache_str and os.path.isfile(fn_cache):
             mean_Z_detector = np.load(fn_cache)
         else:
             for emb, ao in zip(embs, anneal_offsets):
@@ -754,7 +767,7 @@ def main(
             mean_Z_detector = run_parallel_experiment(
                 sampler, bqm, qpu_parameters, delays, line_detector
             )
-            if use_cache:
+            if cache_str:
                 np.save(fn_cache, mean_Z_detector)
         psd = np.array(
             [
@@ -947,6 +960,11 @@ if __name__ == "__main__":
         action="store_true",
         help="Add this flag to omit the data analsis with anneal_offsets set  (simulaton run exclusively with anneal_offsets=[0.0]*num_qubits)",
     )
+    parser.add_argument(
+        "--use_01_c_range",
+        action="store_true",
+        help="Add this flag to use a schedule range restricted to [minC, maxC] = [0,1]. This lowers the detector and source quench rates, impacting fidelity and some other parameters. TODO later - support symmetrized crange (for better quenbch rate but maintaining delay regularization, or overshoot crange (for higher performance)",
+    )
 
     args = parser.parse_args()
 
@@ -966,4 +984,5 @@ if __name__ == "__main__":
         delay_max_fit=args.delay_max_fit,
         no_anneal_offsets=args.no_anneal_offsets,
         no_flux_biases=args.no_flux_biases,
+        use_01_c_range=args.use_01_c_range,
     )
