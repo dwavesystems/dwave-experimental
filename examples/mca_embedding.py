@@ -40,9 +40,11 @@ from dwave_networkx import (
 def main(
     use_client: bool = False,
     solver: dict | str | None = None,
-    detector_line: int = 0,
-    source_line: int = 3,
+    detector_lines: None | tuple[int, ...] = None,
+    source_lines: None | tuple[int, ...] = None,
     biclique_target_lines: set | None = None,
+    num_lines: int | None = None,
+    L: int = 64,
 ):
     """Examples of multicolor annealing.
 
@@ -50,7 +52,7 @@ def main(
     qubit problem in many places on the processor, such that
     every qubit is connected to a source and detector qubit on the
     specified lines.
-    The second example embeds a loop of 64 target qubits with each target coupled
+    The second example embeds a loop of target qubits with each target coupled
     to a source and detector qubit.
     The third example shows embedding of a chimera like graph where every
     target node has a coupling available to a source and target line. Sources
@@ -69,15 +71,19 @@ def main(
             using a defect-free Advantage2 processor graph at a
             Zephyr[6] scale, using the standard 6-anneal line scheme.
         solver: Name of the solver, or dictionary of characteristics.
-        detector_line: The integer index of the detector line.
-        source_line: The integer index of the source line.
+        detector_lines: The integer indices of the detector lines.
+            By default 0 for a 6 annealing line scheme, and (0, 6)
+            for a 12 annealing line scheme.
+        source_lines: The integer indices of the source lines.
+            By default 3 for a 6 annealing line scheme, and (3, 9)
+            for a 12 annealing line scheme.
         biclique_target_lines: a pair of lines used for embedding a
             a biclique. The remaining lines are used as detectors.
             Subject to device yield limitations, a biclique of size
             up to K_{8,8} is possible. {2,3} by default.
     Raises:
         ValueError: If the number of lines is less than 3, or
-            if ``detector_line`` or ``source_line`` is not in
+            if ``detector_lines`` or ``source_lines`` is not in
             range [0, ``num_lines``).
     """
 
@@ -88,14 +94,28 @@ def main(
         line_assignments = {
             n: al_idx for al_idx, al in enumerate(annealing_lines) for n in al["qubits"]
         }
-        num_lines = len(annealing_lines)
+        if num_lines is None:
+            num_lines = len(annealing_lines)
+        elif num_lines != len(annealing_lines):
+            raise ValueError(
+                f"num_lines {num_lines} does not match the number of annealing lines {len(annealing_lines)} for the selected solver."
+            )
     else:
         shape = [6, 4]
         qpu = MockDWaveSampler(topology_type="zephyr", topology_shape=[6, 4])
+        if num_lines is None:
+            num_lines = 6
         line_assignments = {
-            n: qubit_to_Advantage2_annealing_line(n, shape) for n in qpu.nodelist
+            n: qubit_to_Advantage2_annealing_line(n, shape, num_lines)
+            for n in qpu.nodelist
         }
-        num_lines = 6
+    if num_lines == 6:
+        detector_lines = (0,)
+        source_lines = (3,)
+    else:
+        detector_lines = (0, 4)
+        source_lines = (6, 10)
+
     if biclique_target_lines is None:
         biclique_target_lines = {0, 3}
     # Plot the colored graph:
@@ -106,9 +126,9 @@ def main(
 
     def T_line_assignments(n: int):
         line = line_assignments[n]
-        if line == detector_line:
+        if line in detector_lines:
             return "detector"
-        elif line == source_line:
+        elif line in source_lines:
             return "source"
         else:
             return "target"
@@ -117,18 +137,25 @@ def main(
     node_color = [colors[line_assignments[n]] for n in T.nodes()]
     plt.figure("Annealing lines")
     draw_zephyr(T, node_color=node_color, node_size=5, edge_color="grey")
-
     print(
         "Embed many single-target variable problems, with a source and detector"
-        " associated to every qubit."
+        " associated to every qubit. A timeout of 60 seconds is set, but"
+        " typically less time is required."
     )
     target_graph = nx.Graph()
     target_graph.add_node(0)
     S, Snode_to_tds = make_tds_graph(target_graph)
-    subgraph_kwargs = dict(node_labels=(Snode_to_tds, Tnode_to_tds), as_embedding=True)
+    subgraph_kwargs = dict(
+        node_labels=(Snode_to_tds, Tnode_to_tds), as_embedding=True, timeout=60
+    )
 
     embs = find_multiple_embeddings(
-        S, T, max_num_emb=None, embedder_kwargs=subgraph_kwargs, one_to_iterable=True
+        S,
+        T,
+        max_num_emb=None,
+        embedder_kwargs=subgraph_kwargs,
+        one_to_iterable=True,
+        timeout=60,
     )
     used_nodes = {v[0] for emb in embs for v in emb.values()}
     node_color = [
@@ -138,18 +165,19 @@ def main(
     draw_parallel_embeddings(T, embeddings=embs, S=S, node_color=node_color)
 
     print(
-        "Embed a loop of length 64, with a source and detector "
-        "associated to every qubit Embedding for a ring of length L."
+        f"Embed a loop of length L={L}, with a source and detector "
+        "associated to every qubit."
+        " A timeout of 60 seconds is used, but typically less time is"
+        " required."
     )
-    L = 64
     target_graph = nx.from_edgelist((i, (i + 1) % L) for i in range(L))
     S, Snode_to_tds = make_tds_graph(target_graph)
 
     plt.figure("A loop decorated with sources and detectors")
     colors_S = {
         "target": "k",
-        "source": colors[source_line],
-        "detector": colors[detector_line],
+        "source": colors[source_lines[0]],
+        "detector": colors[detector_lines[0]],
     }
 
     def loop_pos(n, n_range):
@@ -162,7 +190,6 @@ def main(
                 mult * np.cos(2 * np.pi * n[1] / n_range),
                 mult * np.sin(2 * np.pi * n[1] / n_range),
             )
-
         else:
             return (np.cos(2 * np.pi * n / n_range), np.sin(2 * np.pi * n / n_range))
 
@@ -171,16 +198,21 @@ def main(
     nx.draw_networkx(
         S, node_color=node_color, pos=pos, with_labels=False, node_size=640 / L
     )
-
-    subgraph_kwargs = dict(node_labels=(Snode_to_tds, Tnode_to_tds), as_embedding=True)
+    subgraph_kwargs = dict(
+        node_labels=(Snode_to_tds, Tnode_to_tds), as_embedding=True, timeout=60
+    )
     emb = find_subgraph(S, T, **subgraph_kwargs)
     used_nodes = {v[0] for v in emb.values()}
     node_color = [
         colors[line_assignments[n]] if n in used_nodes else "grey" for n in T.nodes()
     ]
-    plt.figure("The embedded loop with detectors and sources")
-    draw_parallel_embeddings(T, embeddings=[emb], S=S, node_color=node_color)
-
+    if emb:
+        plt.figure("The embedded loop with detectors and sources")
+        draw_parallel_embeddings(T, embeddings=[emb], S=S, node_color=node_color)
+    else:
+        raise RuntimeError(
+            f"Embedding failed for loops of length L={L}, perhaps try something smaller or increase the timeout."
+        )
     print(
         "Identify nodes that are each attached to at least one source and one"
         " detector. These might be shared amongst target nodes of a complex"
@@ -189,8 +221,8 @@ def main(
 
     def has_source_and_detector(T, n):
         return any(
-            line_assignments[nn] == detector_line for nn in T.neighbors(n)
-        ) and any(line_assignments[nn] == source_line for nn in T.neighbors(n))
+            line_assignments[nn] in detector_lines for nn in T.neighbors(n)
+        ) and any(line_assignments[nn] in source_lines for nn in T.neighbors(n))
 
     Tsub = T.subgraph(
         {n for n in T.nodes() if has_source_and_detector(T, n)}
@@ -201,8 +233,8 @@ def main(
     node_color = [
         (
             colors[line_assignments[n]]
-            if line_assignments[n] == detector_line
-            or line_assignments[n] == source_line
+            if line_assignments[n] in detector_lines
+            or line_assignments[n] in source_lines
             else "grey"
         )
         for n in T.nodes()
@@ -256,12 +288,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--solver_name",
         type=str,
-        help="Option to specify QPU solver when use_client is True, by default an experimental system supporting fast reverse anneal",
+        help="Option to specify QPU solver when use_client is True, by default an experimental system supporting experimental features.",
         default=SOLVER_FILTER,
+    )
+    parser.add_argument(
+        "--num_lines",
+        type=int,
+        help="Option to specify the number of annealing lines when use_client is True, by default None.",
+        default=None,
     )
     args = parser.parse_args()
 
     main(
         use_client=args.use_client,
         solver=args.solver_name,
+        num_lines=args.num_lines,
     )

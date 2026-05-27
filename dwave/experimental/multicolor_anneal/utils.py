@@ -19,7 +19,9 @@ from dwave_networkx import zephyr_coordinates
 __all__ = ["qubit_to_Advantage2_annealing_line", "make_tds_graph"]
 
 
-def qubit_to_Advantage2_annealing_line(n: int | tuple, shape: tuple) -> int:
+def qubit_to_Advantage2_annealing_line(
+    n: int | tuple, shape: tuple, num_lines: int = 6
+) -> int:
     """Return the annealing line associated to an Advantage2 qubit
 
     Advantage2 processors can allow for multicolor annealing based in
@@ -34,35 +36,40 @@ def qubit_to_Advantage2_annealing_line(n: int | tuple, shape: tuple) -> int:
         n: qubit label, as an integer, or a Zephyr coordinate as a 5-tuple
         shape: Advantage2 processor shape, accessible as a solver
             property properties['topology']['shape']
+        num_lines: number of annealing lines, may be 6 or 12.
 
     Returns:
         Integer annealing line assignment for Advantage2 processors
-        using 6-annealing line control.
+        using 6 or 12-annealing line control.
 
     Examples:
         Retrieve MCA annealing lines' properties for a default solver, and
-        if a 6 color scheme is used confirm the programmatic mapping is
+        if a 6 (or 12) color scheme is used confirm the programmatic mapping is
         in agreement with the multicolor annealing properties on all qubits
         and lines
 
         >>> from dwave.system import DWaveSampler
         >>> import dwave.experimental.multicolor_anneal as mca
-
         >>> qpu = DWaveSampler()            # doctest: +SKIP
         >>> annealing_lines = mca.get_properties(qpu)            # doctest: +SKIP
-        >>> if len(annealing_lines) == 6:            # doctest: +SKIP
-        >>>     assert(all(mca.qubit_to_Advantage2_annealing_line(n)==al_idx for al_idx, al in enumerate(annealing_lines) for n in al['qubits']))            # doctest: +SKIP
+        >>> shape = qpu.properties['topology']['shape']          # doctest: +SKIP
+        >>> num_lines = len(annealing_lines)            # doctest: +SKIP
+        >>> assert(all(mca.qubit_to_Advantage2_annealing_line(n, shape, num_lines)==al_idx for al_idx, al in enumerate(annealing_lines) for n in al['qubits']))            # doctest: +SKIP
 
         To explicitly select a solver that supports advanced annealing features, such as multi-color annealing, see
         :attr:`~dwave.experimental.fast_reverse_anneal.api.SOLVER_FILTER`.
     """
 
     if isinstance(n, tuple):
-        u, w, k, j, z = n
+        u, _, _, j, z = n
     else:
-        u, w, k, j, z = zephyr_coordinates(*shape).linear_to_zephyr(n)
-
-    return 3 * u + (1 - 2 * z - j) % 3
+        u, _, _, j, z = zephyr_coordinates(*shape).linear_to_zephyr(n)
+    if num_lines == 6:
+        return 3 * u + (1 - 2 * z - j) % 3
+    elif num_lines == 12:
+        return 6 * u + (z % 3 + 3 * j)
+    else:
+        raise ValueError("num_lines must be 6 or 12")
 
 
 def make_tds_graph(
