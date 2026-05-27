@@ -44,6 +44,7 @@ def main(
     source_lines: None | tuple[int, ...] = None,
     biclique_target_lines: set | None = None,
     num_lines: int | None = None,
+    L: int = 64,
 ):
     """Examples of multicolor annealing.
 
@@ -51,7 +52,7 @@ def main(
     qubit problem in many places on the processor, such that
     every qubit is connected to a source and detector qubit on the
     specified lines.
-    The second example embeds a loop of 64 target qubits with each target coupled
+    The second example embeds a loop of target qubits with each target coupled
     to a source and detector qubit.
     The third example shows embedding of a chimera like graph where every
     target node has a coupling available to a source and target line. Sources
@@ -144,10 +145,17 @@ def main(
     target_graph = nx.Graph()
     target_graph.add_node(0)
     S, Snode_to_tds = make_tds_graph(target_graph)
-    subgraph_kwargs = dict(node_labels=(Snode_to_tds, Tnode_to_tds), as_embedding=True, timeout=60)
+    subgraph_kwargs = dict(
+        node_labels=(Snode_to_tds, Tnode_to_tds), as_embedding=True, timeout=60
+    )
 
     embs = find_multiple_embeddings(
-        S, T, max_num_emb=None, embedder_kwargs=subgraph_kwargs, one_to_iterable=True, timeout=60
+        S,
+        T,
+        max_num_emb=None,
+        embedder_kwargs=subgraph_kwargs,
+        one_to_iterable=True,
+        timeout=60,
     )
     used_nodes = {v[0] for emb in embs for v in emb.values()}
     node_color = [
@@ -157,12 +165,11 @@ def main(
     draw_parallel_embeddings(T, embeddings=embs, S=S, node_color=node_color)
 
     print(
-        "Embed a loop of length 64, with a source and detector "
-        "associated to every qubit Embedding for a ring of length L."
+        f"Embed a loop of length L={L}, with a source and detector "
+        "associated to every qubit."
         " A timeout of 60 seconds is used, but typically less time is"
         " required."
     )
-    L = 64
     target_graph = nx.from_edgelist((i, (i + 1) % L) for i in range(L))
     S, Snode_to_tds = make_tds_graph(target_graph)
 
@@ -204,7 +211,7 @@ def main(
         draw_parallel_embeddings(T, embeddings=[emb], S=S, node_color=node_color)
     else:
         raise RuntimeError(
-            "Embedding failed for 64, perhaps try something smaller or increasing timeout."
+            f"Embedding failed for loops of length L={L}, perhaps try something smaller or increase the timeout."
         )
     print(
         "Identify nodes that are each attached to at least one source and one"

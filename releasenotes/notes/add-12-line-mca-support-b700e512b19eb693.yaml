@@ -1,0 +1,10 @@
+---
+prelude: >
+    Advantage2 systems support 12 and 6 line multicolor annealing schemes, now
+    so does the code base.
+features:
+  - |
+    New function to map qubits to line assignments without calling the client.
+fixes:
+  - |
+    Updated examples to support 12 line systems.
