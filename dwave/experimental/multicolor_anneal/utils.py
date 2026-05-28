@@ -682,12 +682,48 @@ def make_tds_x_schedules(
     detector_lines: Iterable[int],
     source_lines: Iterable[int] = tuple(),
     *,
-    step_size: float = 2.0,
+    quasistatic_annealing_step_size: float = 2.0,
     post_depolarization_delay: float = 20.0,
     anneal_schedule_step_size: float | None = None,
     use_overshoot: bool = True,
+    sign_polarization: Literal[-1, 1] = 1,
 ) -> tuple[AnnealSchedules, AnnealSchedule]:
-    polarizing_schedule_step_size = step_size
+    """Build synchronized anneal and polarizing schedules for TDS experiments.
+
+    This helper composes interval construction, anneal schedule generation,
+    polarizing schedule generation, endpoint alignment, and schedule
+    verification into a single call.
+
+    Args:
+        exp_feature_info: List of dicts containing experimental feature
+            information for each line, as returned by `get_properties`.
+        target_lines: Iterable of target line indices.
+        target_c: Schedule value at which the target is held.
+        detector_lines: Iterable of detector line indices.
+        source_lines: Iterable of source line indices.
+        quasistatic_annealing_step_size: Time scale for slow (quasi-static)
+            preparation of qubits to polarized/depolarized states.
+        post_depolarization_delay: Delay in microseconds between completion of
+            depolarization and start of depolarized target preparation.
+        anneal_schedule_step_size: Step size for anneal preparation intervals.
+            If None, defaults to ``quasistatic_annealing_step_size``.
+        use_overshoot: Whether to use overshoot transitions for source and
+            detector quenches.
+        sign_polarization: Initial sign of the polarizing bias, +1 or -1.
+
+    Returns:
+        A tuple ``(x_anneal_schedules, x_polarizing_schedule)`` where
+        ``x_anneal_schedules`` is a list of per-line piecewise-linear anneal
+        schedules and ``x_polarizing_schedule`` is the corresponding global
+        polarizing schedule.
+
+    Raises:
+        ValueError: If input line assignments or timing parameters are
+            incompatible.
+        ScheduleError: If generated schedules fail sequencing or rounding
+            validation checks.
+    """
+    polarizing_schedule_step_size = quasistatic_annealing_step_size
     (
         polarized_preparation_interval,
         depolarization_interval,
@@ -698,7 +734,9 @@ def make_tds_x_schedules(
         anneal_schedule_step_size=anneal_schedule_step_size,
     )
 
-    detector_quench_time = depolarized_preparation_interval[1] + step_size
+    detector_quench_time = (
+        depolarized_preparation_interval[1] + quasistatic_annealing_step_size
+    )
 
     x_anneal_schedules = make_tds_x_anneal_schedules(
         exp_feature_info=exp_feature_info,
@@ -714,9 +752,12 @@ def make_tds_x_schedules(
     )
     x_polarizing_schedule = make_tds_x_polarizing_schedule(
         depolarization_interval=depolarization_interval,
+        sign_polarization=sign_polarization,
     )
     x_anneal_schedules, x_polarizing_schedule = standardize_schedule_endpoints(
-        x_anneal_schedules, x_polarizing_schedule, post_pwl_delay=step_size
+        x_anneal_schedules,
+        x_polarizing_schedule,
+        post_pwl_delay=quasistatic_annealing_step_size,
     )
     verify_schedules(
         exp_feature_info,
