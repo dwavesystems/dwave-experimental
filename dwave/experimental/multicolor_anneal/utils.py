@@ -22,6 +22,7 @@ from dwave_networkx import zephyr_coordinates
 
 
 __all__ = [
+    "ScheduleError",
     "qubit_to_Advantage2_annealing_line",
     "make_tds_graph",
     "make_tds_intervals",
@@ -194,7 +195,7 @@ def standardize_schedule_endpoints(
     x_polarizing_schedule: AnnealSchedule | None = None,
     *,
     post_pwl_delay: float = 0.0,
-    decimals=0,
+    decimals: int = 0,
 ) -> tuple[AnnealSchedules, AnnealSchedule]:
     """Adapt anneal schedules to account for a delayed measurement.
 
@@ -237,6 +238,98 @@ def standardize_schedule_endpoints(
 
     return anneal_schedules, polarizing_schedule
 
+def verify_schedules(
+        exp_feature_info: list[LineFeatureInfo],
+        x_anneal_schedules: AnnealSchedules | None = None, 
+        x_polarizing_schedule: AnnealSchedule | None = None,
+        check_rounding: bool=True,
+        term_time: float | None = None):
+    """Verify that schedules are compatible with sequencing and min time steps.
+    
+    This routine checks that the schedules are compatible with sequencing
+    and min time steps. It checks terminal values of the polarizing schedules
+    match those of anneal_schedules, and all schedules begin at time 0. 
+    
+    It does not exhaustively check all requirements. See Documentation.
+
+    Args:
+        exp_feature_info: List of dicts containing experimental feature
+            information for each line, as returned by `get_properties`.
+        x_anneal_schedules: List of anneal schedules, as might
+            returned by :func:`make_tds_x_anneal_schedules`.
+        x_polarizing_schedule: Anneal schedule, as might be returned by
+            :func:`make_tds_x_polarizing_schedule`.
+        check_rounding: Whether to check that all schedule times are almost
+            multiples of the minimum time step for each line.
+        term_time: Expected end time, if not given is inferred
+            from the schedules, and should be consistent.
+
+    Raises:
+        ScheduleError: If schedules are malformed or incompatible with
+            sequencing, endpoints, or minimum time-step constraints.
+    """
+
+    if x_anneal_schedules:
+        min_time_steps = {
+            line: exp_feature_info[line]["minAnnealingTimeStep"]
+            for line in range(len(exp_feature_info))
+        }
+        for line in range(len(min_time_steps)):
+            if len(x_anneal_schedules[line]) < 2 or any(len(s) != 2 for s in x_anneal_schedules[line]):
+                raise ScheduleError(
+                    f"Anneal schedule on line {line} must contain at least two [time, value] points."
+                )
+            seq_times = [t + min_time_steps[line]*idx for idx, (t, _) in enumerate(x_anneal_schedules[line])]
+            if not math.isclose(seq_times[0], 0, abs_tol=1e-9):
+                raise ScheduleError(
+                    f"Anneal schedule on line {line} must start at time 0; got {seq_times[0]}."
+                )
+            if term_time is not None:
+                if not math.isclose(seq_times[-1], term_time, rel_tol=1e-9, abs_tol=1e-9):
+                    raise ScheduleError(
+                        f"Anneal schedule on line {line} ends at {seq_times[-1]}, expected {term_time}."
+                    )
+            if sorted(seq_times) != seq_times:
+                raise ScheduleError(
+                    f"Anneal schedule on line {line} is non-increasing (after rounding)."
+                )
+            if check_rounding:
+                for seq_time in seq_times:
+                    ratio = seq_time / min_time_steps[line]
+                    if not math.isclose(ratio, round(ratio), rel_tol=1e-9, abs_tol=1e-9):
+                        raise ScheduleError(
+                            f"Anneal schedule time {seq_time} on line {line} is not an almost multiple of minAnnealingTimeStep={min_time_steps[line]}."
+                        )
+            term_time = seq_times[-1]
+
+    if x_polarizing_schedule:
+        min_time_step = exp_feature_info[0]["minPolarizingTimeStep"]
+        if len(x_polarizing_schedule) < 2 or any(len(s) != 2 for s in x_polarizing_schedule):
+            raise ScheduleError(
+                "Polarizing schedule must contain at least two [time, value] points."
+            )
+            
+        seq_times = [t + min_time_step*idx for idx, (t, _) in enumerate(x_polarizing_schedule)]
+        if not math.isclose(seq_times[0], 0, abs_tol=1e-9):
+                raise ScheduleError(
+                    f"Polarizing schedule must start at time 0; got {seq_times[0]}."
+                )
+        if term_time is not None:
+            if not math.isclose(seq_times[-1], term_time, rel_tol=1e-9, abs_tol=1e-9):
+                raise ScheduleError(
+                    f"Polarizing schedule ends at {seq_times[-1]}, expected {term_time}."
+                )
+        if sorted(seq_times) != seq_times:
+            raise ScheduleError(
+                "Polarizing schedule is non-increasing (after rounding)."
+            )
+        if check_rounding:
+            for seq_time in seq_times:
+                ratio = seq_time / min_time_step
+                if not math.isclose(ratio, round(ratio), rel_tol=1e-9, abs_tol=1e-9):
+                    raise ScheduleError(
+                        f"Polarizing schedule time {seq_time} is not an almost multiple of minPolarizingTimeStep={min_time_step}."
+                    )
 
 
 def make_tds_x_anneal_schedules(
@@ -361,7 +454,7 @@ def make_tds_x_anneal_schedules(
         minCOvershoots = {line: minCOvershoot for line in range(num_lines)}
         min_time_steps = {line: min_time_step for line in range(num_lines)}
         holdOvershootFors = {line: holdOvershootFor for line in range(num_lines)}
-    # Check that times are compatible with sequencing and min time steps.
+
     times = []
     if len(source_lines) > 0:
         if polarized_preparation_interval is None:
@@ -478,19 +571,6 @@ def make_tds_x_anneal_schedules(
         anneal_schedules, post_pwl_delay=post_pwl_delay
     )
 
-    # A stronger check as a general utility would be better:
-    for line in all_lines:
-        seq_times = [t + min_time_steps[line]*idx for idx, (t, _) in enumerate(anneal_schedules[line])]
-        if sorted(seq_times) != seq_times:
-            raise ValueError("Anneal schedules must have non-decreasing time values upon rounding")
-        if check_rounding:
-            for seq_time in seq_times:
-                ratio = seq_time / min_time_steps[line]
-                if not math.isclose(ratio, round(ratio), rel_tol=1e-9, abs_tol=1e-9):
-                    raise ValueError(
-                        f"Rounded schedule time {seq_time} on line {line} is not an almost multiple of min_time_steps[{line}]={min_time_steps[line]}"
-                    )
-
     return anneal_schedules
 
 
@@ -524,7 +604,7 @@ def make_tds_x_polarizing_schedule(
     ]
     return polarizing_schedule
 
-
+    
 if __name__ == "__main__":
     from dwave.system import DWaveSampler
     from dwave.experimental.multicolor_anneal.api import get_properties
