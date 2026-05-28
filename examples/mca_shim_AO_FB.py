@@ -37,9 +37,8 @@ from dwave.experimental.multicolor_anneal import (
     get_properties,
     make_tds_graph,
     make_tds_x_schedules,
-    qubit_to_Advantage2_annealing_line,  # Per comments, requires modification subject to dwave-experimental/pull/52
+    qubit_to_Advantage2_annealing_line,
     SOLVER_FILTER,
-    standardize_schedule_endpoints,
 )
 from dwave.experimental.shimming import shim_flux_biases
 
@@ -261,34 +260,6 @@ def _plot_tds_schedules(
     """Plots the piecewise linear schedules used
 
     Args:
-        x_polarizing_schedule: The polarization signal.
-        x_anneal_schedules: The list of anneal schedules, one per line.
-    """
-    plt.figure("PWL_waveforms")
-    plt.title("PWL waveforms")
-    for line, schedule in enumerate(x_anneal_schedules):
-        plt.plot(
-            [x for x, _ in schedule], [y for _, y in schedule], label=f"Line {line}"
-        )
-    plt.plot(
-        [x for x, _ in x_polarizing_schedule],
-        [y for _, y in x_polarizing_schedule],
-        label="Polarizing bias",
-        linestyle="dashed",
-        color="black",
-    )
-    plt.xlabel("Time (microseconds)")
-    plt.ylabel("Schedule value")
-    plt.legend()
-
-
-def _plot_tds_schedules(
-    x_polarizing_schedule: list[list[float]],
-    x_anneal_schedules: list[list[list[float]]],
-):
-    """Plots the piecewise linear schedules used
-
-    Args:
         x_polarizing_biases: The polarization signal.
         x_anneal_schedules: The list of anneal schedules, one per line.
     """
@@ -310,7 +281,7 @@ def _plot_tds_schedules(
     plt.legend()
 
 
-def _get_experiment_id(args):
+def _get_experiment_id(args, num_char: int = 8):
     print(vars(args))
     vars_args = vars(args).copy()
     vars_args.pop(
@@ -577,10 +548,9 @@ def main(
     embs_by_line = {i: [] for i in range(num_lines)}
     for i, emb in enumerate(embs):
         q = emb[0][0]
-        # The 6-line scheme is used, requires update after merge of this pull-eqest Excepts due to absence of num_lines support https://github.com/dwavesystems/dwave-experimental/pull/52
-        # embs_by_line[qubit_to_Advantage2_annealing_line(q, zephyr_shape, num_lines=num_lines)].append(emb)
-        # Applies to all instances of qubit_to_anneal_line
-        embs_by_line[qubit_to_Advantage2_annealing_line(q, zephyr_shape)].append(emb)
+        embs_by_line[
+            qubit_to_Advantage2_annealing_line(q, zephyr_shape, num_lines=num_lines)
+        ].append(emb)
 
     embs = [emb for i in range(num_lines) for emb in embs_by_line[i]]
 
@@ -620,7 +590,7 @@ def main(
             plt.title("Approx Lorentzian power spectral density ~ A/((f-A)^2 + A^2)")
             psd = np.abs(np.fft.fft(signal)) ** 2 / len(signal)
             plt.plot(frequencies[: ld // 2], psd[: ld // 2], label=label)
-            plt.ylabel(rf"Power Spectral Density, $|\langle Z\rangle(\omega)|^2$")
+            plt.ylabel(r"Power Spectral Density, $|\langle Z\rangle(\omega)|^2$")
             plt.xlabel(r"Frequency ($\omega$), GHz")
             plt.legend()
 
@@ -652,7 +622,10 @@ def main(
             shimmed_variables = {
                 n
                 for n in bqm_embedded.variables
-                if qubit_to_Advantage2_annealing_line(n, zephyr_shape) == line_detector
+                if qubit_to_Advantage2_annealing_line(
+                    n, zephyr_shape, num_lines=num_lines
+                )
+                == line_detector
             }
 
             qpu_parameters["x_schedule_delays"][
@@ -712,7 +685,9 @@ def main(
     plotted_embIs = set()
     for idx, emb in enumerate(embs):
         q = emb[0][0]
-        plotted_embI = qubit_to_Advantage2_annealing_line(q, zephyr_shape)
+        plotted_embI = qubit_to_Advantage2_annealing_line(
+            q, zephyr_shape, num_lines=num_lines
+        )
         if plotted_embI not in plotted_embIs:
             plt.plot(
                 delays * 1000,
@@ -762,7 +737,9 @@ def main(
     lines_represented = set()
     for i, emb in enumerate(embs):
         q = emb[0][0]
-        plotted_embI = qubit_to_Advantage2_annealing_line(q, zephyr_shape)
+        plotted_embI = qubit_to_Advantage2_annealing_line(
+            q, zephyr_shape, num_lines=num_lines
+        )
         if plotted_embI in lines_represented:
             label = None
         else:
@@ -782,7 +759,7 @@ def main(
         label="Schedule prediction",
     )
     plt.legend()
-    plt.ylabel(rf"Power Spectral Density, $|\langle Z\rangle(\omega)|^2$")
+    plt.ylabel(r"Power Spectral Density, $|\langle Z\rangle(\omega)|^2$")
     plt.xlabel(r"Frequency ($\omega$), GHz")
     plt.grid(True)
 
@@ -822,7 +799,9 @@ def main(
         plotted_embIs = set()
         for i, emb in enumerate(embs):
             q = emb[0][0]
-            plotted_embI = qubit_to_Advantage2_annealing_line(q, zephyr_shape)
+            plotted_embI = qubit_to_Advantage2_annealing_line(
+                q, zephyr_shape, num_lines=num_lines
+            )
             if plotted_embI not in plotted_embIs:
                 plt.plot(
                     delays * 1000,
@@ -861,7 +840,9 @@ def main(
         lines_represented = set()
         for i, emb in enumerate(embs):
             q = emb[0][0]
-            plotted_embI = qubit_to_Advantage2_annealing_line(q, zephyr_shape)
+            plotted_embI = qubit_to_Advantage2_annealing_line(
+                q, zephyr_shape, num_lines=num_lines
+            )
             if plotted_embI in lines_represented:
                 label = None
             else:
@@ -881,7 +862,7 @@ def main(
             label="Schedule prediction",
         )
         plt.legend()
-        plt.ylabel(rf"Power Spectral Density, $|\langle Z\rangle(\omega)|^2$")
+        plt.ylabel(r"Power Spectral Density, $|\langle Z\rangle(\omega)|^2$")
         plt.xlabel(r"Frequency ($\omega$), GHz")
         plt.grid(True)
 
@@ -893,7 +874,9 @@ def main(
         lines_represented = set()
         for i, emb in enumerate(embs):
             q = emb[0][0]
-            plotted_embI = qubit_to_Advantage2_annealing_line(q, zephyr_shape)
+            plotted_embI = qubit_to_Advantage2_annealing_line(
+                q, zephyr_shape, num_lines=num_lines
+            )
             if plotted_embI in lines_represented:
                 label = None
             else:

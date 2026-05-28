@@ -38,8 +38,44 @@ LineFeatureInfo = dict[str, float]
 AnnealSchedule = list[list[float]]
 AnnealSchedules = list[AnnealSchedule]
 
+
+class ScheduleError(ValueError):
+    """Raised when schedules are incompatible with sequencing constraints."""
+
+
+def _round_sigfigs(
+    value: float, sigfigs: int = 3, mode: Literal["up", "down"] = "down"
+) -> float:
+    """Round a value up or down to a fixed number of significant figures.
+
+    This addresses an issue in the client, whereby some inbound properties
+    have more significant figures than the client can reliably use.
+
+    Args:
+        value: The value to round.
+        sigfigs: The number of significant figures to round to.
+        mode: Whether to round up or down. "up" rounds away from zero, "down"
+            rounds towards zero.
+    Returns:
+        The rounded value.
+    """
+
+    if value == 0:
+        return 0.0
+    if sigfigs <= 0:
+        raise ValueError("sigfigs must be positive")
+    if mode not in ("up", "down"):
+        raise ValueError("mode must be 'up' or 'down'")
+    scale = 10 ** (sigfigs - 1 - math.floor(math.log10(abs(value))))
+    if mode == "up":
+        return math.ceil(value * scale) / scale
+    return math.floor(value * scale) / scale
+
+
 def qubit_to_Advantage2_annealing_line(
-    n: int | tuple, shape: tuple, num_lines: int = 6
+    n: int | tuple[int, int, int, int, int],
+    shape: tuple[int, ...],
+    num_lines: int = 6,
 ) -> int:
     """Return the annealing line associated to an Advantage2 qubit
 
@@ -55,7 +91,7 @@ def qubit_to_Advantage2_annealing_line(
     Args:
         n: Qubit label, as an integer, or a Zephyr coordinate as a 5-tuple.
         shape: Advantage2 processor shape, accessible as a solver
-            property properties['topology']['shape']
+            property ``properties['topology']['shape']``.
         num_lines: number of annealing lines, may be 6 or 12.
 
     Returns:
@@ -63,8 +99,8 @@ def qubit_to_Advantage2_annealing_line(
         using 6 or 12-annealing line control.
 
     Examples:
-        Retrieve MCA annealing lines' properties for a default solver, and
-        if a 6 (or 12) color scheme is used confirm the programmatic mapping is
+        Retrieve multi-color annealing line properties for a default solver, and
+        if a 6 (or 12) color scheme is used, confirm the programmatic mapping is
         in agreement with the multicolor annealing properties on all qubits
         and lines.
 
@@ -176,7 +212,6 @@ def make_tds_intervals(
         polarizing_schedule_step_size = post_preparation_delay
     if anneal_schedule_quasistatic_step_size is None:
         anneal_schedule_quasistatic_step_size = polarizing_schedule_step_size
-
 
     polarized_preparation_interval = (0.0, anneal_schedule_quasistatic_step_size)
     tp = polarized_preparation_interval[-1] + polarizing_schedule_step_size
@@ -386,7 +421,7 @@ def verify_schedules(
                 )
         if sorted(seq_times) != seq_times:
             raise ScheduleError(
-                f"Polarizing schedule is non-increasing at specified time precision."
+                "Polarizing schedule is non-increasing at specified time precision."
             )
         if check_rounding:
             for seq_time in seq_times:
@@ -484,13 +519,25 @@ def make_tds_x_anneal_schedules(
             "Source, detector and target lines must be valid line indices."
         )
 
-    maxCs = {line: exp_feature_info[line]["maxC"] for line in range(num_lines)}
-    minCs = {line: exp_feature_info[line]["minC"] for line in range(num_lines)}
+    maxCs = {
+        line: _round_sigfigs(exp_feature_info[line]["maxC"], sigfigs=3, mode="down")
+        for line in range(num_lines)
+    }
+    minCs = {
+        line: _round_sigfigs(exp_feature_info[line]["minC"], sigfigs=3, mode="up")
+        for line in range(num_lines)
+    }
     maxCOvershoots = {
-        line: exp_feature_info[line]["maxCOvershoot"] for line in range(num_lines)
+        line: _round_sigfigs(
+            exp_feature_info[line]["maxCOvershoot"], sigfigs=3, mode="down"
+        )
+        for line in range(num_lines)
     }
     minCOvershoots = {
-        line: exp_feature_info[line]["minCOvershoot"] for line in range(num_lines)
+        line: _round_sigfigs(
+            exp_feature_info[line]["minCOvershoot"], sigfigs=3, mode="up"
+        )
+        for line in range(num_lines)
     }
     min_time_steps = {
         line: exp_feature_info[line]["minAnnealingTimeStep"]
