@@ -36,9 +36,7 @@ from minorminer.utils.parallel_embeddings import find_multiple_embeddings
 from dwave.experimental.multicolor_anneal import (
     get_properties,
     make_tds_graph,
-    make_tds_intervals,
-    make_tds_x_polarizing_schedule,
-    make_tds_x_anneal_schedules,
+    make_tds_x_schedules,
     qubit_to_Advantage2_annealing_line,  # Per comments, requires modification subject to dwave-experimental/pull/52
     SOLVER_FILTER,
     standardize_schedule_endpoints,
@@ -506,32 +504,15 @@ def main(
     num_lines = len(exp_feature_info)
     cmap = plt.colormaps.get_cmap("plasma")
     line_color = [cmap(i / (num_lines - 1)) for i in range(num_lines)]
-    delay = 2.0  # Quasi-static buffering of preparation and measurement stage
 
-    (
-        polarized_preparation_interval,
-        depolarization_interval,
-        depolarized_preparation_interval,
-    ) = make_tds_intervals()
-    detector_quench_time = depolarized_preparation_interval[1] + delay
-    x_polarizing_schedule = make_tds_x_polarizing_schedule(
-        depolarization_interval=depolarization_interval,
-    )
-    x_anneal_schedules = make_tds_x_anneal_schedules(
-        exp_feature_info,
+    x_anneal_schedules, x_polarizing_schedule = make_tds_x_schedules(
+        exp_feature_info=exp_feature_info,
         target_lines=set(range(num_lines)) - {line_detector, line_source},
-        depolarized_preparation_interval=depolarized_preparation_interval,
-        detector_lines=(line_detector,),
-        detector_quench_time=detector_quench_time,
-        source_lines=(line_source,),
-        polarized_preparation_interval=polarized_preparation_interval,
         target_c=target_c,
-        post_pwl_delay=delay,
+        detector_lines=(line_detector,),
+        source_lines=(line_source,),
     )
 
-    x_anneal_schedules, x_polarizing_schedule = standardize_schedule_endpoints(
-        x_anneal_schedules, x_polarizing_schedule
-    )
     if use_01_c_range:
         _fix_standard_c_range(x_anneal_schedules)
     _plot_tds_schedules(

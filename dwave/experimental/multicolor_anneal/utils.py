@@ -28,6 +28,7 @@ __all__ = [
     "make_tds_intervals",
     "make_tds_x_anneal_schedules",
     "make_tds_x_polarizing_schedule",
+    "make_tds_x_schedules",
     "standardize_schedule_endpoints",
 ]
 
@@ -227,7 +228,9 @@ def standardize_schedule_endpoints(
         completion_time = max(completion_time, polarizing_schedule[-1][0])
     completion_time = completion_time + post_pwl_delay
     if decimals is not None:
-        completion_time = float(round(10**decimals * completion_time / 10**decimals))
+        completion_time = float(
+            math.ceil(10**decimals * completion_time / 10**decimals)
+        )
 
     for anneal_schedule in anneal_schedules:
         if anneal_schedule[-1][0] != completion_time:
@@ -238,18 +241,20 @@ def standardize_schedule_endpoints(
 
     return anneal_schedules, polarizing_schedule
 
+
 def verify_schedules(
-        exp_feature_info: list[LineFeatureInfo],
-        x_anneal_schedules: AnnealSchedules | None = None, 
-        x_polarizing_schedule: AnnealSchedule | None = None,
-        check_rounding: bool=True,
-        term_time: float | None = None):
+    exp_feature_info: list[LineFeatureInfo],
+    x_anneal_schedules: AnnealSchedules | None = None,
+    x_polarizing_schedule: AnnealSchedule | None = None,
+    check_rounding: bool = True,
+    term_time: float | None = None,
+):
     """Verify that schedules are compatible with sequencing and min time steps.
-    
+
     This routine checks that the schedules are compatible with sequencing
     and min time steps. It checks terminal values of the polarizing schedules
-    match those of anneal_schedules, and all schedules begin at time 0. 
-    
+    match those of anneal_schedules, and all schedules begin at time 0.
+
     It does not exhaustively check all requirements. See Documentation.
 
     Args:
@@ -275,53 +280,72 @@ def verify_schedules(
             for line in range(len(exp_feature_info))
         }
         for line in range(len(min_time_steps)):
-            if len(x_anneal_schedules[line]) < 2 or any(len(s) != 2 for s in x_anneal_schedules[line]):
+
+            seq_times = [
+                t + min_time_steps[line] * idx
+                for idx, (t, _) in enumerate(x_anneal_schedules[line])
+            ]
+            if len(x_anneal_schedules[line]) < 2 or any(
+                len(s) != 2 for s in x_anneal_schedules[line]
+            ):
                 raise ScheduleError(
                     f"Anneal schedule on line {line} must contain at least two [time, value] points."
                 )
-            seq_times = [t + min_time_steps[line]*idx for idx, (t, _) in enumerate(x_anneal_schedules[line])]
             if not math.isclose(seq_times[0], 0, abs_tol=1e-9):
                 raise ScheduleError(
                     f"Anneal schedule on line {line} must start at time 0; got {seq_times[0]}."
                 )
             if term_time is not None:
-                if not math.isclose(seq_times[-1], term_time, rel_tol=1e-9, abs_tol=1e-9):
+                if not math.isclose(
+                    x_anneal_schedules[line][-1][0],
+                    term_time,
+                    rel_tol=1e-9,
+                    abs_tol=1e-9,
+                ):
                     raise ScheduleError(
-                        f"Anneal schedule on line {line} ends at {seq_times[-1]}, expected {term_time}."
+                        f"Anneal schedule on line {line} ends at {x_anneal_schedules[line][-1][0]}, expected {term_time}."
                     )
+
             if sorted(seq_times) != seq_times:
                 raise ScheduleError(
-                    f"Anneal schedule on line {line} is non-increasing (after rounding)."
+                    f"Anneal schedule on line {line} is non-increasing at specified time precision."
                 )
             if check_rounding:
                 for seq_time in seq_times:
                     ratio = seq_time / min_time_steps[line]
-                    if not math.isclose(ratio, round(ratio), rel_tol=1e-9, abs_tol=1e-9):
+                    if not math.isclose(
+                        ratio, round(ratio), rel_tol=1e-9, abs_tol=1e-9
+                    ):
                         raise ScheduleError(
                             f"Anneal schedule time {seq_time} on line {line} is not an almost multiple of minAnnealingTimeStep={min_time_steps[line]}."
                         )
-            term_time = seq_times[-1]
+            term_time = x_anneal_schedules[line][-1][0]
 
     if x_polarizing_schedule:
         min_time_step = exp_feature_info[0]["minPolarizingTimeStep"]
-        if len(x_polarizing_schedule) < 2 or any(len(s) != 2 for s in x_polarizing_schedule):
+        if len(x_polarizing_schedule) < 2 or any(
+            len(s) != 2 for s in x_polarizing_schedule
+        ):
             raise ScheduleError(
                 "Polarizing schedule must contain at least two [time, value] points."
             )
-            
-        seq_times = [t + min_time_step*idx for idx, (t, _) in enumerate(x_polarizing_schedule)]
+        seq_times = [
+            t + min_time_step * idx for idx, (t, _) in enumerate(x_polarizing_schedule)
+        ]
         if not math.isclose(seq_times[0], 0, abs_tol=1e-9):
-                raise ScheduleError(
-                    f"Polarizing schedule must start at time 0; got {seq_times[0]}."
-                )
+            raise ScheduleError(
+                f"Polarizing schedule must start at time 0; got {seq_times[0]}."
+            )
         if term_time is not None:
-            if not math.isclose(seq_times[-1], term_time, rel_tol=1e-9, abs_tol=1e-9):
+            if not math.isclose(
+                x_polarizing_schedule[-1][0], term_time, rel_tol=1e-9, abs_tol=1e-9
+            ):
                 raise ScheduleError(
-                    f"Polarizing schedule ends at {seq_times[-1]}, expected {term_time}."
+                    f"Polarizing schedule ends at {x_polarizing_schedule[-1][0]}, expected {term_time}."
                 )
         if sorted(seq_times) != seq_times:
             raise ScheduleError(
-                "Polarizing schedule is non-increasing (after rounding)."
+                f"Polarizing schedule is non-increasing at specified time precision."
             )
         if check_rounding:
             for seq_time in seq_times:
@@ -346,7 +370,6 @@ def make_tds_x_anneal_schedules(
     use_common_bounds: bool = False,
     use_overshoot: bool = True,
     post_pwl_delay: float = 1.0,
-    check_rounding: bool = True,
 ) -> AnnealSchedules:
     """Set annealing schedules for target-detector-source experiments.
 
@@ -401,8 +424,6 @@ def make_tds_x_anneal_schedules(
             detector quenches.
         post_pwl_delay: Additional delay, in microseconds, used to extend the
             terminal values of all schedules to a common endpoint.
-        check_rounding: Whether to check that all schedule times are almost
-            multiples of the minimum time step for each line.
     Returns:
         A piecewise linear schedule for all lines.
     Raises:
@@ -421,16 +442,23 @@ def make_tds_x_anneal_schedules(
         raise ValueError(
             "Source, detector and target lines must be valid line indices."
         )
-    
+
     maxCs = {line: exp_feature_info[line]["maxC"] for line in range(num_lines)}
     minCs = {line: exp_feature_info[line]["minC"] for line in range(num_lines)}
-    maxCOvershoots = {line: exp_feature_info[line]["maxCOvershoot"] for line in range(num_lines)}
-    minCOvershoots = {line: exp_feature_info[line]["minCOvershoot"] for line in range(num_lines)}
+    maxCOvershoots = {
+        line: exp_feature_info[line]["maxCOvershoot"] for line in range(num_lines)
+    }
+    minCOvershoots = {
+        line: exp_feature_info[line]["minCOvershoot"] for line in range(num_lines)
+    }
     min_time_steps = {
         line: exp_feature_info[line]["minAnnealingTimeStep"]
         for line in range(num_lines)
     }
-    holdOvershootFors = {line: exp_feature_info[line].get("holdOvershootFor", 0) for line in range(num_lines)}
+    holdOvershootFors = {
+        line: exp_feature_info[line].get("holdOvershootFor", 0)
+        for line in range(num_lines)
+    }
 
     if use_common_bounds:
         maxC = min(maxCs.values())
@@ -440,7 +468,7 @@ def make_tds_x_anneal_schedules(
                 "Incompatible maxC and minC values across lines, cannot use common bounds."
             )
         maxCOvershoot = min(maxCOvershoots.values())
-        minCOvershoot = max(minCOvershoots.values())  
+        minCOvershoot = max(minCOvershoots.values())
         if minCOvershoot >= maxCOvershoot:
             raise ValueError(
                 "Incompatible maxCOvershoot and minCOvershoot values across lines, cannot use common bounds."
@@ -498,13 +526,20 @@ def make_tds_x_anneal_schedules(
 
     # By default all lines are switched off during the preparation
     # window, except source lines which are switched on.
-    anneal_schedules = [[
-            [polarized_preparation_interval[0], 0.0],
-            [polarized_preparation_interval[1], maxCs[line]],
-        ] if line in source_lines else [
-            [polarized_preparation_interval[0], 0.0],
-            [polarized_preparation_interval[1], minCs[line]],
-        ] for line in all_lines ]
+    anneal_schedules = [
+        (
+            [
+                [polarized_preparation_interval[0], 0.0],
+                [polarized_preparation_interval[1], maxCs[line]],
+            ]
+            if line in source_lines
+            else [
+                [polarized_preparation_interval[0], 0.0],
+                [polarized_preparation_interval[1], minCs[line]],
+            ]
+        )
+        for line in all_lines
+    ]
 
     for line in target_lines:
         # Turned slowly to target value:
@@ -515,22 +550,42 @@ def make_tds_x_anneal_schedules(
 
     for line in source_lines:
         if use_overshoot:
-            if holdOvershootFors[line] > 2*min_time_steps[line]:
+            if holdOvershootFors[line] > 2 * min_time_steps[line]:
                 anneal_schedules[line] += [
-                    [source_quench_time - holdOvershootFors[line] + min_time_steps[line], maxCs[line]],
-                    [source_quench_time - holdOvershootFors[line] + 2 * min_time_steps[line], maxCOvershoots[line]],
+                    [
+                        source_quench_time
+                        - holdOvershootFors[line]
+                        + min_time_steps[line],
+                        maxCs[line],
+                    ],
+                    [
+                        source_quench_time
+                        - holdOvershootFors[line]
+                        + 2 * min_time_steps[line],
+                        maxCOvershoots[line],
+                    ],
                     [source_quench_time, maxCOvershoots[line]],
                     [source_quench_time + min_time_steps[line], minCOvershoots[line]],
-                    [source_quench_time + holdOvershootFors[line] - min_time_steps[line], minCOvershoots[line]],
+                    [
+                        source_quench_time
+                        + holdOvershootFors[line]
+                        - min_time_steps[line],
+                        minCOvershoots[line],
+                    ],
                     [source_quench_time + holdOvershootFors[line], minCs[line]],
                 ]
             else:
                 anneal_schedules[line] += [
-                    [source_quench_time - holdOvershootFors[line] + min_time_steps[line], maxCs[line]],
+                    [
+                        source_quench_time
+                        - holdOvershootFors[line]
+                        + min_time_steps[line],
+                        maxCs[line],
+                    ],
                     [source_quench_time, maxCOvershoots[line]],
                     [source_quench_time + min_time_steps[line], minCOvershoots[line]],
                     [source_quench_time + holdOvershootFors[line], minCs[line]],
-                ]    
+                ]
         else:
             anneal_schedules[line] += [
                 [source_quench_time, maxCs[line]],
@@ -539,21 +594,36 @@ def make_tds_x_anneal_schedules(
 
     for line in detector_lines:
         if use_overshoot:
-            if holdOvershootFors[line] > 2*min_time_steps[line]:
+            if holdOvershootFors[line] > 2 * min_time_steps[line]:
                 anneal_schedules[line] += [
-                    [detector_quench_time - holdOvershootFors[line] + min_time_steps[line], minCs[line]],
-                    [detector_quench_time - holdOvershootFors[line] + 2 * min_time_steps[line], minCOvershoots[line]],
+                    [
+                        detector_quench_time
+                        - holdOvershootFors[line]
+                        + min_time_steps[line],
+                        minCs[line],
+                    ],
+                    [
+                        detector_quench_time
+                        - holdOvershootFors[line]
+                        + 2 * min_time_steps[line],
+                        minCOvershoots[line],
+                    ],
                     [detector_quench_time, minCOvershoots[line]],
                     [detector_quench_time + min_time_steps[line], maxCOvershoots[line]],
-                    [detector_quench_time + holdOvershootFors[line] - min_time_steps[line], maxCOvershoots[line]],
+                    [
+                        detector_quench_time
+                        + holdOvershootFors[line]
+                        - min_time_steps[line],
+                        maxCOvershoots[line],
+                    ],
                     [detector_quench_time + holdOvershootFors[line], maxCs[line]],
                 ]
             else:
                 anneal_schedules[line] += [
-                    [detector_quench_time - holdOvershootFors[line] + min_time_steps[line], minCs[line]],
+                    [detector_quench_time - min_time_steps[line], minCs[line]],
                     [detector_quench_time, minCOvershoots[line]],
                     [detector_quench_time + min_time_steps[line], maxCOvershoots[line]],
-                    [detector_quench_time + holdOvershootFors[line], maxCs[line]],
+                    [detector_quench_time + 2 * min_time_steps[line], maxCs[line]],
                 ]
         else:
             anneal_schedules[line] += [
@@ -604,7 +674,59 @@ def make_tds_x_polarizing_schedule(
     ]
     return polarizing_schedule
 
-    
+
+def make_tds_x_schedules(
+    exp_feature_info: list[LineFeatureInfo],
+    target_lines: Iterable[int],
+    target_c: float,
+    detector_lines: Iterable[int],
+    source_lines: Iterable[int] = tuple(),
+    *,
+    step_size: float = 2.0,
+    post_depolarization_delay: float = 20.0,
+    anneal_schedule_step_size: float | None = None,
+    use_overshoot: bool = True,
+) -> tuple[AnnealSchedules, AnnealSchedule]:
+    polarizing_schedule_step_size = step_size
+    (
+        polarized_preparation_interval,
+        depolarization_interval,
+        depolarized_preparation_interval,
+    ) = make_tds_intervals(
+        post_depolarization_delay=post_depolarization_delay,
+        polarizing_schedule_step_size=polarizing_schedule_step_size,
+        anneal_schedule_step_size=anneal_schedule_step_size,
+    )
+
+    detector_quench_time = depolarized_preparation_interval[1] + step_size
+
+    x_anneal_schedules = make_tds_x_anneal_schedules(
+        exp_feature_info=exp_feature_info,
+        target_lines=target_lines,
+        depolarized_preparation_interval=depolarized_preparation_interval,
+        detector_lines=detector_lines,
+        detector_quench_time=detector_quench_time,
+        source_lines=source_lines,
+        polarized_preparation_interval=polarized_preparation_interval,
+        target_c=target_c,
+        post_pwl_delay=0.0,
+        use_overshoot=use_overshoot,
+    )
+    x_polarizing_schedule = make_tds_x_polarizing_schedule(
+        depolarization_interval=depolarization_interval,
+    )
+    x_anneal_schedules, x_polarizing_schedule = standardize_schedule_endpoints(
+        x_anneal_schedules, x_polarizing_schedule, post_pwl_delay=step_size
+    )
+    verify_schedules(
+        exp_feature_info,
+        x_anneal_schedules=x_anneal_schedules,
+        x_polarizing_schedule=x_polarizing_schedule,
+    )
+
+    return x_anneal_schedules, x_polarizing_schedule
+
+
 if __name__ == "__main__":
     from dwave.system import DWaveSampler
     from dwave.experimental.multicolor_anneal.api import get_properties
@@ -614,32 +736,12 @@ if __name__ == "__main__":
 
     qpu = DWaveSampler(solver="Advantage2_system1_x_internal")
     exp_feature_info = get_properties(qpu)
-
-    # Defaults are assumed conservative with respect to exp_feature_info requirements
-    step = 2.0  # Quasi-static evolution time scale, match to minimum depolarization buffer for tidiness.
-    (
-        polarized_preparation_interval,
-        depolarization_interval,
-        depolarized_preparation_interval,
-    ) = make_tds_intervals()
-    detector_quench_time = depolarized_preparation_interval[1] + step
-    x_polarizing_schedule = make_tds_x_polarizing_schedule(
-        depolarization_interval=depolarization_interval,
-    )
-    x_anneal_schedules = make_tds_x_anneal_schedules(
-        exp_feature_info,
+    x_anneal_schedules, x_polarizing_schedule = make_tds_x_schedules(
+        exp_feature_info=exp_feature_info,
         target_lines=(0,),
-        depolarized_preparation_interval=depolarized_preparation_interval,
-        detector_lines=(1,),
-        detector_quench_time=detector_quench_time,
-        source_lines=(2,),
-        polarized_preparation_interval=polarized_preparation_interval,
         target_c=0.37,
-        post_pwl_delay=step,
-        use_overshoot=True,
-    )
-    x_anneal_schedules, x_polarizing_schedule = standardize_schedule_endpoints(
-        x_anneal_schedules, x_polarizing_schedule
+        detector_lines=(1,),
+        source_lines=(2,),
     )
     # Adapt polarizing schedule
     import matplotlib.pyplot as plt
