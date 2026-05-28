@@ -19,6 +19,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 
 import pickle
 import pandas as pd
@@ -43,6 +44,24 @@ from dwave.experimental.multicolor_anneal import (
     standardize_schedule_endpoints,
 )
 from dwave.experimental.shimming import shim_flux_biases
+
+
+def _figure_path(
+    figures_dir: str, figure_label: str, cache_str: str | None = None
+) -> str:
+    """Create a stable file path for a matplotlib figure label."""
+    safe_label = re.sub(r"[^0-9A-Za-z._-]+", "_", figure_label).strip("_")
+    suffix = f"_{cache_str}" if cache_str else ""
+    return os.path.join(figures_dir, f"{safe_label}{suffix}.png")
+
+
+def _save_open_figures(figures_dir: str, cache_str: str | None = None) -> None:
+    """Save currently open matplotlib figures to disk."""
+    os.makedirs(figures_dir, exist_ok=True)
+    for fig_num in plt.get_fignums():
+        fig = plt.figure(fig_num)
+        figure_label = fig.get_label() or f"Figure_{fig_num}"
+        fig.savefig(_figure_path(figures_dir, figure_label, cache_str))
 
 
 def _calc_anneal_offsets(
@@ -177,7 +196,6 @@ def plot_shim(
     mag_history: dict,
     flux_history: dict,
     num_experiments: int = 1,
-    fname: str | None = None,
     label: str = "",
     max_qubit_labels: int = 10,
 ):
@@ -191,8 +209,6 @@ def plot_shim(
         num_experiments: Number of programmings per flux iteration. Using 1
             by default it should be noted that 2 magnetizations may be
             be measured per step in flux_biases.
-        fname: a filename to which to save data, mag or fb is prepended for
-            the two plot types. By default no plots are created.
         label: a label for the plots, used in legends.
         max_qubit_labels: maximum number of qubit labels to include in legend,
             if larger, defaults to no labels.
@@ -205,7 +221,7 @@ def plot_shim(
         (mag_array.shape[0], mag_array.shape[1] // num_experiments, num_experiments),
     )
 
-    plt.figure()
+    plt.figure("Magnetization_by_shim_iteration")
     plt.title(r"Magnetization by iteration, $\langle Z\rangle_{detector}$")
     for experiment_sign in range(num_experiments):
         if num_experiments > 1:
@@ -230,18 +246,14 @@ def plot_shim(
         if mag_array.shape[0] <= max_qubit_labels:
             plt.legend(flux_history.keys(), title=f"{label} Qubit index")
     plt.ylabel("Magnetization")
-    if fname is not None:
-        plt.savefig(f"mag_{fname}")
 
-    plt.figure()
+    plt.figure("Flux_bias_by_shim_iteration")
     plt.title("All detector flux_biases")
     plt.plot(flux_array.transpose())
     plt.xlabel("Shim iteration")
     plt.ylabel("Flux bias ($\\Phi_0$)")
     if mag_array.shape[0] <= max_qubit_labels:
         plt.legend(flux_history.keys(), title=f"{label} Qubit index")
-    if fname is not None:
-        plt.savefig(f"fb_{fname}")
 
 
 def _plot_tds_schedules(
@@ -251,10 +263,10 @@ def _plot_tds_schedules(
     """Plots the piecewise linear schedules used
 
     Args:
-        x_polarizing_biases: The polarization signal.
+        x_polarizing_schedule: The polarization signal.
         x_anneal_schedules: The list of anneal schedules, one per line.
     """
-    plt.figure()
+    plt.figure("PWL_waveforms")
     plt.title("PWL waveforms")
     for line, schedule in enumerate(x_anneal_schedules):
         plt.plot(
@@ -302,8 +314,12 @@ def _plot_tds_schedules(
 
 def _get_experiment_id(args):
     print(vars(args))
-    args_string = json.dumps(vars(args), sort_keys=True)
-    return hashlib.sha256(args_string.encode("utf-8")).hexdigest()
+    vars_args = vars(args).copy()
+    vars_args.pop(
+        "save_figures", None
+    )  # save_figures is not relevant to the experiment data, so we exclude it from the hash
+    args_string = json.dumps(vars_args, sort_keys=True)
+    return hashlib.sha256(args_string.encode("utf-8")).hexdigest()[:num_char]
 
 
 def _fix_standard_c_range(anneal_schedules):
@@ -331,6 +347,7 @@ def main(
     delay_max_fit: float | None = None,
     fn_schedule: str = "09-1317A-D_Advantage2_research1_4_annealing_schedule.xlsx",
     use_01_c_range: bool = False,
+    save_figures: bool = False,
 ):
     """Demonstrate t-d-s variability and mitigation strategies
 
@@ -396,6 +413,11 @@ def main(
         fn_schedule: A schedule file that is used to estimate an appropriate sampling interval for delay
             time and an appropriate scale for anneal_offset synchronization. This should be matched to the
             solver.
+        use_01_c_range:
+            When set to True, restricts the schedule range to [0,1]. This lowers the detector and source quench
+            rates, impacting fidelity and some other parameters.
+        save_figures:
+            When True, save generated figures to a ``figures`` folder.
 
     Raises:
         ValueError: If the number of lines is less than 3, or
@@ -421,7 +443,7 @@ def main(
     qpu_anneal_schedule = pd.read_excel(
         fn_schedule, sheet_name="Fast-Annealing Schedule"
     )
-    plt.figure()
+    plt.figure("Schedule")
     plt.title("Schedule")
     delta_vs_s = qpu_anneal_schedule[::-1]
     plt.plot(delta_vs_s["s"], delta_vs_s["A(s) (GHz)"], label="A(s)")
@@ -512,7 +534,10 @@ def main(
     )
     if use_01_c_range:
         _fix_standard_c_range(x_anneal_schedules)
-    _plot_tds_schedules(x_polarizing_schedule, x_anneal_schedules)
+    _plot_tds_schedules(
+        x_polarizing_schedule,
+        x_anneal_schedules,
+    )
     x_schedule_delays = [0.0] * num_lines
 
     anneal_offsets = [0.0] * qpu.properties["num_qubits"]
@@ -603,14 +628,14 @@ def main(
             else:
                 continue
 
-            plt.figure("y=cos(2pi A t)exp(-t/T)+sampling error")
+            plt.figure("artificial_timeseries")
             plt.title("y=cos(2pi A t)exp(-t/T)+sampling error")
             plt.plot(delays_ns, signal, label=label)
             plt.xlabel("Time, microseconds")
             plt.ylabel(r"Magnetization, $\langle Z \rangle_{detector}$")
             plt.legend()
 
-            plt.figure("Simple model data (PSD) ~ A/((f-A)^2 + A^2)")
+            plt.figure("artificial_psd")
             plt.title("Approx Lorentzian power spectral density ~ A/((f-A)^2 + A^2)")
             psd = np.abs(np.fft.fft(signal)) ** 2 / len(signal)
             plt.plot(frequencies[: ld // 2], psd[: ld // 2], label=label)
@@ -623,7 +648,6 @@ def main(
     )
 
     if not no_flux_biases:
-        shimstr = "_FBshim"
         print(
             "Shim flux biases for zero detector magnetization in"
             " the limit of long delay (at equilibrium)."
@@ -663,10 +687,14 @@ def main(
                 os.makedirs(os.path.dirname(fn_cache), exist_ok=True)
                 with open(fn_cache, "wb") as f:
                     pickle.dump((flux_biases, flux_history, mag_history), f)
-        plot_shim(mag_history, flux_history)
+        plot_shim(
+            mag_history,
+            flux_history,
+        )
         qpu_parameters["flux_biases"] = flux_biases
-    else:
-        shimstr = ""
+
+    if save_figures:
+        _save_open_figures("figures/", cache_str)
     plt.show()
     print(f"Collect data for {len(embs)} parallel embeddings")
     fn_cache = f"cache/AO_It0_{cache_str}.npy"
@@ -698,7 +726,7 @@ def main(
         "Plot real space data in 3 formats, and the power spectral density estimated by a discrete Fourier transform"
     )
 
-    plt.figure()
+    plt.figure("Timeseries")
     plt.title("Time series for several qubits using distinct target lines")
     plotted_embIs = set()
     for idx, emb in enumerate(embs):
@@ -717,8 +745,8 @@ def main(
     plt.legend()
     plt.grid()
 
-    plt.figure()
-    plt.title("Real space magnetizations (divergent color scheme)")
+    plt.figure("Timeseries_divergent_colormap")
+    plt.title("Real space magnetizations (divergent colormap)")
     plt.imshow(mean_Z_detector, vmin=-1, vmax=1, cmap="RdBu")
     yticks_dict = {
         first: f"{1000 * delays[first]:.3g}",
@@ -734,8 +762,8 @@ def main(
     plt.xlabel("Target-Detector-Source embedding")
     plt.ylabel("Delay, nanoseconds")
 
-    plt.figure()
-    plt.title("Real space magnetizations (higher contrast color scheme)")
+    plt.figure("Timeseries_default_colormap")
+    plt.title("Real space magnetizations (default colormap)")
     plt.imshow(mean_Z_detector[first:last, :])
     yticks_dictN = {
         0: f"{1000 * delays[first]:.3g}",
@@ -748,7 +776,7 @@ def main(
     plt.xlabel("Target-Detector-Source embedding")
     plt.ylabel("Delay, nanoseconds")
 
-    plt.figure()
+    plt.figure("PSD")
     plt.title("Power associated to magnetization time series")
     lines_represented = set()
     for i, emb in enumerate(embs):
@@ -808,7 +836,7 @@ def main(
             "Plot real space data in 3 formats, and the power spectral density estimated by a discrete Fourier transform"
         )
 
-        plt.figure()
+        plt.figure("Timeseries_after_anneal_offsets")
         plt.title("Time series after anneal_offsets")
         plotted_embIs = set()
         for i, emb in enumerate(embs):
@@ -827,7 +855,7 @@ def main(
         plt.legend()
         plt.grid()
 
-        plt.figure()
+        plt.figure("Timeseries_divergent_colormap_w_AO")
         plt.title("Real space magnetizations after anneal offsets")
         plt.imshow(mean_Z_detector, vmin=-1, vmax=1, cmap="RdBu")
         plt.yticks(
@@ -837,7 +865,7 @@ def main(
         plt.xlabel("Target-Detector-Source embedding")
         plt.ylabel("Delay, nanoseconds")
 
-        plt.figure()
+        plt.figure("Timeseries_default_colormap_w_AO")
         plt.title("Real space magnetizations after anneal offsets")
         plt.imshow(mean_Z_detector[first:last, :])
         plt.yticks(
@@ -847,7 +875,7 @@ def main(
         plt.xlabel("Target-Detector-Source embedding")
         plt.ylabel("Delay, nanoseconds")
 
-        plt.figure()
+        plt.figure("PSD_w_AO")
         plt.title("Power associated to magnetization time series after anneal offsets")
         lines_represented = set()
         for i, emb in enumerate(embs):
@@ -876,7 +904,7 @@ def main(
         plt.xlabel(r"Frequency ($\omega$), GHz")
         plt.grid(True)
 
-        plt.figure()
+        plt.figure("AnnealOffsets")
         anneal_offsets0 = anneal_offsets
         anneal_offsets = _calc_anneal_offsets(
             frequencies, psd, target_A, dAdc
@@ -905,6 +933,8 @@ def main(
         )
         plt.grid(True)
         plt.legend()
+    if save_figures:
+        _save_open_figures("figures", cache_str)
     plt.show()
 
 
@@ -993,11 +1023,16 @@ if __name__ == "__main__":
         action="store_true",
         help="Add this flag to use a schedule range restricted to [minC, maxC] = [0,1]. This lowers the detector and source quench rates, impacting fidelity and some other parameters. TODO later - support symmetrized crange (for better quenbch rate but maintaining delay regularization, or overshoot crange (for higher performance)",
     )
+    parser.add_argument(
+        "--save_figures",
+        action="store_true",
+        help="Add this flag to save figures generated during the experiment to a figures folder. The experiment hash is appended to figure filenames.",
+    )
 
     args = parser.parse_args()
 
     if args.use_cache:
-        cache_str = _get_experiment_id(args)
+        cache_str = _get_experiment_id(args, num_char=8)
     else:
         cache_str = None
     main(
@@ -1013,4 +1048,5 @@ if __name__ == "__main__":
         no_anneal_offsets=args.no_anneal_offsets,
         no_flux_biases=args.no_flux_biases,
         use_01_c_range=args.use_01_c_range,
+        save_figures=args.save_figures,
     )

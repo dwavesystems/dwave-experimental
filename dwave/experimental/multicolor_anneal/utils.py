@@ -102,9 +102,9 @@ def make_tds_graph(
 
     Args:
         target_graph: A networkx target graph
-        detector_nodes: An iterable on the target nodes, if None
+        detected_nodes: An iterable on the target nodes, if None
             all target nodes.
-        source_nodes: An iterable on the target nodes, if None
+        sourced_nodes: An iterable on the target nodes, if None
             all target nodes.
 
     Returns:
@@ -191,7 +191,7 @@ def make_tds_intervals(
 
 def standardize_schedule_endpoints(
     x_anneal_schedules: AnnealSchedules,
-    x_polarizing_schedule: Schedule | None = None,
+    x_polarizing_schedule: AnnealSchedule | None = None,
     *,
     post_pwl_delay: float = 0.0,
     decimals=0,
@@ -205,8 +205,8 @@ def standardize_schedule_endpoints(
     Args:
         x_anneal_schedules: List of anneal schedules, as might
             returned by :func:`make_tds_x_anneal_schedules`.
-        x_polarizing_schedules: Anneal schedule, as might be returned by
-            :func:`make_tds_x_anneal_schedules`.
+        x_polarizing_schedule: Anneal schedule, as might be returned by
+            :func:`make_tds_x_polarizing_schedule`.
         post_pwl_delay: Delay in microseconds to apply to each anneal schedule.
             Inclusion of a delay on the order of microseconds prevents line
             desynchronization, filtering and other non-idealities from
@@ -238,6 +238,7 @@ def standardize_schedule_endpoints(
     return anneal_schedules, polarizing_schedule
 
 
+
 def make_tds_x_anneal_schedules(
     exp_feature_info: list[LineFeatureInfo],
     target_lines: Iterable[int],
@@ -249,9 +250,10 @@ def make_tds_x_anneal_schedules(
     source_lines: Iterable[int] = tuple(),
     depolarized_preparation_interval: Interval | None = None,
     source_quench_time: float | None = None,
-    use_common_bounds: bool = True,
-    use_overshoot: bool = False,
+    use_common_bounds: bool = False,
+    use_overshoot: bool = True,
     post_pwl_delay: float = 1.0,
+    check_rounding: bool = True,
 ) -> AnnealSchedules:
     """Set annealing schedules for target-detector-source experiments.
 
@@ -279,7 +281,7 @@ def make_tds_x_anneal_schedules(
 
     Args:
         exp_feature_info: List of dicts containing experimental feature
-            information for each line, as returned by `getProperties`.
+            information for each line, as returned by `get_properties`.
         target_lines: Iterable of target line indices.
         target_c: Schedule value at which the target is held.
         detector_lines: Iterable of detector line indices.
@@ -303,12 +305,15 @@ def make_tds_x_anneal_schedules(
         use_common_bounds: Parameters can vary by line. When True is used,
             a set of common compatible values define all lines.
         use_overshoot: Whether to use overshoot transitions for source and
-            detector quenches. This mode is not yet implemented.
+            detector quenches.
         post_pwl_delay: Additional delay, in microseconds, used to extend the
             terminal values of all schedules to a common endpoint.
-
+        check_rounding: Whether to check that all schedule times are almost
+            multiples of the minimum time step for each line.
     Returns:
         A piecewise linear schedule for all lines.
+    Raises:
+        ValueError: If any of the input parameters are invalid or incompatible.
     """
 
     num_lines = len(exp_feature_info)
@@ -323,24 +328,39 @@ def make_tds_x_anneal_schedules(
         raise ValueError(
             "Source, detector and target lines must be valid line indices."
         )
+    
+    maxCs = {line: exp_feature_info[line]["maxC"] for line in range(num_lines)}
+    minCs = {line: exp_feature_info[line]["minC"] for line in range(num_lines)}
+    maxCOvershoots = {line: exp_feature_info[line]["maxCOvershoot"] for line in range(num_lines)}
+    minCOvershoots = {line: exp_feature_info[line]["minCOvershoot"] for line in range(num_lines)}
+    min_time_steps = {
+        line: exp_feature_info[line]["minAnnealingTimeStep"]
+        for line in range(num_lines)
+    }
+    holdOvershootFors = {line: exp_feature_info[line].get("holdOvershootFor", 0) for line in range(num_lines)}
 
     if use_common_bounds:
-        maxC = min(exp_feature_info[line]["maxC"] for line in range(num_lines))
-        minC = max(exp_feature_info[line]["minC"] for line in range(num_lines))
+        maxC = min(maxCs.values())
+        minC = max(minCs.values())
+        if minC >= maxC:
+            raise ValueError(
+                "Incompatible maxC and minC values across lines, cannot use common bounds."
+            )
+        maxCOvershoot = min(maxCOvershoots.values())
+        minCOvershoot = max(minCOvershoots.values())  
+        if minCOvershoot >= maxCOvershoot:
+            raise ValueError(
+                "Incompatible maxCOvershoot and minCOvershoot values across lines, cannot use common bounds."
+            )
+        min_time_step = min(min_time_steps.values())  #  Should check this is uniform
+        holdOvershootFor = max(holdOvershootFors.values())
+
         maxCs = {line: maxC for line in range(num_lines)}
         minCs = {line: minC for line in range(num_lines)}
-        min_time_step = max(
-            exp_feature_info[line]["minAnnealingTimeStep"] for line in range(num_lines)
-        )
+        maxCOvershoots = {line: maxCOvershoot for line in range(num_lines)}
+        minCOvershoots = {line: minCOvershoot for line in range(num_lines)}
         min_time_steps = {line: min_time_step for line in range(num_lines)}
-    else:
-        maxCs = {line: exp_feature_info[line]["maxC"] for line in range(num_lines)}
-        minCs = {line: exp_feature_info[line]["minC"] for line in range(num_lines)}
-        min_time_steps = {
-            line: exp_feature_info[line]["minAnnealingTimeStep"]
-            for line in range(num_lines)
-        }
-
+        holdOvershootFors = {line: holdOvershootFor for line in range(num_lines)}
     # Check that times are compatible with sequencing and min time steps.
     times = []
     if len(source_lines) > 0:
@@ -384,15 +404,14 @@ def make_tds_x_anneal_schedules(
         raise ValueError("Times must be non-negative.")
 
     # By default all lines are switched off during the preparation
-    # window. This default is overwritten or augmented according
-    # to the line class.
-    anneal_schedules = [
-        [
+    # window, except source lines which are switched on.
+    anneal_schedules = [[
+            [polarized_preparation_interval[0], 0.0],
+            [polarized_preparation_interval[1], maxCs[line]],
+        ] if line in source_lines else [
             [polarized_preparation_interval[0], 0.0],
             [polarized_preparation_interval[1], minCs[line]],
-        ]
-        for line in all_lines
-    ]
+        ] for line in all_lines ]
 
     for line in target_lines:
         # Turned slowly to target value:
@@ -402,13 +421,23 @@ def make_tds_x_anneal_schedules(
         ]
 
     for line in source_lines:
-        # Polarized, rather than depolarized, in the preparation window
-        anneal_schedules[line] = [
-            [polarized_preparation_interval[0], 0.0],
-            [polarized_preparation_interval[1], maxCs[line]],
-        ]
         if use_overshoot:
-            raise ValueError("Not yet implemented (draft pull request), see Aking code")
+            if holdOvershootFors[line] > 2*min_time_steps[line]:
+                anneal_schedules[line] += [
+                    [source_quench_time - holdOvershootFors[line] + min_time_steps[line], maxCs[line]],
+                    [source_quench_time - holdOvershootFors[line] + 2 * min_time_steps[line], maxCOvershoots[line]],
+                    [source_quench_time, maxCOvershoots[line]],
+                    [source_quench_time + min_time_steps[line], minCOvershoots[line]],
+                    [source_quench_time + holdOvershootFors[line] - min_time_steps[line], minCOvershoots[line]],
+                    [source_quench_time + holdOvershootFors[line], minCs[line]],
+                ]
+            else:
+                anneal_schedules[line] += [
+                    [source_quench_time - holdOvershootFors[line] + min_time_steps[line], maxCs[line]],
+                    [source_quench_time, maxCOvershoots[line]],
+                    [source_quench_time + min_time_steps[line], minCOvershoots[line]],
+                    [source_quench_time + holdOvershootFors[line], minCs[line]],
+                ]    
         else:
             anneal_schedules[line] += [
                 [source_quench_time, maxCs[line]],
@@ -417,7 +446,22 @@ def make_tds_x_anneal_schedules(
 
     for line in detector_lines:
         if use_overshoot:
-            raise ValueError("Not yet implemented (draft pull request), see Aking code")
+            if holdOvershootFors[line] > 2*min_time_steps[line]:
+                anneal_schedules[line] += [
+                    [detector_quench_time - holdOvershootFors[line] + min_time_steps[line], minCs[line]],
+                    [detector_quench_time - holdOvershootFors[line] + 2 * min_time_steps[line], minCOvershoots[line]],
+                    [detector_quench_time, minCOvershoots[line]],
+                    [detector_quench_time + min_time_steps[line], maxCOvershoots[line]],
+                    [detector_quench_time + holdOvershootFors[line] - min_time_steps[line], maxCOvershoots[line]],
+                    [detector_quench_time + holdOvershootFors[line], maxCs[line]],
+                ]
+            else:
+                anneal_schedules[line] += [
+                    [detector_quench_time - holdOvershootFors[line] + min_time_steps[line], minCs[line]],
+                    [detector_quench_time, minCOvershoots[line]],
+                    [detector_quench_time + min_time_steps[line], maxCOvershoots[line]],
+                    [detector_quench_time + holdOvershootFors[line], maxCs[line]],
+                ]
         else:
             anneal_schedules[line] += [
                 [detector_quench_time, minCs[line]],
@@ -433,6 +477,19 @@ def make_tds_x_anneal_schedules(
     anneal_schedules, _ = standardize_schedule_endpoints(
         anneal_schedules, post_pwl_delay=post_pwl_delay
     )
+
+    # A stronger check as a general utility would be better:
+    for line in all_lines:
+        seq_times = [t + min_time_steps[line]*idx for idx, (t, _) in enumerate(anneal_schedules[line])]
+        if sorted(seq_times) != seq_times:
+            raise ValueError("Anneal schedules must have non-decreasing time values upon rounding")
+        if check_rounding:
+            for seq_time in seq_times:
+                ratio = seq_time / min_time_steps[line]
+                if not math.isclose(ratio, round(ratio), rel_tol=1e-9, abs_tol=1e-9):
+                    raise ValueError(
+                        f"Rounded schedule time {seq_time} on line {line} is not an almost multiple of min_time_steps[{line}]={min_time_steps[line]}"
+                    )
 
     return anneal_schedules
 
@@ -499,6 +556,7 @@ if __name__ == "__main__":
         polarized_preparation_interval=polarized_preparation_interval,
         target_c=0.37,
         post_pwl_delay=step,
+        use_overshoot=True,
     )
     x_anneal_schedules, x_polarizing_schedule = standardize_schedule_endpoints(
         x_anneal_schedules, x_polarizing_schedule
