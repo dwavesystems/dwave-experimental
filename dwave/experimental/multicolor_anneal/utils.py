@@ -26,7 +26,6 @@ __all__ = [
     "qubit_to_Advantage2_annealing_line",
     "make_tds_graph",
     "make_tds_intervals",
-    "make_tds_x_intervals",
     "make_tds_x_anneal_schedules",
     "make_tds_x_polarizing_schedule",
     "make_tds_x_schedules",
@@ -180,14 +179,16 @@ def make_tds_graph(
 
 def make_tds_intervals(
     post_preparation_delay: float = 20.0,
-    polarizing_schedule_step_size: None | float = 2.0,
-    anneal_schedule_quasistatic_step_size: None | float = None,
+    depolarization_time_scale: float = 2.0,
+    *,
+    depolarizing_time_scale: None | float = None,
+    anneal_preparation_time_scale: None | float = None,
 ) -> tuple[Interval, Interval, Interval, float]:
     """Make default intervals for schedules construction.
 
-    This routine sets up the quasi-static timescales on which the
-    source is prepared in a polarized state, the polarizing bias
-    is removed and the target is prepared.
+    This routine sets up the timescales on which the source (and detector)
+    lines are prepared in polarized (depolarized) states, the polarizing bias
+    is removed, and the target is prepared.
 
     Defaulting is designed with a view to Larmour precession examples in
     :ref:`qpu_experimental_research_mca_example`
@@ -196,30 +197,43 @@ def make_tds_intervals(
 
     Args:
         post_preparation_delay: Time to wait in microseconds
-            after line preparation before quenching.
-        polarizing_schedule_step_size: Step size for the polarizing
-            schedule. If None, defaults to ``post_preparation_delay``.
-        anneal_schedule_quasistatic_step_size: Step size for the quasistatic
-            preparation of anneal schedules. If
-            None, defaults to ``polarizing_schedule_step_size``.
+            after line preparation before quenching. This is lower bounded
+            by 0 but typically some longer time scale of order 10.0 us is
+            recommended.
+        depolarization_time_scale: Time before and after the depolarizing
+            interval in which changes to the anneal schedule are prevented.
+            This is lower bounded by the
+            depolarizationAnnealScheduleRequiredDelay annealing-line property.
+        depolarizing_time_scale: Step size for the polarizing schedule.
+            It is lower bounded by minPolarizingTimeStep, but typically a
+            larger value of order microseconds is desirable for robust
+            preparation. Defaults to ``depolarization_time_scale`` when not
+            set.
+        anneal_preparation_time_scale: Step size for preparation of anneal
+            schedules in polarized and depolarized regimes. If None, defaults
+            to ``depolarizing_time_scale``. This is lower bounded by
+            minAnnealingTimeStep annealing-line properties, but typically a
+            larger value of order microseconds is desirable for robust
+            preparation.
 
     Returns:
         A 4-tuple containing ``polarized_preparation_interval``,
         ``depolarization_interval``, ``depolarized_preparation_interval``,
         and ``quench_time``.
     """
-    if polarizing_schedule_step_size is None:
-        polarizing_schedule_step_size = post_preparation_delay
-    if anneal_schedule_quasistatic_step_size is None:
-        anneal_schedule_quasistatic_step_size = polarizing_schedule_step_size
+    if depolarizing_time_scale is None:
+        depolarizing_time_scale = depolarization_time_scale
 
-    polarized_preparation_interval = (0.0, anneal_schedule_quasistatic_step_size)
-    tp = polarized_preparation_interval[-1] + polarizing_schedule_step_size
-    depolarization_interval = (tp, tp + polarizing_schedule_step_size)
-    ts = depolarization_interval[-1] + polarizing_schedule_step_size
+    if anneal_preparation_time_scale is None:
+        anneal_preparation_time_scale = depolarizing_time_scale
+
+    polarized_preparation_interval = (0.0, anneal_preparation_time_scale)
+    tp = polarized_preparation_interval[-1] + depolarization_time_scale
+    depolarization_interval = (tp, tp + depolarizing_time_scale)
+    ts = depolarization_interval[-1] + depolarization_time_scale
     depolarized_preparation_interval = (
         ts,
-        ts + anneal_schedule_quasistatic_step_size,
+        ts + anneal_preparation_time_scale,
     )
     quench_time = depolarized_preparation_interval[-1] + post_preparation_delay
 
@@ -228,42 +242,6 @@ def make_tds_intervals(
         depolarization_interval,
         depolarized_preparation_interval,
         quench_time,
-    )
-
-
-def make_tds_x_intervals(
-    post_preparation_delay: float = 20.0,
-    polarizing_schedule_step_size: None | float = 2.0,
-    anneal_schedule_step_size: None | float = None,
-    anneal_schedule_quasistatic_step_size: None | float = None,
-) -> tuple[Interval, Interval, Interval, float]:
-    """Backward-compatible alias for :func:`make_tds_intervals`.
-
-    This helper accepts both historical ``anneal_schedule_step_size`` and
-    current ``anneal_schedule_quasistatic_step_size`` keyword names.
-    """
-    if (
-        anneal_schedule_step_size is not None
-        and anneal_schedule_quasistatic_step_size is not None
-        and not math.isclose(
-            anneal_schedule_step_size,
-            anneal_schedule_quasistatic_step_size,
-            rel_tol=0.0,
-            abs_tol=0.0,
-        )
-    ):
-        raise ValueError(
-            "Got conflicting values for anneal_schedule_step_size and "
-            "anneal_schedule_quasistatic_step_size."
-        )
-
-    if anneal_schedule_quasistatic_step_size is None:
-        anneal_schedule_quasistatic_step_size = anneal_schedule_step_size
-
-    return make_tds_intervals(
-        post_preparation_delay=post_preparation_delay,
-        polarizing_schedule_step_size=polarizing_schedule_step_size,
-        anneal_schedule_quasistatic_step_size=anneal_schedule_quasistatic_step_size,
     )
 
 
@@ -770,9 +748,8 @@ def make_tds_x_schedules(
     detector_lines: Iterable[int],
     source_lines: Iterable[int] = tuple(),
     *,
-    quasistatic_annealing_step_size: float = 2.0,
     post_preparation_delay: float = 20.0,
-    anneal_schedule_step_size: float | None = None,
+    depolarization_time_scale: float = 2.0,
     use_overshoot: bool = True,
     sign_polarization: Literal[-1, 1] = 1,
 ) -> tuple[AnnealSchedules, AnnealSchedule]:
@@ -789,12 +766,11 @@ def make_tds_x_schedules(
         target_c: Schedule value at which the target is held.
         detector_lines: Iterable of detector line indices.
         source_lines: Iterable of source line indices.
-        quasistatic_annealing_step_size: Time scale for slow (quasi-static)
-            preparation of qubits to polarized/depolarized states.
         post_preparation_delay: Delay in microseconds between completion of
             depolarization and start of depolarized target preparation.
-        anneal_schedule_step_size: Step size for anneal preparation intervals.
-            If None, defaults to ``quasistatic_annealing_step_size``.
+        depolarization_time_scale: Time scale for slow (quasi-static)
+            modification of the polarizing signal and
+            preparation of qubits to polarized/depolarized states.
         use_overshoot: Whether to use overshoot transitions for source and
             detector quenches.
         sign_polarization: Initial sign of the polarizing bias, +1 or -1.
@@ -811,18 +787,15 @@ def make_tds_x_schedules(
         ScheduleError: If generated schedules fail sequencing or rounding
             validation checks.
     """
-    polarizing_schedule_step_size = quasistatic_annealing_step_size
     (
         polarized_preparation_interval,
         depolarization_interval,
         depolarized_preparation_interval,
         detector_quench_time,
-    ) = make_tds_x_intervals(
+    ) = make_tds_intervals(
         post_preparation_delay=post_preparation_delay,
-        polarizing_schedule_step_size=polarizing_schedule_step_size,
-        anneal_schedule_step_size=anneal_schedule_step_size,
+        depolarization_time_scale=depolarization_time_scale,
     )
-
     x_anneal_schedules = make_tds_x_anneal_schedules(
         exp_feature_info=exp_feature_info,
         target_lines=target_lines,
@@ -842,7 +815,7 @@ def make_tds_x_schedules(
     x_anneal_schedules, x_polarizing_schedule = standardize_schedule_endpoints(
         x_anneal_schedules,
         x_polarizing_schedule,
-        post_pwl_delay=quasistatic_annealing_step_size,
+        post_pwl_delay=depolarization_time_scale,
     )
     verify_schedules(
         exp_feature_info,
