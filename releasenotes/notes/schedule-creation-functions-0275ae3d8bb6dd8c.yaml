@@ -1,0 +1,8 @@
+---
+features:
+  - |
+    Add x_polarizing_schedule and x_anneal_schedules creation function
+upgrade:
+  - |
+    MCA Larmour precession examples upgraded to use the new default schedules
+    with/without overshoot.
