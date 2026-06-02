@@ -415,11 +415,11 @@ def make_tds_x_anneal_schedules(
     target_lines: Iterable[int],
     target_c: float,
     detector_lines: Iterable[int],
-    polarized_preparation_interval: Interval,
-    detector_quench_time: float,
     *,
-    source_lines: Iterable[int] = tuple(),
+    polarized_preparation_interval: Interval | None = None,
     depolarized_preparation_interval: Interval | None = None,
+    detector_quench_time: float | None = None,
+    source_lines: Iterable[int] = tuple(),
     source_quench_time: float | None = None,
     use_common_bounds: bool = False,
     use_overshoot: bool = True,
@@ -458,15 +458,18 @@ def make_tds_x_anneal_schedules(
         polarized_preparation_interval: Tuple ``(start, end)`` giving the
             interval during which a polarizing signal is present. During this
             interval, unused and detector lines are set to ``minC`` whereas
-            source lines are set to ``maxC``.
+            source lines are set to ``maxC``. If None, defaults to the
+            ``polarized_preparation_interval`` returned by
+            :func:`make_tds_intervals` with default arguments.
         detector_quench_time: Time at which to quench the detector line quench,
-            in microseconds.
+            in microseconds. If None, defaults to the ``quench_time`` returned
+            by :func:`make_tds_intervals` with default arguments.
         source_lines: Iterable of source line indices.
         depolarized_preparation_interval: Tuple ``(start, end)`` for the
             preparation stage that occurs after the polarizing schedule is
-            returned to zero. This can be set to None, in which case all lines
-            are prepared during ``polarized_preparation_interval``. Targets are
-            set to ``target_c`` during this interval; other lines are unchanged.
+            returned to zero. If None, defaults to the
+            ``depolarized_preparation_interval`` returned by
+            :func:`make_tds_intervals` with default arguments.
         source_quench_time: Time at which to quench the source line
             from ``maxC`` to ``minC``, in microseconds. If None, defaults to
             ``detector_quench_time``. Setting ``source_quench_time`` equal to
@@ -483,7 +486,18 @@ def make_tds_x_anneal_schedules(
     Raises:
         ValueError: If any of the input parameters are invalid or incompatible.
     """
-
+    (
+        polarized_preparation_interval0,
+        _,
+        depolarized_preparation_interval0,
+        quench_time0,
+    ) = make_tds_intervals()
+    if not polarized_preparation_interval:
+        polarized_preparation_interval = polarized_preparation_interval0
+    if not depolarized_preparation_interval:
+        depolarized_preparation_interval = depolarized_preparation_interval0
+    if not detector_quench_time:
+        detector_quench_time = quench_time0
     num_lines = len(exp_feature_info)
     all_lines = set(range(num_lines))
     source_lines = set(source_lines)
@@ -711,7 +725,7 @@ def make_tds_x_anneal_schedules(
 
 
 def make_tds_x_polarizing_schedule(
-    depolarization_interval: Interval,
+    depolarization_interval: Interval = None,
     sign_polarization: Literal[-1, 1] = 1,
 ) -> AnnealSchedule:
     """Set polarizing schedules suitable for target detector source experiments.
@@ -720,7 +734,10 @@ def make_tds_x_polarizing_schedule(
     period and then reduced to zero at a given depolarization time.
 
     Args:
-        depolarization_interval: Tuple containing the start and end times of the depolarization interval, in microseconds.
+        depolarization_interval: Tuple containing the start and end times of
+            the depolarization interval, in microseconds. If None, defaults
+            to the ``depolarization_interval`` returned by
+            :func:`make_tds_intervals` with default arguments.
         sign_polarization: Sign of the initial polarization, +1 or -1.
 
     Returns:
@@ -728,7 +745,9 @@ def make_tds_x_polarizing_schedule(
         given polarization, and evolving to polarization 0
         over the depolarization interval.
     """
-    if (
+    if depolarization_interval is None:
+        _, depolarization_interval, _, _ = make_tds_intervals()
+    elif (
         len(depolarization_interval) != 2
         or depolarization_interval[1] - depolarization_interval[0] <= 0
     ):
