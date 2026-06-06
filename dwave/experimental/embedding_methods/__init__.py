@@ -12,4 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from dwave.experimental.embedding_methods.zephyr_quotient_embedding_search import *
+from dwave.experimental.embedding_methods.quotient_embedding_search import *

@@ -18,18 +18,18 @@ import numpy as np
 from minorminer import find_embedding
 from minorminer.utils.parallel_embeddings import find_sublattice_embeddings
 
-from dwave.experimental.embedding_methods import zephyr_quotient_search
+from dwave.experimental.embedding_methods import quotient_search
 
 seed = 12345
 rng = np.random.default_rng(seed)
 
 print(
-    "This example demonstrates how to use zephyr_quotient_search to find a full-yield embedding of "
-    "a smaller Zephyr graph into a larger, defective Zephyr graph. Since zephyr_quotient_search "
+    "This example demonstrates how to use quotient_search to find a full-yield embedding of "
+    "a smaller Zephyr graph into a larger, defective Zephyr graph. Since quotient_search "
     " finds embeddings for source and target graphs with the same number of rows, this example "
     "shows how to use find_sublattice_embeddings to first identify a complete sublattice in the "
     "defective target that matches the smaller source graph's parameters, and then run "
-    "zephyr_quotient_search on that sublattice. "
+    "quotient_search on that sublattice. "
 )
 
 tile = dnx.zephyr_graph(6, 4, coordinates=True)
@@ -93,7 +93,7 @@ print(
     "continues with the first one."
 )
 
-# Relabel to canonical m=6 coordinates before zephyr_quotient_search.
+# Relabel to canonical m=6 coordinates before quotient_search.
 sublattice_nodes = set(tile_embedding.values())
 target_sub = target.subgraph(sublattice_nodes).copy()
 inv_map = {target_node: tile_node for tile_node, target_node in tile_embedding.items()}
@@ -114,10 +114,10 @@ print(
     f"{source.number_of_edges()} edges."
 )
 
-emb, metadata = zephyr_quotient_search(source, target_sub, yield_type="edge")
+emb, metadata = quotient_search(source, target_sub, yield_type="edge")
 
 print(
-    "Step 7: Run zephyr_quotient_search on the canonical sublattice. It successfully placed "
+    "Step 7: Run quotient_search on the canonical sublattice. It successfully placed "
     f"{metadata.final_num_yielded} of {metadata.max_num_yielded} source edges."
 )
 

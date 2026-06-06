@@ -29,10 +29,10 @@ from dwave_networkx import (
     chimera_graph,
 )
 
-__all__ = ["zephyr_quotient_search"]
+__all__ = ["quotient_search"]
 
 YieldType = Literal["node", "edge", "rail-edge"]
-QuotientSearchType = Literal["by_quotient_rail", "by_quotient_node", "by_rail_then_node"]
+SearchStrategy = Literal["by_quotient_rail", "by_quotient_node", "by_rail_then_node"]
 GraphFamily = Literal["zephyr", "pegasus", "chimera"]
 EmbeddingMapping = dict[Hashable, tuple[Hashable, ...]]
 
@@ -127,7 +127,7 @@ def _extract_graph_properties(source: nx.Graph, target: nx.Graph) -> tuple[int, 
 
 
 def _validate_search_parameters(
-    quotient_search: str,
+    search_strategy: str,
     yield_type: str,
     embedding: EmbeddingMapping | None = None,
     *,
@@ -138,14 +138,14 @@ def _validate_search_parameters(
 ) -> None:
     """Validate high-level search parameters.
 
-    ``quotient_search`` must be one of ``'by_quotient_rail'``, ``'by_quotient_node'``, or
+    ``search_strategy`` must be one of ``'by_quotient_rail'``, ``'by_quotient_node'``, or
     ``'by_rail_then_node'``; ``yield_type`` must be one of ``'node'``, ``'edge'``, or
     ``'rail-edge'``; and ``embedding`` must be ``None`` or a ``dict`` representing a
     one-to-one chain mapping where each source key is a coordinate tuple and each value is a
     singleton target-node chain.
 
     Args:
-        quotient_search: Search mode.
+        search_strategy: Search mode.
         yield_type: Optimization objective.
         embedding: Optional initial one-to-one chain mapping in the input graph node label format.
             If None, no validation of the embedding is performed.
@@ -155,19 +155,19 @@ def _validate_search_parameters(
         target_labels: Target graph labels metadata value.
 
     Raises:
-        ValueError: If ``quotient_search`` or ``yield_type`` is invalid, if ``embedding``
+        ValueError: If ``search_strategy`` or ``yield_type`` is invalid, if ``embedding``
             contains duplicate target nodes (i.e. is not one-to-one), if embedding chains are not
             singleton tuples, if source keys are not coordinate tuples of the expected family
             length, or if coordinate-valued target nodes do not match family conventions
             (Zephyr=5, Pegasus/Chimera=4).
         TypeError: If ``embedding`` is provided but is not a dictionary.
     """
-    valid_ksearch = get_args(QuotientSearchType)
+    valid_ksearch = get_args(SearchStrategy)
     valid_yield_type = get_args(YieldType)
 
-    if quotient_search not in valid_ksearch:
+    if search_strategy not in valid_ksearch:
         raise ValueError(
-            f"quotient_search must be one of {sorted(valid_ksearch)}. Got " f"'{quotient_search}'"
+            f"search_strategy must be one of {sorted(valid_ksearch)}. Got " f"'{search_strategy}'"
         )
     if yield_type not in valid_yield_type:
         raise ValueError(
@@ -706,11 +706,11 @@ def _rail_search(
     return embedding
 
 
-def zephyr_quotient_search(
+def quotient_search(
     source: nx.Graph,
     target: nx.Graph,
     *,
-    quotient_search: QuotientSearchType = "by_quotient_rail",
+    search_strategy: SearchStrategy = "by_quotient_rail",
     embedding: EmbeddingMapping | None = None,
     expand_boundary_search: bool = True,
     ksymmetric: bool = False,
@@ -741,12 +741,12 @@ def zephyr_quotient_search(
       orientation ``u`` and column ``w`` (i.e. a whole Zephyr rail family) before any
       :math:`(k, j, z)` variation.
 
-    The function can be used in (1) node-level mode (``quotient_search='by_quotient_node'``), where
+    The function can be used in (1) node-level mode (``search_strategy='by_quotient_node'``), where
     each quotient node block :math:`(u,w,j,z)` is optimized by choosing target candidates with the
     same :math:`(u,w,j,z)` and selecting the highest-yield proposals; (2) rail-level mode
-    (``quotient_search='by_quotient_rail'``): optimise each quotient rail block :math:`(u,w,:)` by
+    (``search_strategy='by_quotient_rail'``): optimise each quotient rail block :math:`(u,w,:)` by
     selecting rails :math:`(u,w_t,k_t)` that maximise yield.; and (3) hybrid mode
-    (``quotient_search='by_rail_then_node'``): rail search followed by node refinement.
+    (``search_strategy='by_rail_then_node'``): rail search followed by node refinement.
 
     When ``expand_boundary_search=True``, boundary columns ``w=0`` and ``w=2m`` are augmented using
     proposals drawn from adjacent internal columns. Whenever this behaviour is activated, nodes from
@@ -769,7 +769,7 @@ def zephyr_quotient_search(
             family: ``'zephyr'``, ``'pegasus'``, or ``'chimera'``.
         target: Target graph (linear or coordinate labels) from a supported D-Wave topology
             family: ``'zephyr'``, ``'pegasus'``, or ``'chimera'``.
-        quotient_search: Search strategy. One of ``'by_quotient_rail'``,
+        search_strategy: Search strategy. One of ``'by_quotient_rail'``,
             ``'by_quotient_node'``, or ``'by_rail_then_node'``. See full docstrings for a
             description of these. Defaults to ``'by_quotient_rail'``.
         embedding: Optional initial one-to-one chain mapping. If omitted,
@@ -820,7 +820,7 @@ def zephyr_quotient_search(
                 target_mp.graph.update(family="zephyr", rows=mp, tile=target.graph["tile"],
                                        labels="coordinate")
 
-                emb_mp, metadata = zephyr_quotient_search(source, target_mp)
+                emb_mp, metadata = search_strategy(source, target_mp)
 
                 # Map the final embedding back to the original target labels.
                 emb_in_original_target = {
@@ -829,12 +829,12 @@ def zephyr_quotient_search(
                 }
 
         If you want to refine a non-full-yield result with an external solver, run
-        :func:`zephyr_quotient_search` first and only call the refinement routine when
+        :func:`search_strategy` first and only call the refinement routine when
         ``metadata.final_num_yielded < metadata.max_num_yielded``.
 
         .. code-block:: python
 
-            emb, metadata = zephyr_quotient_search(source, target, yield_type="edge")
+            emb, metadata = quotient_search(source, target, yield_type="edge")
             if metadata.final_num_yielded < metadata.max_num_yielded:
                 import minorminer
 
@@ -850,7 +850,7 @@ def zephyr_quotient_search(
     _validate_graph_inputs(source, target)
     m, tp, t = _extract_graph_properties(source, target)
     _validate_search_parameters(
-        quotient_search,
+        search_strategy,
         yield_type,
         embedding,
         source_family=source.graph["family"],
@@ -889,14 +889,14 @@ def zephyr_quotient_search(
     starting_yield = num_yielded
 
     if not full_yield:
-        supplement = quotient_search == "by_rail_then_node"
+        supplement = search_strategy == "by_rail_then_node"
 
-        if quotient_search == "by_quotient_rail" or supplement:
+        if search_strategy == "by_quotient_rail" or supplement:
             working_embedding = _rail_search(
                 source=_source,
                 target=_target,
                 embedding=working_embedding,
-                # if quotient_search is by_rail_then_node, we expand boundary search only in the
+                # if search_strategy is by_rail_then_node, we expand boundary search only in the
                 # node search, and disable it in the rail search:
                 expand_boundary_search=((not supplement) and expand_boundary_search),
                 ksymmetric=ksymmetric,
@@ -911,7 +911,7 @@ def zephyr_quotient_search(
                     ksymmetric=False,
                     yield_type=yield_type,
                 )
-        elif quotient_search == "by_quotient_node":
+        elif search_strategy == "by_quotient_node":
             working_embedding = _node_search(
                 source=_source,
                 target=_target,
