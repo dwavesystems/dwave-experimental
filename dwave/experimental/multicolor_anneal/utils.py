@@ -726,7 +726,7 @@ def make_tds_x_anneal_schedules(
 
 def make_tds_x_polarizing_schedule(
     depolarization_interval: Interval = None,
-    sign_polarization: Literal[-1, 1] = 1,
+    sign_polarization: Literal[-1, 1, 0] = 1,
 ) -> AnnealSchedule:
     """Set polarizing schedules suitable for target detector source experiments.
 
@@ -738,7 +738,9 @@ def make_tds_x_polarizing_schedule(
             the depolarization interval, in microseconds. If None, defaults
             to the ``depolarization_interval`` returned by
             :func:`make_tds_intervals` with default arguments.
-        sign_polarization: Sign of the initial polarization, +1 or -1.
+        sign_polarization: Sign of the initial polarization, +1 or -1. If 0
+            then no polarizing signal is applied, but the interval-wise
+            pattern of PWL construction doesn't change.
 
     Returns:
         A piecewise-linear polarizing schedule beginning at time 0 with
