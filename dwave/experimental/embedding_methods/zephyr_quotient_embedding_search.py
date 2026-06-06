@@ -15,45 +15,71 @@
 import itertools
 import warnings
 from collections import namedtuple
-from typing import Callable, Literal, get_args
+from typing import Callable, Hashable, Literal, get_args
 
 import networkx as nx
 import numpy as np
 from dwave.embedding import verify_embedding
-from dwave_networkx import zephyr_coordinates, zephyr_graph
+from dwave_networkx import (
+    zephyr_coordinates,
+    zephyr_graph,
+    pegasus_coordinates,
+    pegasus_graph,
+    chimera_coordinates,
+    chimera_graph,
+)
 
 __all__ = ["zephyr_quotient_search"]
 
 YieldType = Literal["node", "edge", "rail-edge"]
 QuotientSearchType = Literal["by_quotient_rail", "by_quotient_node", "by_rail_then_node"]
+GraphFamily = Literal["zephyr", "pegasus", "chimera"]
+EmbeddingMapping = dict[Hashable, tuple[Hashable, ...]]
 
-ZephyrSearchMetadata = namedtuple(
-    "ZephyrSearchMetadata", ["max_num_yielded", "starting_num_yielded", "final_num_yielded"]
+QuotientSearchMetadata = namedtuple(
+    "QuotientSearchMetadata",
+    ["max_num_yielded", "starting_num_yielded", "final_num_yielded"],
 )
 
 
-def _validate_graph_inputs(source: nx.Graph, target: nx.Graph) -> None:
-    """Validate that source and target are Zephyr NetworkX graphs.
+def _expected_coordinate_tuple_len(family: str) -> int:
+    """Return expected coordinate tuple length for a D-Wave graph family."""
+    return 5 if family == "zephyr" else 4
 
-    Both source and target graphs must be networkx graph instances with a 'family' metadata key
-    set to 'zephyr'. Each graph must also contain 'rows', 'tile' and 'labels' metadata keys.
+
+def _validate_graph_inputs(source: nx.Graph, target: nx.Graph) -> None:
+    """Validate that source and target are supported D-Wave NetworkX graphs.
+
+    Both source and target graphs must be networkx graph instances with a ``'family'`` metadata
+    key set to one of ``'zephyr'``, ``'pegasus'``, or ``'chimera'``. Each graph must also contain
+    ``'rows'``, ``'tile'`` and ``'labels'`` metadata keys.
 
     Args:
-        source: Source Zephyr graph.
-        target: Target Zephyr graph.
+        source: Source D-Wave graph.
+        target: Target D-Wave graph.
 
     Raises:
         TypeError: If inputs are not NetworkX graphs.
-        ValueError: If either graph is not a Zephyr family graph or is missing 'rows'/'tile'
-            metadata.
+        ValueError: If either graph is not a supported family graph or is missing 'rows'/'tile'
+            metadata, or if the source and target graphs are not of the same family.
     """
     if not isinstance(source, nx.Graph) or not isinstance(target, nx.Graph):
         raise TypeError("source and target must both be networkx.Graph instances")
 
-    if source.graph.get("family") != "zephyr":
-        raise ValueError("source graph should be a zephyr family graph")
-    if target.graph.get("family") != "zephyr":
-        raise ValueError("target graph should be a zephyr family graph")
+    valid_families = set(get_args(GraphFamily))
+    source_family = source.graph.get("family")
+    target_family = target.graph.get("family")
+
+    if source_family not in valid_families:
+        raise ValueError(
+            "source graph should be a supported family graph "
+            f"{sorted(valid_families)}"
+        )
+    if target_family != source_family:
+        raise ValueError(
+            "target graph should be the same family as the source graph "
+            f"(source: {source_family}, target: {target_family})"
+        )
 
     for graph_name, graph in zip(("source", "target"), (source, target)):
         for key in ("rows", "tile", "labels"):
@@ -62,7 +88,7 @@ def _validate_graph_inputs(source: nx.Graph, target: nx.Graph) -> None:
 
 
 def _extract_graph_properties(source: nx.Graph, target: nx.Graph) -> tuple[int, int, int]:
-    """Extract and validate Zephyr graph properties, returning ``(rows, tile count, and target
+    """Extract and validate graph properties, returning ``(rows, tile count, and target
     tile count)``.
 
     Each graph must contain required metadata fields: 'rows' (number of rows) and 'tile'
@@ -71,11 +97,11 @@ def _extract_graph_properties(source: nx.Graph, target: nx.Graph) -> tuple[int, 
     count to accommodate the embedding.
 
     Args:
-        source: Source Zephyr graph.
-        target: Target Zephyr graph.
+        source: Source graph.
+        target: Target graph.
 
     Returns:
-        Source Zephyr rows, source tile count and target tile count.
+        Source rows, source tile count and target tile count.
 
     Raises:
         TypeError: If metadata values are not integers.
@@ -103,27 +129,37 @@ def _extract_graph_properties(source: nx.Graph, target: nx.Graph) -> tuple[int, 
 def _validate_search_parameters(
     quotient_search: str,
     yield_type: str,
-    embedding: dict[tuple[int, int, int, int, int], tuple[tuple[int, int, int, int, int], ...]] | None = None,
+    embedding: EmbeddingMapping | None = None,
+    *,
+    source_family: str,
+    target_family: str,
+    source_labels: str,
+    target_labels: str,
 ) -> None:
     """Validate high-level search parameters.
 
     ``quotient_search`` must be one of ``'by_quotient_rail'``, ``'by_quotient_node'``, or
     ``'by_rail_then_node'``; ``yield_type`` must be one of ``'node'``, ``'edge'``, or
     ``'rail-edge'``; and ``embedding`` must be ``None`` or a ``dict`` representing a
-    one-to-one chain mapping of Zephyr coordinate nodes, where each node is a 5-tuple
-    ``(u, w, k, j, z)`` and each value is a tuple of one target node.
+    one-to-one chain mapping where each source key is a coordinate tuple and each value is a
+    singleton target-node chain.
 
     Args:
         quotient_search: Search mode.
         yield_type: Optimization objective.
-        embedding: Optional initial one-to-one chain mapping in 5-tuple coordinate format,
-            where each node is ``(u, w, k, j, z)``. If None, no validation of the embedding is
-            performed.
+        embedding: Optional initial one-to-one chain mapping in the input graph node label format.
+            If None, no validation of the embedding is performed.
+        source_family: Source graph family metadata value.
+        target_family: Target graph family metadata value.
+        source_labels: Source graph labels metadata value.
+        target_labels: Target graph labels metadata value.
 
     Raises:
         ValueError: If ``quotient_search`` or ``yield_type`` is invalid, if ``embedding``
-            contains duplicate target nodes (i.e. is not one-to-one), or if embedding nodes/chains
-            are not in 5-tuple key and singleton-chain tuple format.
+            contains duplicate target nodes (i.e. is not one-to-one), if embedding chains are not
+            singleton tuples, if source keys are not coordinate tuples of the expected family
+            length, or if coordinate-valued target nodes do not match family conventions
+            (Zephyr=5, Pegasus/Chimera=4).
         TypeError: If ``embedding`` is provided but is not a dictionary.
     """
     valid_ksearch = get_args(QuotientSearchType)
@@ -140,14 +176,11 @@ def _validate_search_parameters(
     if embedding is not None:
         if not isinstance(embedding, dict):
             raise TypeError(f"embedding must be a dictionary when provided. Got {type(embedding)}")
-        # Validate chain format: keys are nodes, values are tuples of nodes
+        source_coord_len = _expected_coordinate_tuple_len(source_family)
+        target_coord_len = _expected_coordinate_tuple_len(target_family)
+
+        # Validate chain format: values are singleton tuples.
         for key, value in embedding.items():
-            if not isinstance(key, tuple) or len(key) != 5:
-                raise ValueError(
-                    f"embedding keys must be 5-tuples representing Zephyr coordinates. "
-                    f"Got key {key} of type {type(key)}" + 
-                    (f" with length {len(key)}" if isinstance(key, tuple) else "")
-                )
             if not isinstance(value, tuple) or len(value) != 1:
                 raise ValueError(
                     f"embedding values must be singleton tuples representing node chains. "
@@ -155,12 +188,29 @@ def _validate_search_parameters(
                     (f" with length {len(value)}" if isinstance(value, tuple) else "") + 
                     f" for key {key}"
                 )
-            for i, node in enumerate(value):
-                if not isinstance(node, tuple) or len(node) != 5:
+
+            if not isinstance(key, tuple) or len(key) != source_coord_len:
+                raise ValueError(
+                    f"source coordinate keys must be {source_coord_len}-tuples for "
+                    f"family '{source_family}'. Got key {key}"
+                )
+
+            if target_labels == "coordinate":
+                target_node = value[0]
+                if (
+                    not isinstance(target_node, tuple)
+                    or len(target_node) != target_coord_len
+                ):
                     raise ValueError(
-                        f"embedding chains must contain 5-tuples. Got {node} "
-                        f"(length {len(node) if isinstance(node, tuple) else 'N/A'}) "
-                        f"at position {i} in chain for key {key}"
+                        f"target coordinate nodes must be {target_coord_len}-tuples for "
+                        f"family '{target_family}'. Got target node {target_node} for "
+                        f"source key {key}"
+                    )
+            if source_labels == "coordinate":
+                if not isinstance(key, tuple) or len(key) != source_coord_len:
+                    raise ValueError(
+                        f"source coordinate keys must be {source_coord_len}-tuples for "
+                        f"family '{source_family}'. Got key {key}"
                     )
         # Check one-to-one constraint: flatten all chains and ensure no duplicates
         all_target_nodes = []
@@ -173,129 +223,69 @@ def _validate_search_parameters(
             )
 
 
-def _normalize_coordinate_source(
-    source: nx.Graph,
+def _normalize_coordinate(
+    graph: nx.Graph,
     m: int,
-    tp: int,
-) -> tuple[nx.Graph, set[tuple[int, int, int, int, int]], Callable[[tuple[int, int, int, int, int]], int | tuple[int, int, int, int, int]]]:
+    t: int,
+) -> tuple[nx.Graph, Callable[[tuple], Hashable]]:
     """Normalise the source graph to coordinate labels.
 
-    This function ensures the rest of the search code can operate on a
-    coordinate-labelled representation of the graphs, regardless of the input node-labelling
-    convention. The quotient search internally assumes Zephyr coordinates of the
-    form ``(u, w, k, j, z)``, where each such 5-tuple identifies one Zephyr node.
+    This function maps graphs to the family-appropriate coordinate system.
 
     Args:
-        source: Source Zephyr graph, either linear or coordinate labelled.
-        m: Number of rows (must be consistent with ``source``).
-        tp: Source tile count (must be consistent with ``source``).
+        graph: D-Wave NetworkX compatible graph, either linear or coordinate labelled.
+        m: Number of rows (must be consistent with ``graph``).
+        t: Source tile count (must be consistent with ``graph``).
 
     Returns:
-        coordinate-labelled (5-tuple) source Zephyr graph, the full canonical coordinate node set
-        implied by ``m`` and ``tp``, and a callable that maps coordinate nodes back to the original
-        source labelling space
+        coordinate-labelled (tuple) source graph and a callable that maps coordinate nodes
+        back to the original source labelling space
 
     Raises:
         ValueError: If source labels are unsupported.
     """
-    source_nodes: set[tuple[int, int, int, int, int]] = {
-        (u, w, k, j, z)
-        for u in range(2)
-        for w in range(2 * m + 1)
-        for k in range(tp)
-        for j in range(2)
-        for z in range(m)
-    }
-
-    # If the labels are linear integers, convert to coordinate labels and define a function to
-    # convert back.
-    if source.graph["labels"] == "int":
-        coords = zephyr_coordinates(m, tp)
+    if graph.graph["family"] == "zephyr":
+        graph_generator = zephyr_graph
+        shape = (m, t)
+        coords = zephyr_coordinates(*shape)
+        to_linear = coords.zephyr_to_linear
         to_tuple = coords.linear_to_zephyr
-        _source = zephyr_graph(
-            m,
-            tp,
-            coordinates=True,
-            node_list=source_nodes,
-            edge_list=[(to_tuple(n1), to_tuple(n2)) for n1, n2 in source.edges()],
-        )
+    elif graph.graph["family"] == "pegasus":
+        if t == 2:
+            graph_generator = pegasus_graph
+        else:
+            raise NotImplementedError(
+                "Pegasus normalization is currently supported only for t=2 in this module."
+            )
+        shape = (m,)
+        coords = pegasus_coordinates(*shape)
+        to_linear = coords.pegasus_to_linear
+        to_tuple = coords.linear_to_pegasus
+    elif graph.graph["family"] == "chimera":
+        shape = (m, m, t)
+        graph_generator = chimera_graph
+        coords = chimera_coordinates(*shape)
+        to_linear = coords.chimera_to_linear
+        to_tuple = coords.linear_to_chimera
 
-        def to_source_linear(n: tuple[int, int, int, int, int]) -> int:
-            return coords.zephyr_to_linear(n)
+    # As necessary convert edge_list to coordinates and define inversion
+    if graph.graph["labels"] == "int":
+        edge_list = [(to_tuple(n1), to_tuple(n2)) for n1, n2 in graph.edges()]
+        node_list = [to_tuple(n) for n in graph.nodes()]
+    elif graph.graph["labels"] == "coordinate":
+        edge_list = graph.edges()
+        node_list = graph.nodes()
 
-        return _source, source_nodes, to_source_linear
+        def to_linear(n: tuple) -> tuple:
+            return n
 
-    # IF labels are not linear nor coordinate, we raise an error.
-    if source.graph["labels"] != "coordinate":
+    else:
         raise ValueError("source graph has unknown labelling scheme")
 
-    _source = source.copy()
-    for n in source_nodes:
-        if not _source.has_node(n):
-            warnings.warn(
-                f"Source graph is missing expected node {n}. We are manually adding it to the "
-                "graph, along with any other missing nodes.", UserWarning
-            )
-            _source.add_nodes_from(source_nodes)
-
-    # If the labels are coordinate. Then we just return the graph as is and the identity function
-    # for to_source:
-
-    def to_source(n: tuple[int, int, int, int, int]) -> tuple[int, int, int, int, int]:
-        return n
-
-    return _source, source_nodes, to_source
-
-
-def _normalize_coordinate_target(
-    target: nx.Graph,
-    m: int,
-    t: int,
-) -> tuple[nx.Graph, Callable[[tuple[int, int, int, int, int]], int | tuple[int, int, int, int, int]]]:
-    """Return a coordinate-labelled target graph and conversion callable.
-
-    This helper normalises ``target`` to coordinate labels and returns a callable that maps
-    candidate nodes into the target's original label space.
-
-    Similar to ``_normalize_coordinate_source``, but it does not return the full canonical node set
-    because the search only checks node presence in the target rather than iterating over all
-    nodes, and the target may be defective and missing some nodes.
-
-    Args:
-        target: Target Zephyr graph, either linear or coordinate labelled.
-        m: Number of rows (must be consistent with ``target``).
-        t: Target tile count (must be consistent with ``target``).
-
-    Returns:
-        Target subgraph relabelled into coordinates, and a callable that maps coordinate nodes back
-        to the original target labelling space.
-
-    Raises:
-        ValueError: If target labels are unsupported.
-    """
-    if target.graph["labels"] == "int":
-        coords = zephyr_coordinates(m, t)
-        to_tuple = coords.linear_to_zephyr
-        _target = zephyr_graph(
-            m,
-            t,
-            coordinates=True,
-            node_list=[to_tuple(n) for n in target.nodes()],
-            edge_list=[(to_tuple(n1), to_tuple(n2)) for n1, n2 in target.edges()],
-        )
-
-        def to_target_linear(n: tuple[int, int, int, int, int]) -> int:
-            return coords.zephyr_to_linear(n)
-
-        return _target, to_target_linear
-
-    if target.graph["labels"] != "coordinate":
-        raise ValueError("target graph has unknown labelling scheme")
-
-    def to_target(n: tuple[int, int, int, int, int]) -> tuple[int, int, int, int, int]:
-        return n
-
-    return target, to_target
+    _source = graph_generator(
+        m, t, coordinates=True, node_list=node_list, edge_list=edge_list
+    )
+    return _source, to_linear
 
 
 def _boundary_proposals(
@@ -308,6 +298,8 @@ def _boundary_proposals(
     z: int = 0,
 ) -> set[tuple[int, int, int, int, int]]:
     r"""Generate candidate targets for boundary expansion.
+
+    This routine applies only to Zephyr quotient search.
 
     For a fixed quotient index ``(u, w, j, z)``, this function proposes all target ``k`` locations
     in that rail, then removes the entries already occupied by the currently mapped source
@@ -335,13 +327,13 @@ def _boundary_proposals(
 def _node_search(
     source: nx.Graph,
     target: nx.Graph,
-    embedding: dict[tuple[int, int, int, int, int], tuple[int, int, int, int, int]],
+    embedding: dict[tuple, tuple],
     *,
     expand_boundary_search: bool = True,
     ksymmetric: bool = False,
     yield_type: YieldType = "edge",
-) -> dict[tuple[int, int, int, int, int], tuple[int, int, int, int, int]]:
-    r"""Greedy node-level quotient search over Zephyr coordinates.
+) -> dict[tuple, tuple]:
+    r"""Greedy node-level quotient search
 
     The source and target are viewed in quotient blocks indexed by :math:`(u, w, j, z)`, each
     containing :math:`tp` source nodes. For each block, we propose target nodes with the same
@@ -396,10 +388,8 @@ def _node_search(
     in rail-level search).
 
     Args:
-        source: Coordinate-labeled source Zephyr graph. Each coordinate node is a
-            5-tuple ``(u, w, k, j, z)``.
-        target: Coordinate-labeled target Zephyr graph. Each coordinate node is a
-            5-tuple ``(u, w, k, j, z)``.
+        source: Coordinate-labeled graph. 
+        target: Coordinate-labeled graph. 
         embedding: Current mapping, updated in-place.
         expand_boundary_search: If ``True``, augment boundary columns using the adjacent
             internal column. Defaults to ``True``.
@@ -412,10 +402,19 @@ def _node_search(
 
     Raises:
         ValueError: If graph geometry metadata is inconsistent.
+        NotImplementedError: If called on a non-Zephyr family.
     """
     m = source.graph["rows"]
-    tp = source.graph["tile"]
-    t = target.graph["tile"]
+    if source.graph["family"] == "pegasus":
+        tp = 1  # Only non-trivial case
+        t = 2  # Only case.
+    else:
+        tp = source.graph["tile"]
+        t = target.graph["tile"]
+    if source.graph["family"] != "zephyr":
+        raise NotImplementedError(
+            "node search is currently only implemented for Zephyr graphs"
+        )
     if m != target.graph["rows"]:
         raise ValueError("source and target rows must match for node search")
 
@@ -495,10 +494,16 @@ def _rail_search(
     ksymmetric: bool = False,
     yield_type: YieldType = "edge",
 ) -> dict[tuple[int, int, int, int, int], tuple[int, int, int, int, int]]:
-    r"""Greedy rail-level quotient search over Zephyr rails.
+    r"""Greedy rail-level quotient search over rails.
 
-    A Zephyr rail is indexed by :math:`(u, w, k)` and contains nodes
-    :math:`(u, w, k, j, z)` for :math:`j \in \{0,1\}` and :math:`z \in \{0,\dots,m-1\}`.
+    Rails are connected components that consist of exclusively
+    vertical (u=0) or horizontal (u=1)qubits.
+
+    Zephyr rails are indexed by :math:`(u, w, k)`.
+    Pegasus rails are indexed by :math:`(u, w, k_0, k_1)`.
+    Chimera rails are indexed by (u, w, k), note that for Chimera
+    coordinates (i,j,u,k) w=i for vertical qubits, and j for horizontal
+    qubits.
 
     For fixed orientation and column :math:`(u, w)`, define the source rail family
 
@@ -559,10 +564,8 @@ def _rail_search(
     each source rail.
 
     Args:
-        source: Coordinate-labeled source Zephyr graph. Each coordinate node is a
-            5-tuple ``(u, w, k, j, z)``.
-        target: Coordinate-labeled target Zephyr graph. Each coordinate node is a
-            5-tuple ``(u, w, k, j, z)``.
+        source: Coordinate-labeled source graph.
+        target: Coordinate-labeled target graph.
         embedding: Current mapping, updated in-place.
         expand_boundary_search: If ``True``, include adjacent-column rail proposals when
             :math:`w` is at a boundary. Defaults to ``True``.
@@ -575,10 +578,19 @@ def _rail_search(
 
     Raises:
         ValueError: If duplicate target assignments are produced.
+        NotImplementedError: If called on a non-Zephyr family.
     """
     m = source.graph["rows"]
-    tp = source.graph["tile"]
-    t = target.graph["tile"]
+    if source.graph["family"] == "pegasus":
+        tp = 1  # Only non-trivial case
+        t = 2  # Only case.
+    else:
+        tp = source.graph["tile"]
+        t = target.graph["tile"]
+    if target.graph["family"] != "zephyr":
+        raise NotImplementedError(
+            "rail search is currently only implemented for Zephyr targets"
+        )
 
     if yield_type == "node":
         rail_score = {
@@ -699,21 +711,24 @@ def zephyr_quotient_search(
     target: nx.Graph,
     *,
     quotient_search: QuotientSearchType = "by_quotient_rail",
-    embedding: dict[tuple[int, int, int, int, int], tuple[tuple[int, int, int, int, int], ...]] | None = None,
+    embedding: EmbeddingMapping | None = None,
     expand_boundary_search: bool = True,
     ksymmetric: bool = False,
     yield_type: YieldType = "edge",
-) -> tuple[dict[tuple[int, int, int, int, int], tuple[tuple[int, int, int, int, int], ...]], ZephyrSearchMetadata]:
-    r"""Compute a high-yield Zephyr-to-Zephyr embedding.
+) -> tuple[EmbeddingMapping, QuotientSearchMetadata]:
+    r"""Compute a high-yield quotient embedding for supported D-Wave graph families.
 
-    This routine starts from a source Zephyr graph with ``m`` rows and ``tp`` tiles,
-    and maps it into a target Zephyr graph with the same ``m`` rows and ``t >= tp``
+    This routine starts from a source graph with ``m`` rows and ``tp`` tiles,
+    and maps it into a target graph with the same ``m`` rows and ``t >= tp``
     tiles. It is designed for defective targets where a direct identity map may lose
     nodes or edges. Since a greedy method is used for embedding search, it is possible it fails to
     find a 1:1 embedding where one is viable. A complete method such as
     :code:``minorminer.subgraph.find_subgraph`` may be more appropriate in a scenario such as this,
     especially with customization of parameters to the target families. Similarly, when defect rates
     are high direct use of :code:``minorminer.find_embedding`` may be a more efficient strategy.
+
+    The quotient construction and greedy update rules in this implementation are based on Zephyr
+    coordinate blocks.
 
     The search is organized around the **quotient graph** of the Zephyr topology, formed by
     contracting fine-grained coordinate indices so that each equivalence class maps to a single
@@ -745,18 +760,22 @@ def zephyr_quotient_search(
     runs afterward it switches to ordinary edge-preservation scoring. The final yield for both
     ``"edge"`` and ``"rail-edge"`` is reported as a number of preserved source edges.
 
+    Multi-family API note: this function accepts Zephyr/Pegasus/Chimera graph metadata and
+    coordinate-form embedding validation at the API boundary, but the current quotient search
+    kernels are implemented only for Zephyr execution paths.
+
     Args:
-        source: Zephyr source graph (linear or coordinate labels).
-        target: Zephyr target graph (linear or coordinate labels).
+        source: Source graph (linear or coordinate labels) from a supported D-Wave topology
+            family: ``'zephyr'``, ``'pegasus'``, or ``'chimera'``.
+        target: Target graph (linear or coordinate labels) from a supported D-Wave topology
+            family: ``'zephyr'``, ``'pegasus'``, or ``'chimera'``.
         quotient_search: Search strategy. One of ``'by_quotient_rail'``,
             ``'by_quotient_node'``, or ``'by_rail_then_node'``. See full docstrings for a
             description of these. Defaults to ``'by_quotient_rail'``.
         embedding: Optional initial one-to-one chain mapping. If omitted,
             the identity on source coordinate indices is used (wrapped in singleton chains).
             Defaults to ``None``. This must be a chain mapping where each source node maps to
-            a tuple of one or more target nodes (e.g., ``{source_node: (target_node,)}`` for
-            singleton chains). In coordinate form, each node is the 5-tuple
-            ``(u, w, k, j, z)``.
+            a singleton tuple target chain, e.g. ``{source_node: (target_node,)}``.
         expand_boundary_search: Enable additional boundary proposals. Defaults to ``True``.
         ksymmetric: Assume source ``k`` ordering can be treated symmetrically during greedy
             selection when valid. Defaults to ``False``.
@@ -766,7 +785,7 @@ def zephyr_quotient_search(
     Returns:
         A pruned one-to-one chain embedding of the form ``source_node -> (target_node,)`` (singleton
         chains) that contains only mappings whose target node exists in the target, and a
-        :class:`ZephyrSearchMetadata` namedtuple with fields ``max_num_yielded``,
+        :class:`QuotientSearchMetadata` namedtuple with fields ``max_num_yielded``,
         ``starting_num_yielded``, and ``final_num_yielded``.
 
     .. note::
@@ -830,16 +849,23 @@ def zephyr_quotient_search(
 
     _validate_graph_inputs(source, target)
     m, tp, t = _extract_graph_properties(source, target)
-    _validate_search_parameters(quotient_search, yield_type, embedding)
+    _validate_search_parameters(
+        quotient_search,
+        yield_type,
+        embedding,
+        source_family=source.graph["family"],
+        target_family=target.graph["family"],
+        source_labels=source.graph["labels"],
+        target_labels=target.graph["labels"],
+    )
 
-    # Make sure source and target are in coordinate form (5-tuples)
-    _source, source_nodes, to_source = _normalize_coordinate_source(source, m, tp)
-    _target, to_target = _normalize_coordinate_target(target, m, t)
-    target_nodeset = set(_target.nodes())
+    # Make sure source and target are in coordinate form (tuples)
+    _source, to_source = _normalize_coordinate(source, m, tp)
+    _target, to_target = _normalize_coordinate(target, m, t)
 
     if embedding is None:
         # Start with the identity mapping
-        working_embedding = {n: n for n in source_nodes}
+        working_embedding = {n: n for n in _source.nodes()}
     else:
         # Convert chain format to internal single-node format
         working_embedding = {k: v[0] for k, v in embedding.items()}
@@ -916,7 +942,9 @@ def zephyr_quotient_search(
     # entries that map to non-existent target nodes. We prune those out before returning the final
     # embedding:
     pruned_embedding = {
-        to_source(k): to_target(v) for k, v in working_embedding.items() if v in target_nodeset
+        to_source(k): to_target(v)
+        for k, v in working_embedding.items()
+        if v in _target.nodes()
     }
 
     # Convert to chain format for return value
@@ -925,7 +953,7 @@ def zephyr_quotient_search(
     if full_yield and yield_type != "node":
         verify_embedding(emb=pruned_embedding, source=source, target=target)
 
-    metadata = ZephyrSearchMetadata(
+    metadata = QuotientSearchMetadata(
         max_num_yielded=max_num_yielded,
         starting_num_yielded=starting_yield,
         final_num_yielded=num_yielded,

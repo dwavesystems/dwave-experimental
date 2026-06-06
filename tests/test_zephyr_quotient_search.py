@@ -21,7 +21,7 @@ from dwave_networkx import zephyr_graph
 
 from dwave.experimental.embedding_methods import zephyr_quotient_search
 from dwave.experimental.embedding_methods.zephyr_quotient_embedding_search import \
-    ZephyrSearchMetadata
+    QuotientSearchMetadata
 
 
 def generate_faulty_zephyr_graph(
@@ -146,7 +146,7 @@ class TestYieldImprovement(unittest.TestCase):
             ksymmetric=ksymmetric,
         )
 
-        self.assertIsInstance(metadata, ZephyrSearchMetadata)
+        self.assertIsInstance(metadata, QuotientSearchMetadata)
         self.assertGreaterEqual(
             metadata.final_num_yielded,
             metadata.starting_num_yielded,
@@ -187,7 +187,7 @@ class TestYieldImprovement(unittest.TestCase):
 
 
 class TestMetadataConsistency(unittest.TestCase):
-    """Verify the ZephyrSearchMetadata fields are internally consistent."""
+    """Verify the QuotientSearchMetadata fields are internally consistent."""
 
     @classmethod
     def setUpClass(cls):
@@ -231,7 +231,7 @@ class TestMetadataConsistency(unittest.TestCase):
     def test_return_is_two_tuple(self):
         sub_emb, metadata = zephyr_quotient_search(self.source, self.target)
         self.assertIsInstance(sub_emb, dict)
-        self.assertIsInstance(metadata, ZephyrSearchMetadata)
+        self.assertIsInstance(metadata, QuotientSearchMetadata)
 
 
 class TestGraphInputValidation(unittest.TestCase):
@@ -250,9 +250,13 @@ class TestGraphInputValidation(unittest.TestCase):
     def test_source_or_target_wrong_family_raises_value_error(self):
         bad_graph = self.source.copy()
         bad_graph.graph["family"] = "chimera"
-        with self.assertRaisesRegex(ValueError, r"source graph should be a zephyr family graph"):
+        with self.assertRaisesRegex(
+            ValueError, r"target graph should be the same family as the source graph"
+        ):
             zephyr_quotient_search(bad_graph, self.target)
-        with self.assertRaisesRegex(ValueError, r"target graph should be a zephyr family graph"):
+        with self.assertRaisesRegex(
+            ValueError, r"target graph should be the same family as the source graph"
+        ):
             zephyr_quotient_search(self.source, bad_graph)
 
     def test_source_or_target_missing_rows_metadata_raises_value_error(self):
@@ -338,7 +342,7 @@ class TestSearchParameterValidation(unittest.TestCase):
         """Embedding keys must be 5-tuples, not other types."""
         bad_embedding = {"not_a_tuple": ((0, 0, 0, 0, 0),)}  # type: ignore
         with self.assertRaisesRegex(
-            ValueError, r"embedding keys must be 5-tuples representing Zephyr coordinates"
+            ValueError, r"source coordinate keys must be 5-tuples for family 'zephyr'"
         ):
             zephyr_quotient_search(
                 self.source, self.target, embedding=bad_embedding  # type: ignore
@@ -348,7 +352,7 @@ class TestSearchParameterValidation(unittest.TestCase):
         """Embedding keys must be exactly 5-tuples."""
         bad_embedding = {(0, 0, 0, 0): ((0, 0, 0, 0, 0),)}  # 4-tuple key instead of 5-tuple
         with self.assertRaisesRegex(
-            ValueError, r"embedding keys must be 5-tuples representing Zephyr coordinates"
+            ValueError, r"source coordinate keys must be 5-tuples for family 'zephyr'"
         ):
             zephyr_quotient_search(
                 self.source, self.target, embedding=bad_embedding  # type: ignore
@@ -378,7 +382,7 @@ class TestSearchParameterValidation(unittest.TestCase):
         """Nodes in embedding chains must be 5-tuples."""
         bad_embedding = {(0, 0, 0, 0, 0): ((0, 0, 0, 0),)}  # 4-tuple instead of 5-tuple
         with self.assertRaisesRegex(
-            ValueError, r"embedding chains must contain 5-tuples"
+            ValueError, r"target coordinate nodes must be 5-tuples for family 'zephyr'"
         ):
             zephyr_quotient_search(
                 self.source, self.target, embedding=bad_embedding  # type: ignore
