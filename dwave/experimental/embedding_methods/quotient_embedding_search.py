@@ -110,8 +110,12 @@ def _extract_graph_properties(source: nx.Graph, target: nx.Graph) -> tuple[int, 
             rows, or if the target tile count is less than the source tile count.
     """
     m = source.graph["rows"]
-    tp = source.graph["tile"]
-    t = target.graph["tile"]
+    if source.graph["family"] == "pegasus":
+        tp = 1
+        t = 2
+    else:
+        tp = source.graph["tile"]
+        t = target.graph["tile"]
 
     for v, name in zip((m, tp, t), ("rows", "source tile", "target tile")):
         if not isinstance(v, int):
@@ -227,6 +231,7 @@ def _normalize_coordinate(
     graph: nx.Graph,
     m: int,
     t: int,
+    add_singleton_nodes: bool = False,
 ) -> tuple[nx.Graph, Callable[[tuple], Hashable]]:
     """Normalise the source graph to coordinate labels.
 
@@ -236,7 +241,8 @@ def _normalize_coordinate(
         graph: D-Wave NetworkX compatible graph, either linear or coordinate labelled.
         m: Number of rows (must be consistent with ``graph``).
         t: Source tile count (must be consistent with ``graph``).
-
+        add_singleton_nodes: If ``True``, add any missing nodes in the coordinate-labelled
+            source graph as singleton nodes.
     Returns:
         coordinate-labelled (tuple) source graph and a callable that maps coordinate nodes
         back to the original source labelling space
@@ -251,12 +257,7 @@ def _normalize_coordinate(
         to_linear = coords.zephyr_to_linear
         to_tuple = coords.linear_to_zephyr
     elif graph.graph["family"] == "pegasus":
-        if t == 2:
-            graph_generator = pegasus_graph
-        else:
-            raise NotImplementedError(
-                "Pegasus normalization is currently supported only for t=2 in this module."
-            )
+        graph_generator = pegasus_graph
         shape = (m,)
         coords = pegasus_coordinates(*shape)
         to_linear = coords.pegasus_to_linear
@@ -281,10 +282,25 @@ def _normalize_coordinate(
 
     else:
         raise ValueError("source graph has unknown labelling scheme")
-
+    generator_args = dict(coordinates=True, node_list=node_list, edge_list=edge_list)
+    if add_singleton_nodes:
+        if graph.graph['family'] == 'pegasus':
+            # For Pegasus, we need to add singleton nodes with odd k indices to get the full single-rail graph
+            generator_args['node_list'] = [(u, w//6, (2*w)%12 + k, z) for u in range(2) for w in range(6*m) for k in range(t) for z in range(m-1)]
+            generator_args['fabric_only'] = False
+        else:
+            # Default works
+            generator_args['node_list'] = None
+        
     _source = graph_generator(
-        m, t, coordinates=True, node_list=node_list, edge_list=edge_list
+        *shape, **generator_args
     )
+    if graph.graph["family"] == "pegasus" and t==1:
+        # Pegasus quotient search only works for single-rail source graphs, which are defined by having only even k indices. 
+        # If any odd k nodes are present, raise an error.
+        if any(n[2] % 2 != 0 for n in _source.nodes()):
+            raise ValueError('Pegasus quotient search requires that the source graph only contains nodes with even k indices, ' \
+                'which defines a pegasus subgraph with single rails as opposed to pairs of rails.')
     return _source, to_linear
 
 
@@ -488,25 +504,29 @@ def _node_search(
 def _rail_search(
     source: nx.Graph,
     target: nx.Graph,
-    embedding: dict[tuple[int, int, int, int, int], tuple[int, int, int, int, int]],
+    embedding: dict[tuple, tuple],
     *,
     expand_boundary_search: bool = True,
     ksymmetric: bool = False,
     yield_type: YieldType = "edge",
-) -> dict[tuple[int, int, int, int, int], tuple[int, int, int, int, int]]:
+) -> dict[tuple, tuple]:
     r"""Greedy rail-level quotient search over rails.
 
     Rails are connected components that consist of exclusively
-    vertical (u=0) or horizontal (u=1)qubits.
+    vertical (u=0) or horizontal (u=1) qubits.
 
-    Zephyr rails are indexed by :math:`(u, w, k)`.
-    Pegasus rails are indexed by :math:`(u, w, k_0, k_1)`.
-    Chimera rails are indexed by (u, w, k), note that for Chimera
-    coordinates (i,j,u,k) w=i for vertical qubits, and j for horizontal
-    qubits.
+    Rails are indexed by :math:`(u, w, k)`, where ``u`` and ``w`` are rail labels (not
+    family-specific coordinate names): ``u`` denotes ``orientation`` and ``w`` denotes
+    ``orthogonal_displacement``.
+    Zephyr rails contain all qubits (u, w, k, *, *).
+    Chimera rails contain (*, w, u, k) for u=0, (w, *, u, k) for u=1. 
+    Pegasus rails contain (u, w//6, (2 w)%12 + k, *)
 
-    For fixed orientation and column :math:`(u, w)`, define the source rail family
+    For fixed rail labels :math:`(u, w)` (orientation and orthogonal displacement), define
+    the source rail family
 
+
+    The following description applies to Zephyr, but generalizes
     .. math::
 
         \mathcal{R}^{S}_{u,w} := \{(u, w, k_s) : k_s \in \{0, \dots, t_p-1\}\}.
@@ -580,49 +600,65 @@ def _rail_search(
         ValueError: If duplicate target assignments are produced.
         NotImplementedError: If called on a non-Zephyr family.
     """
+    expand_boundary_search = expand_boundary_search and source.graph["family"] == "zephyr"
     m = source.graph["rows"]
     if source.graph["family"] == "pegasus":
-        tp = 1  # Only non-trivial case
-        t = 2  # Only case.
-    else:
+        # Only non-trivial case: contraction of odd-couplers.
+        u_index = 0
+        tp = 1
+        t = 2 
+        uw_iterator = list(itertools.product(range(2), range(6 * m)))
+        def rail_nodes(u,w,k):
+            for z in range(m-1):
+                yield (u,w//6,w%6+k,z)
+    elif source.graph["family"] == "zephyr":
+        u_index = 0
         tp = source.graph["tile"]
         t = target.graph["tile"]
-    if target.graph["family"] != "zephyr":
-        raise NotImplementedError(
-            "rail search is currently only implemented for Zephyr targets"
-        )
+        uw_iterator = list(itertools.product(range(2), range(2 * m + 1)))
+        def rail_nodes(u,w,k):
+            for j in range(2):
+                for z in range(m):
+                    yield (u,w,k,j,z)
+        def quotient_base(n):
+            return n[:2] + (0,) + n[3:]
+    elif source.graph["family"] == "chimera":
+        u_index = 2
+        tp = source.graph["tile"]
+        t = target.graph["tile"]
+        uw_iterator = list(itertools.product(range(2), range(m)))
+        def rail_nodes(u,w,k):
+            for z in range(m):
+                yield (w*u+z*(1-u),w*(1-u)+z*u,u,k)
+    else:
+        raise ValueError("unknown graph family")
 
     if yield_type == "node":
         rail_score = {
-            (u, w, k): sum(target.has_node((u, w, k, j, z)) for j in range(2) for z in range(m))
-            for u in range(2)
-            for w in range(2 * m + 1)
-            for k in range(t)
+            (u, w, k): sum(target.has_node(node) for node in rail_nodes(u, w, k))
+            for u, w in uw_iterator for k in range(t)
         }
     else:
         # Precompute per-rail edge number for fast proposal scoring.
         rail_score = {
             (u, w, k): target.subgraph(
-                {(u, w, k, j, z) for j in range(2) for z in range(m)}
+                {node for node in rail_nodes(u, w, k)}
             ).number_of_edges()
-            for u in range(2)
-            for w in range(2 * m + 1)
-            for k in range(t)
+            for u, w in uw_iterator for k in range(t)
         }
 
     # when optimising for edges, we consider all edges that do not share the same orientation
     source_external_edges = (
-        source.edge_subgraph({e for e in source.edges() if e[0][0] != e[1][0]})
+        source.edge_subgraph({e for e in source.edges() if e[0][u_index] != e[1][u_index]}).copy()
         if "edge" in yield_type
         else None
     )
-
+    source_external_edges.add_nodes_from(source.nodes())  # Pathological edge case
     if expand_boundary_search:
-        uw_iterator = itertools.product(range(2), list(range(1, 2 * m)) + [0, 2 * m])
+        uw_iterator = list(itertools.product(range(2), list(range(1, 2 * m)) + [0, 2 * m]))
         ksymmetric_original = ksymmetric
-    else:
-        uw_iterator = itertools.product(range(2), range(2 * m + 1))
-
+    
+        
     for u, w in uw_iterator:
         # rail proposals preserve orientation in the target graph and only move in (w, k) quotient
         # graph.
@@ -650,15 +686,14 @@ def _rail_search(
                 counts = [
                     rail_score[(u, w_t, k_t)]
                     + sum(
-                        int(target.has_edge(embedding[n_s], (u, w_t, k_t, j, z)))
-                        for j in range(2)
-                        for z in range(m)
-                        # n_s will be nodes in the source graph with a different orientation
+                        int(target.has_edge(embedding[neigh_r], n))
+                        for n, n_s in zip(rail_nodes(u,w_t,k_t),rail_nodes(u, w , 0))
+                        # neigh_r will be nodes in the source graph with a different orientation
                         # to the current rail, that are neighbours of nodes in the current rail.
                         # Note that we pick k=0 because ksymmetric means that all k indices in the
                         # source rail are interchangeable, so we can just look at one of them.
-                        for n_s in source_external_edges.neighbors((u, w, 0, j, z))
-                        if n_s in embedding
+                        for neigh_r in source_external_edges.neighbors(n_s)
+                        if neigh_r in embedding
                     )
                     for w_t, k_t in proposals
                 ]
@@ -667,10 +702,9 @@ def _rail_search(
             # Apply chosen rails to all nodes in the quotient rail block.
             embedding.update(
                 {
-                    (u, w, k, j, z): (u,) + proposals[p_indices[k]] + (j, z)
+                    n1: n2
                     for k in range(tp)
-                    for j in range(2)
-                    for z in range(m)
+                    for n1, n2 in zip(rail_nodes(u,w,k), rail_nodes(u,*proposals[p_indices[k]]))
                 }
             )
         else:
@@ -678,25 +712,24 @@ def _rail_search(
             # "rail-edge".
             if source_external_edges is None:
                 raise ValueError("internal error: missing external edge subgraph")
+            
             permutation_scores = {
                 proposal_perm: sum(rail_score[(u,) + proposal] for proposal in proposal_perm)
                 + sum(
-                    int(target.has_edge(embedding[n_s], (u,) + proposal + (j, z)))
+                    int(target.has_edge(embedding[n_neigh], n))
                     for k_s, proposal in enumerate(proposal_perm)
-                    for j in range(2)
-                    for z in range(m)
-                    for n_s in source_external_edges.neighbors((u, w, k_s, j, z))
-                    if n_s in embedding
+                    for n, n_s in zip(rail_nodes(u,*proposal),rail_nodes(u, w , k_s))
+                    for n_neigh in source_external_edges.neighbors(n_s)
+                    if n_neigh in embedding
                 )
                 for proposal_perm in itertools.permutations(proposals, tp)
             }
             selected = max(permutation_scores, key=lambda k: permutation_scores[k])
             embedding.update(
                 {
-                    (u, w, k, j, z): (u,) + selected[k] + (j, z)
+                    n_s: n_t
                     for k in range(tp)
-                    for j in range(2)
-                    for z in range(m)
+                    for n_s, n_t in zip(rail_nodes(u,w,k), rail_nodes(u, *selected[k]))
                 }
             )
 
@@ -727,10 +760,10 @@ def quotient_search(
     especially with customization of parameters to the target families. Similarly, when defect rates
     are high direct use of :code:``minorminer.find_embedding`` may be a more efficient strategy.
 
-    The quotient construction and greedy update rules in this implementation are based on Zephyr
-    coordinate blocks.
+    The quotient construction and greedy update rules in this implementation are based on Zephyr,
+    Pegasus or Chimera coordinate blocks presented in the D-Wave networkx format.
 
-    The search is organized around the **quotient graph** of the Zephyr topology, formed by
+    The search is organized around the **quotient graph** of the topology, formed by
     contracting fine-grained coordinate indices so that each equivalence class maps to a single
     quotient node. Two coarsenings are used:
 
@@ -860,9 +893,8 @@ def quotient_search(
     )
 
     # Make sure source and target are in coordinate form (tuples)
-    _source, to_source = _normalize_coordinate(source, m, tp)
+    _source, to_source = _normalize_coordinate(source, m, tp, add_singleton_nodes=True)
     _target, to_target = _normalize_coordinate(target, m, t)
-
     if embedding is None:
         # Start with the identity mapping
         working_embedding = {n: n for n in _source.nodes()}
