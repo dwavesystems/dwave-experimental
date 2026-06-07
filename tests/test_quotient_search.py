@@ -17,17 +17,17 @@ import unittest
 
 import networkx as nx
 import numpy as np
-from dwave_networkx import zephyr_graph
+from dwave_networkx import zephyr_graph, pegasus_graph, chimera_graph
 
 from dwave.experimental.embedding_methods import quotient_search
 from dwave.experimental.embedding_methods.quotient_embedding_search import \
     QuotientSearchMetadata
 
 
-def generate_faulty_zephyr_graph(
-    m: int, t: int, proportion: float, uniform_proportion: float, seed: int | None = None
+def generate_faulty_graph(
+    m: int, t: int, proportion: float, uniform_proportion: float, seed: int | None = None, family: Literal["chimera", "pegasus", "zephyr"] = "zephyr"
 ) -> nx.Graph:
-    """Create a Zephyr graph with simulated hardware faults.
+    """Create a graph with simulated hardware faults.
 
     Nodes are deleted in two phases: (1) ``round(proportion * uniform_proportion * N)`` nodes are
     chosen uniformly at random and removed; (2) ``round(proportion * (1 - uniform_proportion) * N)``
@@ -52,13 +52,22 @@ def generate_faulty_zephyr_graph(
             uniformly (the complementary fraction is chosen by distance-based
             sampling).
         seed: RNG seed for reproducibility. Defaults to ``None``.
+        family: Graph family. One of ``'chimera'``, ``'pegasus'``, or ``'zephyr'``. Defaults to ``'zephyr'``.
 
     Returns:
-        Copy of the full Zephyr graph with faulty nodes removed.
+        Copy of the full graph with faulty nodes removed.
         All graph-level metadata (family, rows, tile, labels) is preserved.
     """
     rng = np.random.default_rng(seed)
-    full_graph = zephyr_graph(m, t, coordinates=True)
+    if family == "zephyr":
+        full_graph = zephyr_graph(m, t, coordinates=True)
+    elif family == "pegasus":
+        # t is ignored. 
+        full_graph = pegasus_graph(m, coordinates=True)
+    elif family == "chimera":
+        full_graph = chimera_graph(m, m, t, coordinates=True)
+    else:
+        raise ValueError(f"Unsupported graph family: {family}")
     all_nodes = list(full_graph.nodes())
     N = len(all_nodes)
 
@@ -106,7 +115,7 @@ def generate_faulty_zephyr_graph(
     return faulty_graph
 
 
-class TestYieldImprovement(unittest.TestCase):
+class TestZephyrYieldImprovement(unittest.TestCase):
     """Check that the greedy search never reduces the yield objective."""
 
     _SOURCE_M = 6
@@ -123,12 +132,13 @@ class TestYieldImprovement(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.source = zephyr_graph(cls._SOURCE_M, cls._SOURCE_TP, coordinates=True)
-        cls.target = generate_faulty_zephyr_graph(
+        cls.target = generate_faulty_graph(
             cls._TARGET_M,
             cls._TARGET_T,
             proportion=cls._PROPORTION,
             uniform_proportion=cls._UNIFORM_PROPORTION,
             seed=cls._SEED,
+            family='zephyr',
         )
         # Make sure that the target is a connected graph:
         if not nx.is_connected(cls.target):
@@ -192,8 +202,8 @@ class TestMetadataConsistency(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.source = zephyr_graph(6, 2, coordinates=True)
-        cls.target = generate_faulty_zephyr_graph(
-            6, 4, proportion=0.10, uniform_proportion=0.10, seed=7795
+        cls.target = generate_faulty_graph(
+            6, 4, proportion=0.10, uniform_proportion=0.10, seed=7795, family='zephyr'
         )
 
     def test_metadata_ordering(self):

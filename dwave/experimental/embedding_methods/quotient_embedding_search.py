@@ -364,6 +364,9 @@ def _node_search(
 ) -> dict[tuple, tuple]:
     r"""Greedy node-level quotient search
 
+    Implementation status: currently implemented only for Zephyr. For Chimera and Pegasus,
+    this routine raises ``NotImplementedError``.
+
     The source and target are viewed in quotient blocks indexed by :math:`(u, w, j, z)`, each
     containing :math:`tp` source nodes. For each block, we propose target nodes with the same
     :math:`(u, w, j, z)` and varying target :math:`k`, optionally augmented with boundary proposals.
@@ -531,6 +534,9 @@ def _rail_search(
 ) -> dict[tuple, tuple]:
     r"""Greedy rail-level quotient search over rails.
 
+    Implementation status: rail-level search supports Zephyr, Chimera, and Pegasus coordinate
+    families. 
+
     Rails are connected components that consist of exclusively
     vertical (u=0) or horizontal (u=1) qubits.
 
@@ -607,7 +613,8 @@ def _rail_search(
         target: Coordinate-labeled target graph.
         embedding: Current mapping, updated in-place.
         expand_boundary_search: If ``True``, include adjacent-column rail proposals when
-            :math:`w` is at a boundary. Defaults to ``True``.
+            :math:`w` is at a boundary. Defaults to ``True``. Boundary expansion is only 
+            relevant for Zephyr, it is ignored for other graph families.
         ksymmetric: If ``True``, treat source :math:`k` order as interchangeable when scoring
             rails. Defaults to ``False``.
         yield_type: ``"node"``, ``"edge"``, or ``"rail-edge"``. Defaults to ``"edge"``.
@@ -619,9 +626,6 @@ def _rail_search(
         ValueError: If duplicate target assignments are produced.
         NotImplementedError: If called on a non-Zephyr family.
     """
-    assert (
-        all(n[2] % 2 == 0 for n in source.nodes()) if source is not None else True
-    ), "external edge subgraph should only contain nodes with k=0 in the source graph"
 
     expand_boundary_search = (
         expand_boundary_search and source.graph["family"] == "zephyr"
@@ -689,12 +693,8 @@ def _rail_search(
         if "edge" in yield_type
         else None
     )
-    assert (
-        all(n[2] % 2 == 0 for n in source_external_edges.nodes())
-        if source_external_edges is not None
-        else True
-    ), "external edge subgraph should only contain nodes with k=0 in the source graph"
-    source_external_edges.add_nodes_from(source.nodes())  # Pathological edge case
+    if source_external_edges:
+        source_external_edges.add_nodes_from(source.nodes())  # Pathological edge case
     if expand_boundary_search:
         uw_iterator = list(
             itertools.product(range(2), list(range(1, 2 * m)) + [0, 2 * m])
@@ -833,6 +833,13 @@ def quotient_search(
     selecting rails :math:`(u,w_t,k_t)` that maximise yield.; and (3) hybrid mode
     (``search_strategy='by_rail_then_node'``): rail search followed by node refinement.
 
+        Family-specific support status:
+
+        - Zephyr: supports all three search strategies.
+        - Chimera and Pegasus: currently support only ``search_strategy='by_quotient_rail'`` when
+            additional search is required. Node-level refinement is not implemented for these families,
+            so ``'by_quotient_node'`` and ``'by_rail_then_node'`` may raise ``NotImplementedError``.
+
     When ``expand_boundary_search=True``, boundary columns ``w=0`` and ``w=2m`` are augmented using
     proposals drawn from adjacent internal columns. Whenever this behaviour is activated, nodes from
     the internal columns are assigned first, so that the unassigned nodes in the internal columns
@@ -846,8 +853,8 @@ def quotient_search(
     ``"edge"`` and ``"rail-edge"`` is reported as a number of preserved source edges.
 
     Multi-family API note: this function accepts Zephyr/Pegasus/Chimera graph metadata and
-    coordinate-form embedding validation at the API boundary, but the current quotient search
-    kernels are implemented only for Zephyr execution paths.
+    coordinate-form embedding validation at the API boundary. Full strategy coverage is currently
+    available for Zephyr; Chimera and Pegasus currently have rail-level-only search support.
 
     Args:
         source: Source graph (linear or coordinate labels) from a supported D-Wave topology
@@ -856,7 +863,8 @@ def quotient_search(
             family: ``'zephyr'``, ``'pegasus'``, or ``'chimera'``.
         search_strategy: Search strategy. One of ``'by_quotient_rail'``,
             ``'by_quotient_node'``, or ``'by_rail_then_node'``. See full docstrings for a
-            description of these. Defaults to ``'by_quotient_rail'``.
+            description of these. For Chimera/Pegasus, only ``'by_quotient_rail'`` is currently
+            implemented when search is required. Defaults to ``'by_quotient_rail'``.
         embedding: Optional initial one-to-one chain mapping. If omitted,
             the identity on source coordinate indices is used (wrapped in singleton chains).
             Defaults to ``None``. This must be a chain mapping where each source node maps to
@@ -947,12 +955,6 @@ def quotient_search(
     # Make sure source and target are in coordinate form (tuples)
     _source, to_source = _normalize_coordinate(source, m, tp, add_singleton_nodes=True)
     _target, to_target = _normalize_coordinate(target, m, t)
-    assert (
-        all(n[2] % 2 == 0 for n in source.nodes()) if source is not None else True
-    ), "external edge subgraph should only contain nodes with k=0 in the source graph"
-    assert (
-        all(n[2] % 2 == 0 for n in _source.nodes()) if _source is not None else True
-    ), "external edge subgraph should only contain nodes with k=0 in the source graph"
 
     if embedding is None:
         # Start with the identity mapping
