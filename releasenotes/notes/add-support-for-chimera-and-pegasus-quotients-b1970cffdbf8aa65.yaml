@@ -1,0 +1,9 @@
+---
+features:
+  - |
+    Support quotient search for Chimera and Pegasus graph (expanding existing
+    support implemented for zephyr).
+upgrade:
+  - |
+    Show plots as part of the quotient search example.
+    Upgrade the quotient search example to demonstrate search for Chimera, Pegasus and Zephyr, with defects present in demonstrating the quotient search.
