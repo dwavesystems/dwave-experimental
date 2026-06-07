@@ -84,10 +84,14 @@ def _validate_graph_inputs(source: nx.Graph, target: nx.Graph) -> None:
     for graph_name, graph in zip(("source", "target"), (source, target)):
         for key in ("rows", "tile", "labels"):
             if key not in graph.graph:
-                raise ValueError(f"{graph_name} graph is missing required '{key}' metadata")
+                raise ValueError(
+                    f"{graph_name} graph is missing required '{key}' metadata"
+                )
 
 
-def _extract_graph_properties(source: nx.Graph, target: nx.Graph) -> tuple[int, int, int]:
+def _extract_graph_properties(
+    source: nx.Graph, target: nx.Graph
+) -> tuple[int, int, int]:
     """Extract and validate graph properties, returning ``(rows, tile count, and target
     tile count)``.
 
@@ -171,7 +175,8 @@ def _validate_search_parameters(
 
     if search_strategy not in valid_ksearch:
         raise ValueError(
-            f"search_strategy must be one of {sorted(valid_ksearch)}. Got " f"'{search_strategy}'"
+            f"search_strategy must be one of {sorted(valid_ksearch)}. Got "
+            f"'{search_strategy}'"
         )
     if yield_type not in valid_yield_type:
         raise ValueError(
@@ -179,7 +184,9 @@ def _validate_search_parameters(
         )
     if embedding is not None:
         if not isinstance(embedding, dict):
-            raise TypeError(f"embedding must be a dictionary when provided. Got {type(embedding)}")
+            raise TypeError(
+                f"embedding must be a dictionary when provided. Got {type(embedding)}"
+            )
         source_coord_len = _expected_coordinate_tuple_len(source_family)
         target_coord_len = _expected_coordinate_tuple_len(target_family)
 
@@ -188,9 +195,9 @@ def _validate_search_parameters(
             if not isinstance(value, tuple) or len(value) != 1:
                 raise ValueError(
                     f"embedding values must be singleton tuples representing node chains. "
-                    f"Got value {value} of type {type(value)}" + 
-                    (f" with length {len(value)}" if isinstance(value, tuple) else "") + 
-                    f" for key {key}"
+                    f"Got value {value} of type {type(value)}"
+                    + (f" with length {len(value)}" if isinstance(value, tuple) else "")
+                    + f" for key {key}"
                 )
 
             if not isinstance(key, tuple) or len(key) != source_coord_len:
@@ -284,23 +291,29 @@ def _normalize_coordinate(
         raise ValueError("source graph has unknown labelling scheme")
     generator_args = dict(coordinates=True, node_list=node_list, edge_list=edge_list)
     if add_singleton_nodes:
-        if graph.graph['family'] == 'pegasus':
+        if graph.graph["family"] == "pegasus":
             # For Pegasus, we need to add singleton nodes with odd k indices to get the full single-rail graph
-            generator_args['node_list'] = [(u, w//6, (2*w)%12 + k, z) for u in range(2) for w in range(6*m) for k in range(t) for z in range(m-1)]
-            generator_args['fabric_only'] = False
+            generator_args["node_list"] = [
+                (u, w // 6, (2 * w) % 12 + k, z)
+                for u in range(2)
+                for w in range(6 * m)
+                for k in range(t)
+                for z in range(m - 1)
+            ]
+            generator_args["fabric_only"] = False
         else:
             # Default works
-            generator_args['node_list'] = None
-        
-    _source = graph_generator(
-        *shape, **generator_args
-    )
-    if graph.graph["family"] == "pegasus" and t==1:
-        # Pegasus quotient search only works for single-rail source graphs, which are defined by having only even k indices. 
+            generator_args["node_list"] = None
+
+    _source = graph_generator(*shape, **generator_args)
+    if graph.graph["family"] == "pegasus" and t == 1:
+        # Pegasus quotient search only works for single-rail source graphs, which are defined by having only even k indices.
         # If any odd k nodes are present, raise an error.
         if any(n[2] % 2 != 0 for n in _source.nodes()):
-            raise ValueError('Pegasus quotient search requires that the source graph only contains nodes with even k indices, ' \
-                'which defines a pegasus subgraph with single rails as opposed to pairs of rails.')
+            raise ValueError(
+                "Pegasus quotient search requires that the source graph only contains nodes with even k indices, "
+                "which defines a pegasus subgraph with single rails as opposed to pairs of rails."
+            )
     return _source, to_linear
 
 
@@ -444,7 +457,9 @@ def _node_search(
         )
         ksymmetric_original = ksymmetric
     else:
-        uwjz_iterator = itertools.product(range(2), range(2 * m + 1), range(2), range(m))
+        uwjz_iterator = itertools.product(
+            range(2), range(2 * m + 1), range(2), range(m)
+        )
 
     for u, w, j, z in uwjz_iterator:
         # Base proposals preserve (u, w, j, z) and search only over target k-indices:
@@ -457,7 +472,9 @@ def _node_search(
                 proposals += list(_boundary_proposals(u, 1, tp, t, embedding, j, z))
             elif w == 2 * m:
                 ksymmetric = False
-                proposals += list(_boundary_proposals(u, 2 * m - 1, tp, t, embedding, j, z))
+                proposals += list(
+                    _boundary_proposals(u, 2 * m - 1, tp, t, embedding, j, z)
+                )
             else:
                 ksymmetric = ksymmetric_original
 
@@ -496,7 +513,9 @@ def _node_search(
             selected_key = max(permutation_scores, key=lambda k: permutation_scores[k])
             selected = list(selected_key)
 
-        embedding.update({(u, w, k, j, z): proposal for k, proposal in zip(range(tp), selected)})
+        embedding.update(
+            {(u, w, k, j, z): proposal for k, proposal in zip(range(tp), selected)}
+        )
 
     return embedding
 
@@ -519,7 +538,7 @@ def _rail_search(
     family-specific coordinate names): ``u`` denotes ``orientation`` and ``w`` denotes
     ``orthogonal_displacement``.
     Zephyr rails contain all qubits (u, w, k, *, *).
-    Chimera rails contain (*, w, u, k) for u=0, (w, *, u, k) for u=1. 
+    Chimera rails contain (*, w, u, k) for u=0, (w, *, u, k) for u=1.
     Pegasus rails contain (u, w//6, (2 w)%12 + k, *)
 
     For fixed rail labels :math:`(u, w)` (orientation and orthogonal displacement), define
@@ -600,43 +619,57 @@ def _rail_search(
         ValueError: If duplicate target assignments are produced.
         NotImplementedError: If called on a non-Zephyr family.
     """
-    expand_boundary_search = expand_boundary_search and source.graph["family"] == "zephyr"
+    assert (
+        all(n[2] % 2 == 0 for n in source.nodes()) if source is not None else True
+    ), "external edge subgraph should only contain nodes with k=0 in the source graph"
+
+    expand_boundary_search = (
+        expand_boundary_search and source.graph["family"] == "zephyr"
+    )
     m = source.graph["rows"]
     if source.graph["family"] == "pegasus":
         # Only non-trivial case: contraction of odd-couplers.
         u_index = 0
         tp = 1
-        t = 2 
+        t = 2
         uw_iterator = list(itertools.product(range(2), range(6 * m)))
-        def rail_nodes(u,w,k):
-            for z in range(m-1):
-                yield (u,w//6,w%6+k,z)
+
+        def rail_nodes(u, w, k):
+            for z in range(m - 1):
+                yield (u, w // 6, 2 * (w % 6) + k, z)
+
     elif source.graph["family"] == "zephyr":
         u_index = 0
         tp = source.graph["tile"]
         t = target.graph["tile"]
         uw_iterator = list(itertools.product(range(2), range(2 * m + 1)))
-        def rail_nodes(u,w,k):
+
+        def rail_nodes(u, w, k):
             for j in range(2):
                 for z in range(m):
-                    yield (u,w,k,j,z)
+                    yield (u, w, k, j, z)
+
         def quotient_base(n):
             return n[:2] + (0,) + n[3:]
+
     elif source.graph["family"] == "chimera":
         u_index = 2
         tp = source.graph["tile"]
         t = target.graph["tile"]
         uw_iterator = list(itertools.product(range(2), range(m)))
-        def rail_nodes(u,w,k):
+
+        def rail_nodes(u, w, k):
             for z in range(m):
-                yield (w*u+z*(1-u),w*(1-u)+z*u,u,k)
+                yield (w * u + z * (1 - u), w * (1 - u) + z * u, u, k)
+
     else:
         raise ValueError("unknown graph family")
 
     if yield_type == "node":
         rail_score = {
             (u, w, k): sum(target.has_node(node) for node in rail_nodes(u, w, k))
-            for u, w in uw_iterator for k in range(t)
+            for u, w in uw_iterator
+            for k in range(t)
         }
     else:
         # Precompute per-rail edge number for fast proposal scoring.
@@ -644,21 +677,30 @@ def _rail_search(
             (u, w, k): target.subgraph(
                 {node for node in rail_nodes(u, w, k)}
             ).number_of_edges()
-            for u, w in uw_iterator for k in range(t)
+            for u, w in uw_iterator
+            for k in range(t)
         }
 
     # when optimising for edges, we consider all edges that do not share the same orientation
     source_external_edges = (
-        source.edge_subgraph({e for e in source.edges() if e[0][u_index] != e[1][u_index]}).copy()
+        source.edge_subgraph(
+            {e for e in source.edges() if e[0][u_index] != e[1][u_index]}
+        ).copy()
         if "edge" in yield_type
         else None
     )
+    assert (
+        all(n[2] % 2 == 0 for n in source_external_edges.nodes())
+        if source_external_edges is not None
+        else True
+    ), "external edge subgraph should only contain nodes with k=0 in the source graph"
     source_external_edges.add_nodes_from(source.nodes())  # Pathological edge case
     if expand_boundary_search:
-        uw_iterator = list(itertools.product(range(2), list(range(1, 2 * m)) + [0, 2 * m]))
+        uw_iterator = list(
+            itertools.product(range(2), list(range(1, 2 * m)) + [0, 2 * m])
+        )
         ksymmetric_original = ksymmetric
-    
-        
+
     for u, w in uw_iterator:
         # rail proposals preserve orientation in the target graph and only move in (w, k) quotient
         # graph.
@@ -667,10 +709,14 @@ def _rail_search(
         if expand_boundary_search:
             if w == 0:
                 # b[1:3] is taken because those are the w and k indices
-                proposals += [b[1:3] for b in _boundary_proposals(u, 1, tp, t, embedding)]
+                proposals += [
+                    b[1:3] for b in _boundary_proposals(u, 1, tp, t, embedding)
+                ]
                 ksymmetric = False
             elif w == 2 * m:
-                proposals += [b[1:3] for b in _boundary_proposals(u, 2 * m - 1, tp, t, embedding)]
+                proposals += [
+                    b[1:3] for b in _boundary_proposals(u, 2 * m - 1, tp, t, embedding)
+                ]
                 ksymmetric = False
             else:
                 ksymmetric = ksymmetric_original
@@ -687,7 +733,7 @@ def _rail_search(
                     rail_score[(u, w_t, k_t)]
                     + sum(
                         int(target.has_edge(embedding[neigh_r], n))
-                        for n, n_s in zip(rail_nodes(u,w_t,k_t),rail_nodes(u, w , 0))
+                        for n, n_s in zip(rail_nodes(u, w_t, k_t), rail_nodes(u, w, 0))
                         # neigh_r will be nodes in the source graph with a different orientation
                         # to the current rail, that are neighbours of nodes in the current rail.
                         # Note that we pick k=0 because ksymmetric means that all k indices in the
@@ -704,7 +750,9 @@ def _rail_search(
                 {
                     n1: n2
                     for k in range(tp)
-                    for n1, n2 in zip(rail_nodes(u,w,k), rail_nodes(u,*proposals[p_indices[k]]))
+                    for n1, n2 in zip(
+                        rail_nodes(u, w, k), rail_nodes(u, *proposals[p_indices[k]])
+                    )
                 }
             )
         else:
@@ -712,13 +760,15 @@ def _rail_search(
             # "rail-edge".
             if source_external_edges is None:
                 raise ValueError("internal error: missing external edge subgraph")
-            
+
             permutation_scores = {
-                proposal_perm: sum(rail_score[(u,) + proposal] for proposal in proposal_perm)
+                proposal_perm: sum(
+                    rail_score[(u,) + proposal] for proposal in proposal_perm
+                )
                 + sum(
                     int(target.has_edge(embedding[n_neigh], n))
                     for k_s, proposal in enumerate(proposal_perm)
-                    for n, n_s in zip(rail_nodes(u,*proposal),rail_nodes(u, w , k_s))
+                    for n, n_s in zip(rail_nodes(u, *proposal), rail_nodes(u, w, k_s))
                     for n_neigh in source_external_edges.neighbors(n_s)
                     if n_neigh in embedding
                 )
@@ -729,7 +779,9 @@ def _rail_search(
                 {
                     n_s: n_t
                     for k in range(tp)
-                    for n_s, n_t in zip(rail_nodes(u,w,k), rail_nodes(u, *selected[k]))
+                    for n_s, n_t in zip(
+                        rail_nodes(u, w, k), rail_nodes(u, *selected[k])
+                    )
                 }
             )
 
@@ -895,6 +947,13 @@ def quotient_search(
     # Make sure source and target are in coordinate form (tuples)
     _source, to_source = _normalize_coordinate(source, m, tp, add_singleton_nodes=True)
     _target, to_target = _normalize_coordinate(target, m, t)
+    assert (
+        all(n[2] % 2 == 0 for n in source.nodes()) if source is not None else True
+    ), "external edge subgraph should only contain nodes with k=0 in the source graph"
+    assert (
+        all(n[2] % 2 == 0 for n in _source.nodes()) if _source is not None else True
+    ), "external edge subgraph should only contain nodes with k=0 in the source graph"
+
     if embedding is None:
         # Start with the identity mapping
         working_embedding = {n: n for n in _source.nodes()}
