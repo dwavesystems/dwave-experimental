@@ -61,7 +61,7 @@ def main(family="zephyr", seed=None, m_t=12, m_s=5, t=4, t_s=2, node_yield=0.97)
     target = graph_generator(*shape_t, coordinates=True)
 
     print(
-        f"Step 1: Build two Zephyr graphs.\nThe smaller graph is the m={m_s}, t={t} tile we want to recover "
+        f"Step 1: Build two {family} graphs.\nThe smaller graph is the m={m_s}, t={t} tile we want to recover "
         f"({tile.number_of_nodes()} nodes, {tile.number_of_edges()} edges), and the larger graph is the"
         f" m={m_t}, t={t} target that will later be damaged "
         f"({target.number_of_nodes()} nodes, {target.number_of_edges()} edges)."
@@ -156,19 +156,20 @@ def main(family="zephyr", seed=None, m_t=12, m_s=5, t=4, t_s=2, node_yield=0.97)
         f"Step 5: Now apply the node_yield parameter to remove a fraction of nodes also on the "
         f"sublattice, all sublattices are statistically similar, but "
         f"the example continues with the same sublattice as before."
+        "For potentially improved outcomes, one could apply the method to every "
+        "feasible sublattice (use of sublattice_embedding with a modified embedder)."
         f"Relabel the recovered sublattice using shape {shape_s} coordinates. "
         f"The relabeled subgraph has {target_sub.number_of_nodes()} "
         f"nodes and {target_sub.number_of_edges()} edges."
     )
 
-    # embed source zephyr(mp=m_s, tp=t_s) into the found complete m=m_s, t=4 sublattice.
     source = graph_generator(*shape_step6, coordinates=True)
     if source.graph["family"] == "pegasus":
-        # Graphs with reduced rails are not created by the same
-        # generators.
+        # The tp=1 (quotient graph) of pegasus.
+        # remove odd k nodes to get single-rail pegasus graph
         source.remove_nodes_from(
             [n for n in source.nodes() if n[2] % 2 != 0]
-        )  # remove odd k nodes to get single-rail pegasus graph
+        )
 
     print(
         "Step 6: With any defects present on a sublattice, the graph of shape "
@@ -223,9 +224,10 @@ def main(family="zephyr", seed=None, m_t=12, m_s=5, t=4, t_s=2, node_yield=0.97)
     plt.figure(fig_name)
     plt.title(fig_name)
     G = target_sub.copy()
+    # For sake of plotting we add back singleton nodes (no edges) marked in red
     G.add_nodes_from(
         inv_map[n] for n in removed_nodes2
-    )  # For sake of plotting we add back singleton nodes (no edges)
+    )
     node_color = ["r" if G.degree(n) == 0 else "lightgray" for n in G.nodes()]
     dnx.draw_parallel_embeddings(
         G=G,
@@ -242,6 +244,20 @@ def main(family="zephyr", seed=None, m_t=12, m_s=5, t=4, t_s=2, node_yield=0.97)
         s: tuple(tile_embedding[v] for v in chain)
         for s, chain in best_embedding.items()
     }
+    G = target.copy()
+    G.add_nodes_from(
+        removed_nodes + removed_nodes2
+    )  # For sake of plotting we add back singleton nodes (no edges)
+    node_color = ["r" if G.degree(n) == 0 else "lightgray" for n in G.nodes()]
+    plt.figure("Embedding on original target")
+    dnx.draw_parallel_embeddings(
+        G=G,
+        embeddings=tile_embeddings,
+        S=source,
+        one_to_iterable=False,
+        shuffle_colormap=False,
+        node_color=node_color,
+    )
     plt.show()
 
 

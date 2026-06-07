@@ -537,21 +537,22 @@ def _rail_search(
     Implementation status: rail-level search supports Zephyr, Chimera, and Pegasus coordinate
     families. 
 
-    Rails are connected components that consist of exclusively
-    vertical (u=0) or horizontal (u=1) qubits.
+    Rails are connected components that consist of connected node sequences of the same orientation:
+    vertical (u=0) or horizontal (u=1) qubits. Removing internal edges (those that connect
+    qubits of differing orientation, rails are disconnected graph components.
 
-    Rails are indexed by :math:`(u, w, k)`, where ``u`` and ``w`` are rail labels (not
-    family-specific coordinate names): ``u`` denotes ``orientation`` and ``w`` denotes
-    ``orthogonal_displacement``.
+    Rails are indexed by :math:`(u, w, k)`, where ``u`` denotes ``orientation`` and ``w`` denotes
+    ``orthogonal_displacement``. For Zephyr these match the standard coordinate system.
     Zephyr rails contain all qubits (u, w, k, *, *).
     Chimera rails contain (*, w, u, k) for u=0, (w, *, u, k) for u=1.
     Pegasus rails contain (u, w//6, (2 w)%12 + k, *)
 
-    For fixed rail labels :math:`(u, w)` (orientation and orthogonal displacement), define
-    the source rail family
+    Rails that differ only in the k index are related by automorphism in the fully-yielded graph.
+    This code greedily searches for a mapping (1:1 embedding) of rails on the source graph to rails on the larger graph
+    in order to maximize some objective outcome like edge-yield.
 
-
-    The following description applies to Zephyr, but generalizes
+    The following description applies to Zephyr, but generalizes qualitatively to Chimera and Pegasus
+    graphs:
     .. math::
 
         \mathcal{R}^{S}_{u,w} := \{(u, w, k_s) : k_s \in \{0, \dots, t_p-1\}\}.

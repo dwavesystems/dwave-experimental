@@ -14,6 +14,7 @@
 
 import itertools
 import unittest
+from typing import Literal
 
 import networkx as nx
 import numpy as np
@@ -191,6 +192,108 @@ class TestZephyrYieldImprovement(unittest.TestCase):
                 self._assert_search_improves_yield(
                     yield_type=yt,
                     search_strategy=search_strategy,
+                    expand_boundary_search=expand,
+                    ksymmetric=ksym,
+                )
+
+
+class TestYieldImprovement(unittest.TestCase):
+    """Check yield non-decrease for the currently implemented multi-family options.
+
+    This class is restricted to paths implemented for all three graph families:
+    - ``search_strategy='by_quotient_rail'``
+    - tile settings ``t=2`` and ``tp=1``
+    - families ``zephyr``, ``chimera``, and ``pegasus``
+    """
+
+    _M = 6
+    _SOURCE_TP = 1
+    _TARGET_T = 2
+    _PROPORTION = 0.10
+    _UNIFORM_PROPORTION = 0.10
+    _SEED = 1337
+    _TRUE_FALSE = [True, False]
+    _YIELD_TYPES = ["node", "edge", "rail-edge"]
+    _FAMILIES = ["zephyr", "chimera", "pegasus"]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.sources = {}
+        cls.targets = {}
+
+        for family in cls._FAMILIES:
+            if family == "zephyr":
+                source = zephyr_graph(cls._M, cls._SOURCE_TP, coordinates=True)
+            elif family == "chimera":
+                source = chimera_graph(cls._M, cls._M, cls._SOURCE_TP, coordinates=True)
+            elif family == "pegasus":
+                source = pegasus_graph(cls._M, coordinates=True)
+            else:
+                raise ValueError(f"Unsupported graph family: {family}")
+
+            target = generate_faulty_graph(
+                cls._M,
+                cls._TARGET_T,
+                proportion=cls._PROPORTION,
+                uniform_proportion=cls._UNIFORM_PROPORTION,
+                seed=cls._SEED,
+                family=family,
+            )
+
+            cls.sources[family] = source
+            cls.targets[family] = target
+
+    def _assert_search_improves_yield(
+        self,
+        family: Literal["zephyr", "chimera", "pegasus"],
+        yield_type: Literal["node", "edge", "rail-edge"],
+        expand_boundary_search: bool,
+        ksymmetric: bool,
+    ):
+        source = self.sources[family]
+        target = self.targets[family]
+
+        sub_emb, metadata = quotient_search(
+            source,
+            target,
+            yield_type=yield_type,
+            search_strategy="by_quotient_rail",
+            expand_boundary_search=expand_boundary_search,
+            ksymmetric=ksymmetric,
+        )
+
+        self.assertIsInstance(metadata, QuotientSearchMetadata)
+        self.assertGreaterEqual(
+            metadata.final_num_yielded,
+            metadata.starting_num_yielded,
+            msg=(
+                f"Yield decreased from {metadata.starting_num_yielded} to "
+                f"{metadata.final_num_yielded} with family={family}, "
+                f"yield_type={yield_type}, expand={expand_boundary_search}, "
+                f"ksymmetric={ksymmetric}"
+            ),
+        )
+        self.assertLessEqual(metadata.final_num_yielded, metadata.max_num_yielded)
+
+        target_nodes = set(target.nodes())
+        all_target_nodes = {node for chain in sub_emb.values() for node in chain}
+        self.assertTrue(all_target_nodes.issubset(target_nodes))
+        self.assertTrue(set(sub_emb.keys()).issubset(set(source.nodes())))
+
+    def test_search_yields_improvement(self):
+        for family, expand, ksym, yt in itertools.product(
+            self._FAMILIES, self._TRUE_FALSE, self._TRUE_FALSE, self._YIELD_TYPES
+        ):
+            with self.subTest(
+                family=family,
+                search_strategy="by_quotient_rail",
+                expand_boundary_search=expand,
+                ksymmetric=ksym,
+                yield_type=yt,
+            ):
+                self._assert_search_improves_yield(
+                    family=family,
+                    yield_type=yt,
                     expand_boundary_search=expand,
                     ksymmetric=ksym,
                 )
