@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from collections.abc import Iterator, Hashable
+from collections.abc import Generator, Hashable
 from pathlib import Path
 
 import networkx as nx
@@ -37,13 +37,16 @@ class Triangular(Lattice):
             dimensions.
         periodic: Two-element tuple indicating whether the lattice is periodic
             in the y and x dimensions.
-        data_root: A string or Path to the root directory for storing lattice data.
-        orbit_type: Method for determining qubit and coupler orbits. Must be one of "global",
-            "standard", "singleton", or "explicit". See ``initialize_orbits`` for details.
-        qubit_orbits: Explicit qubit orbit labels, used only when ``orbit_type == "explicit"``.
-            Must have length equal to the number of spins in the lattice.
-        coupler_orbits: Explicit coupler orbit labels, used only when ``orbit_type == "explicit"``.
-            Must have length equal to the number of edges in the lattice.
+        data_root: A string or Path to the root directory for storing lattice
+            data. orbit_type: Method for determining qubit and coupler orbits.
+            Must be one of "global", "standard", "singleton", or "explicit". See
+            ``initialize_orbits`` for details.
+        qubit_orbits: Explicit qubit orbit labels, used only when
+            ``orbit_type == "explicit"``. Must have length equal to the number
+            of spins in the lattice.
+        coupler_orbits: Explicit coupler orbit labels, used only when
+            ``orbit_type == "explicit"``. Must have length equal to the number
+            of edges in the lattice.
         halve_boundary_couplers: A boolean indicating whether to assign half the
             coupling strength to boundary couplers.
     """
@@ -61,6 +64,7 @@ class Triangular(Lattice):
     ):
         if len(dimensions) != 2:
             raise ValueError(f"Triangular requires dimensions of length 2, got {len(dimensions)}.")
+
         self.geometry_name: str = "Triangular"
         self.halve_boundary_couplers: bool = halve_boundary_couplers
         self.num_spins = dimensions[0] * dimensions[1]
@@ -68,14 +72,6 @@ class Triangular(Lattice):
         self.integer_coords: list[tuple[int, int]] | None = None
         self.xy_coords: list[tuple[float, float]] | None = None
         self.xy_size: tuple[float, float] | None = None
-        super().__init__(
-            dimensions=dimensions,
-            periodic=periodic,
-            data_root=data_root,
-            orbit_type=orbit_type,
-            qubit_orbits=qubit_orbits,
-            coupler_orbits=coupler_orbits,
-        )
         if self.periodic[0] and self.dimensions[0] % 3 != 0:
             raise ValueError(
                 "For Triangular with periodic[0]=True, dimensions[0] must be divisible by 3."
@@ -84,6 +80,14 @@ class Triangular(Lattice):
             raise ValueError(
                 "For Triangular with periodic[1]=True, dimensions[1] must be divisible by 3."
             )
+        super().__init__(
+            dimensions=dimensions,
+            periodic=periodic,
+            data_root=data_root,
+            orbit_type=orbit_type,
+            qubit_orbits=qubit_orbits,
+            coupler_orbits=coupler_orbits,
+        )
 
     def coordinates(self, node: int) -> tuple[int, int]:
         """Return the coordinates of a node in the lattice given its index.
@@ -121,7 +125,7 @@ class Triangular(Lattice):
 
         return bqm
 
-    def generate_edges(self) -> Iterator[tuple[int, int]]:
+    def generate_edges(self) -> Generator[tuple[int, int]]:
         """Yield edges for the triangular lattice and initialize coordinate attributes.
 
         y is the first dimension, x is the second. Edges are straight along
@@ -129,7 +133,7 @@ class Triangular(Lattice):
         not periodic.
 
         Returns:
-            An iterator of tuples, where each tuple represents an edge between
+            A generator of tuples, where each tuple represents an edge between
             two spins in the lattice.
         """
         length_y, length_x = self.dimensions

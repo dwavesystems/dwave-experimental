@@ -42,6 +42,7 @@ class Observable(ABC):
     Each observable should inherit from this class and implement the 'evaluate'
     method, which computes the observable from a given sample set.
     """
+
     def __init__(self):
         self.name: str = type(self).__name__
 
@@ -52,7 +53,7 @@ class Observable(ABC):
         bqm: dimod.BQM,
         sample_set: dimod.SampleSet,
     ) -> ObservableResult:
-        raise NotImplementedError
+        pass
 
 
 class QubitMagnetization(Observable):
@@ -64,6 +65,16 @@ class QubitMagnetization(Observable):
         bqm: dimod.BQM,
         sample_set: dimod.SampleSet,
     ) -> NDArray:
+        """Return per-qubit mean spin values over the provided samples.
+
+        Args:
+            experiment: Experiment object containing the context for this observable.
+            bqm: The binary quadratic model corresponding to the problem instance.
+            sample_set: Samples used to compute the magnetization.
+
+        Returns:
+            A numpy array containing the mean magnetization for each qubit.
+        """
         sample_array = dimod.as_samples(sample_set)[0].astype(float)
         return np.mean(sample_array, axis=0)
 
@@ -77,6 +88,16 @@ class CouplerCorrelation(Observable):
         bqm: dimod.BQM,
         sample_set: dimod.SampleSet,
     ) -> NDArray:
+        """Return per-coupler pairwise spin correlations over the provided samples.
+
+        Args:
+            experiment: Experiment object containing the context for this observable.
+            bqm: The binary quadratic model corresponding to the problem instance.
+            sample_set: Samples used to compute the coupler correlations.
+
+        Returns:
+            A numpy array containing the pairwise spin correlations for each coupler.
+        """
         sample_array = dimod.as_samples(sample_set)[0].astype(float)
         if len(experiment.inst.edge_list) == 0:
             return np.empty(0, dtype=float)
@@ -95,6 +116,16 @@ class CouplerFrustration(Observable):
         bqm: dimod.BQM,
         sample_set: dimod.SampleSet,
     ) -> NDArray:
+        """Return the mean coupler frustration over the provided samples.
+
+        Args:
+            experiment: Experiment object containing the context for this observable.
+            bqm: The binary quadratic model corresponding to the problem instance.
+            sample_set: Samples used to compute the mean coupler frustration.
+
+        Returns:
+            A numpy array containing the mean coupler frustration for each edge.
+        """
         sample_array = dimod.as_samples(sample_set)[0].astype(float)
         if len(experiment.inst.edge_list) == 0:
             return np.empty(0, dtype=float)
@@ -120,11 +151,22 @@ class SampleEnergy(Observable):
         bqm: dimod.BQM,
         sample_set: dimod.SampleSet,
     ) -> NDArray:
+        """Return signed sample energies from the sample set.
+
+        Args:
+            experiment: Experiment context providing the ``energy_scale`` sign.
+            bqm: The binary quadratic model corresponding to the problem instance.
+            sample_set: Samples containing energy data.
+
+        Returns:
+            A numpy array containing the sample energies multiplied by the sign
+            of ``energy_scale``.
+        """
         return sample_set.data_vectors["energy"] * np.sign(experiment.param["energy_scale"])
 
 
 class BitpackedSpins(Observable):
-    """Return bitpacked spins and a tuple of the array size."""
+    """Compute bitpacked spins."""
 
     def evaluate(
         self,
@@ -132,6 +174,17 @@ class BitpackedSpins(Observable):
         bqm: dimod.BQM,
         sample_set: dimod.SampleSet,
     ) -> tuple[NDArray, tuple[int, int]]:
+        """Return bitpacked spin samples and their original array shape.
+
+        Args:
+            experiment: Experiment object containing the context for this observable.
+            bqm: The binary quadratic model corresponding to the problem instance.
+            sample_set: Samples containing the spin values to unpack.
+
+        Returns:
+            A tuple containing the bitpacked spin array and the original array
+            shape.
+        """
         sample_array = dimod.as_samples(sample_set)[0]
 
         # Bitpack solutions
@@ -153,11 +206,25 @@ class ReferenceEnergy(Observable):
         path: str | Path | None = None,
         inst: Lattice | None = None,
     ) -> float:
-        """Get the reference energy for the given BQM, computing and caching it if needed."""
+        """Get the reference energy for the given BQM, computing and caching it
+        if needed.
+
+        Args:
+            experiment: The experiment for which to get the reference energy. Used
+                to determine the path for caching and loading the reference energy.
+            bqm: The binary quadratic model corresponding to the problem instance.
+            sample_set: The sample set is not used in this observable, but is
+                included in the signature for consistency with other observables.
+            path: Optional path to load/save the reference energy. If not provided,
+            a default path will be generated based on the experiment and BQM.
+
+        Returns:
+            The reference energy for the given BQM.
+        """
         if path is not None:
             path = Path(path)
         else:
-            path = get_reference_energy_path(experiment, bqm=bqm)
+            path = get_reference_energy_path(bqm, experiment)
 
         if path.exists():
             energy, sample, method_string = self.load(experiment, bqm, path)
@@ -187,7 +254,7 @@ class ReferenceEnergy(Observable):
         if path is not None:
             path = Path(path)
         else:
-            path = get_reference_energy_path(experiment, bqm=bqm)
+            path = get_reference_energy_path(bqm, experiment)
 
         with open(path, "r") as f:
             method_string = f.readline().strip()
@@ -223,17 +290,16 @@ class ReferenceEnergy(Observable):
 
         if new_energy < reference_energy:
             if path is None:
-                path = get_reference_energy_path(experiment, bqm=bqm)
+                path = get_reference_energy_path(bqm, experiment)
             self.save(path, new_energy, sample, reference_method_string)
-            print(f"Updated energy from {reference_energy} to {new_energy}.")
         else:
-            raise ValueError
+            raise ValueError("New energy is not better than reference energy, not updating.")
 
 
 def get_reference_energy_path(
+    bqm: dimod.BQM,
     experiment: Experiment | None = None,
     root: str | Path | None = None,
-    bqm: dimod.BQM | None = None,
     dummy_experiment_data_dict: dict[str, Any] | None = None,
 ) -> Path:
     """Return the path to the reference energy file for the given experiment and BQM.
@@ -242,18 +308,17 @@ def get_reference_energy_path(
     pathstring, for example when ground-state energies depend on the specific chip.
 
     Args:
+        bqm: The BQM for which to get the reference energy path.
         experiment: The experiment for which to get the reference energy path.
         root: Optional root directory to use instead of the experiment's data root.
-        bqm: The BQM for which to get the reference energy path.
+        dummy_experiment_data_dict: A dictionary containing the keys ``run_index``,
+            ``num_random_instances``, and ``inst`` to use when no experiment is
+            provided. This allows for generation of dummy experiment data without
+            all the overhead, for running without an actual experiment.
 
     Returns:
         The path to the reference energy file.
     """
-    if bqm is None:
-        raise NotImplementedError("Must provide a BQM to get the reference energy path.")
-
-    # Allow for generation of dummy experiment data without all the overhead,
-    # for running without an actual experiment.
     if experiment is None:
         experiment_data_dict = dummy_experiment_data_dict
     else:
