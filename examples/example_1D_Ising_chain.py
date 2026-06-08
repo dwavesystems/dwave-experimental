@@ -88,8 +88,7 @@ for sampler in samplers:
             coupler_shim_step=0.05,
             flux_bias_shim_step=3e-6,
         )
-        #exp = experiment.Experiment(inst=inst, sampler=sampler, max_iterations=5, config=config)
-        exp = experiment.Experiment(inst=inst, sampler=sampler, config=config)
+        exp = experiment.Experiment(inst=inst, sampler=sampler, max_iterations=5, config=config)
 
         # Every experiment has an attribute (a set) of observables to compute and
         # save while the experiment runs.Here we can add non-default observables.
