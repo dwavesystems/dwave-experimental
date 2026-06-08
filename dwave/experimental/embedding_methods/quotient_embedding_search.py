@@ -436,6 +436,7 @@ def _node_search(
         ValueError: If graph geometry metadata is inconsistent.
         NotImplementedError: If called on a non-Zephyr family.
     """
+    expand_boundary_search = source.graph["family"] == "zephyr" and expand_boundary_search
     m = source.graph["rows"]
     if source.graph["family"] == "pegasus":
         tp = 1  # Only non-trivial case
@@ -452,23 +453,27 @@ def _node_search(
 
     if expand_boundary_search:
         # Visit interior columns first so boundary expansion can reuse already-assigned assignments:
-        uwjz_iterator = itertools.product(
+        quotient_node_iterator = itertools.product(
             range(2),
             list(range(1, 2 * m)) + [0, 2 * m],
             range(2),
             range(m),
         )
         ksymmetric_original = ksymmetric
+        def _quotient_to_var(nq, k):
+            return nq[:2] + (k,) + nq[2:]
     else:
-        uwjz_iterator = itertools.product(
+        quotient_node_iterator = itertools.product(
             range(2), range(2 * m + 1), range(2), range(m)
         )
-
-    for u, w, j, z in uwjz_iterator:
+        def _quotient_to_var(nq, k):
+            return nq[:2] + (k,) + nq[2:]
+    for nq in quotient_node_iterator:
         # Base proposals preserve (u, w, j, z) and search only over target k-indices:
-        proposals = [(u, w, k, j, z) for k in range(t)]
+        proposals = [_quotient_to_var(nq, k) for k in range(t)]
 
         if expand_boundary_search:
+            u, w, j, z = nq
             if w == 0:
                 ksymmetric = False
                 # borrow candidates from adjacent internal column
@@ -489,7 +494,7 @@ def _node_search(
             else:
                 # Count preserved edges from already-mapped neighboring source nodes into each
                 # proposed target node.
-                source_neighbours = source.neighbors((u, w, 0, j, z))
+                source_neighbours = source.neighbors(_quotient_to_var(nq, 0))
                 counts = [
                     sum(
                         int(target.has_edge(embedding[n_s], n_t))
@@ -508,7 +513,7 @@ def _node_search(
                 proposal_perm: sum(
                     int(target.has_edge(embedding[n], proposal_perm[k]))
                     for k in range(tp)
-                    for n in source.neighbors((u, w, k, j, z))
+                    for n in source.neighbors(_quotient_to_var(nq, k))
                     if n in embedding
                 )
                 for proposal_perm in itertools.permutations(proposals, tp)
@@ -517,7 +522,7 @@ def _node_search(
             selected = list(selected_key)
 
         embedding.update(
-            {(u, w, k, j, z): proposal for k, proposal in zip(range(tp), selected)}
+            {_quotient_to_var(nq, k): proposal for k, proposal in zip(range(tp), selected)}
         )
 
     return embedding
