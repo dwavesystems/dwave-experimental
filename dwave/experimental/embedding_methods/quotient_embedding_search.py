@@ -550,6 +550,24 @@ def _node_search(
 
     return embedding
 
+def _rail_nodes(m, family):
+    if family == 'chimera':
+        def to_nodes(u, w, k):
+            for z in range(m):
+                yield (w * u + z * (1 - u), w * (1 - u) + z * u, u, k)
+    elif family == 'zephyr':
+        def to_nodes(u, w, k):
+            for j in range(2):
+                for z in range(m):
+                    yield (u, w, k, j, z)
+    elif family == 'pegasus':
+        def to_nodes(u, w, k):
+            for z in range(m - 1):
+                yield (u, w // 6, 2 * (w % 6) + k, z)
+    else:
+        raise ValueError(f'Unknown rails for {family}')
+    return to_nodes
+
 
 def _rail_search(
     source: nx.Graph,
@@ -665,38 +683,21 @@ def _rail_search(
         u_index = 0
         tp = 1
         t = 2
-        uw_iterator = list(itertools.product(range(2), range(6 * m)))
-
-        def rail_nodes(u, w, k):
-            for z in range(m - 1):
-                yield (u, w // 6, 2 * (w % 6) + k, z)
-
+        num_orthogonal_displacements = 6 * m
     elif source.graph["family"] == "zephyr":
         u_index = 0
         tp = source.graph["tile"]
         t = target.graph["tile"]
-        uw_iterator = list(itertools.product(range(2), range(2 * m + 1)))
-
-        def rail_nodes(u, w, k):
-            for j in range(2):
-                for z in range(m):
-                    yield (u, w, k, j, z)
-
-        def quotient_base(n):
-            return n[:2] + (0,) + n[3:]
-
+        num_orthogonal_displacements = 2 * m + 1    
     elif source.graph["family"] == "chimera":
         u_index = 2
         tp = source.graph["tile"]
         t = target.graph["tile"]
-        uw_iterator = list(itertools.product(range(2), range(m)))
-
-        def rail_nodes(u, w, k):
-            for z in range(m):
-                yield (w * u + z * (1 - u), w * (1 - u) + z * u, u, k)
-
+        num_orthogonal_displacements = m
     else:
         raise ValueError("unknown graph family")
+    rail_nodes = _rail_nodes(m, source.graph["family"])    
+    uw_iterator = list(itertools.product(range(2), range(num_orthogonal_displacements)))
 
     if yield_type == "node":
         rail_score = {
