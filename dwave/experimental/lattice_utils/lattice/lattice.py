@@ -14,7 +14,7 @@
 
 import os
 from pathlib import Path
-from collections.abc import Iterator, Hashable
+from collections.abc import Generator, Hashable
 from abc import ABC, abstractmethod
 import warnings
 
@@ -66,6 +66,12 @@ class Lattice(ABC):
         self.data_root = Path(data_root)
 
         self.periodic = periodic if periodic is not None else tuple(False for _ in dimensions)
+        if len(self.periodic) != len(self.dimensions):
+            raise ValueError(
+                f"periodic and dimensions must have the same length: "
+                f"got {len(self.periodic)} and {len(self.dimensions)}."
+            )
+
         self.edge_list: list[tuple[Hashable, Hashable]] = list(self.generate_edges())
 
         if not hasattr(self, "num_spins"):
@@ -76,9 +82,8 @@ class Lattice(ABC):
         self.initialize_orbits(qubit_orbits, coupler_orbits)
 
     @abstractmethod
-    def generate_edges(self) -> Iterator[tuple[Hashable, Hashable]]:
+    def generate_edges(self) -> Generator[tuple[Hashable, Hashable]]:
         """Yield the edges for this lattice."""
-        raise NotImplementedError
 
     def embed_lattice(
         self,
@@ -87,7 +92,7 @@ class Lattice(ABC):
         timeout: int = 10,
         max_number_of_embeddings: int | None = None,
         min_number_of_embeddings: int = 1,
-        exclude_qubits: list = [],
+        exclude_qubits: list | None = None,
         **kwargs,
     ) -> None:
         """Find or load embeddings onto the sampler graph.
@@ -102,6 +107,9 @@ class Lattice(ABC):
             exclude_qubits: Qubits to remove from the sampler graph before searching
                 for embeddings.
         """
+        if exclude_qubits is None:
+            exclude_qubits = []
+
         graph_bqm = dimod.to_networkx_graph(self.make_nominal_bqm())
         graph_sampler = sampler.to_networkx_graph()
         graph_sampler.remove_nodes_from(exclude_qubits)

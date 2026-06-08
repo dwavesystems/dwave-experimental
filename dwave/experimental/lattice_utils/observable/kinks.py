@@ -24,10 +24,7 @@ __all__ = ['KinkKinkCorrelator']
 
 
 class KinkKinkCorrelator(Observable):
-    """For 1D chains."""
-
-    def __init__(self):
-        super().__init__()
+    """A class for computing the kink-kink correlator for 1D spin chains."""
 
     def evaluate(self, experiment: Experiment, bqm: BQM, sample_set: SampleSet) -> NDArray:
         """Compute the kink-kink correlator for 1D spin chains.

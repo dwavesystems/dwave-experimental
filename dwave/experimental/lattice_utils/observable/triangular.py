@@ -24,7 +24,7 @@ __all__ = ['TriangularOP']
 
 
 class TriangularOP(Observable):
-    """For calculating the order parameter of triangular lattices."""
+    """A class for calculating the order parameter of triangular lattices."""
 
     def evaluate(
         self,

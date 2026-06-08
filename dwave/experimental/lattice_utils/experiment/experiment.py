@@ -24,6 +24,7 @@ from dataclasses import dataclass
 
 import dimod
 import numpy as np
+from tqdm.auto import tqdm
 
 from dwave.experimental.lattice_utils.lattice import Lattice
 from dwave.experimental.lattice_utils.observable import (
@@ -38,18 +39,10 @@ from dwave.experimental.lattice_utils.experiment.samplercall import SamplerCall
 
 __all__ = ['Experiment', 'ExperimentConfig']
 
-@dataclass
-class ExperimentConfig:
-    """Container for the parameters that define an experiment."""
-    energy_scale: float = 1.0
-    num_reads: int = 100
-    anneal_time: float = 1.0
-    num_random_instances: int | None = 1
-    readout_thermalization: int = 100
-    flux_bias_shim_step: float = 0.0
-    coupler_shim_step: float = 0.0
-    anneal_offset_shim_step: float = 0.0
-    target_magnetization: float = 0.0
+DW_TEAL = "#17bebb"
+DW_BLUE = "#2a7de1"
+DW_ORANGE = "#f37820"
+
 
 @dataclass
 class ExperimentConfig:
@@ -171,7 +164,12 @@ class Experiment:
         self.data_path = self.experiment_results_root / self._get_relative_data_path()
         self.already_initialized = self._prepare_run_index()
 
-    def run_iteration(self, parameter_list: list, **kwargs) -> bool:
+    def run_iteration(
+        self,
+        parameter_list: list,
+        progress: bool = False,
+        scaling_factor: float = 1.0,
+    ) -> bool:
         """Run one experiment iteration for each parameter set in ``parameter_list``.
 
         For each parametrization, this method applies the parameters, builds the
@@ -180,25 +178,35 @@ class Experiment:
 
         Args:
             parameter_list: List of parameter dictionaries to run.
+            progress: If true, displays a progress bar for waiting on results.
+            scaling_factor: A multiplicative factor to apply to the BQM before sampling.
 
         Returns:
             A boolean value corresponding to whether or not the experiment is
             finished.
         """
         try:
-            self.inst._load_embeddings(self.sampler, **kwargs)
+            self.inst._load_embeddings(self.sampler)
         except FileNotFoundError as e:
             raise FileNotFoundError("No Embedding Found: ", e) from e
 
-        print(
-            f'\n{type(self.inst).__name__}={self.inst.dimensions}, J={self.param["energy_scale"]}, '
-            + f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")} '
-            + f"({self.inst._get_instance_pathstring()}/{self._get_solver_pathstring()})"
+        tqdm.write(
+            f"\n{type(self.inst).__name__}={self.inst.dimensions}, "
+            f"J={self.param['energy_scale']}, "
+            f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} "
+            f"({self.inst._get_instance_pathstring()}/{self._get_solver_pathstring()})"
         )
 
         parameter_list = self._format_parameter_list(parameter_list)
         response_dict = {}
         call_dict = {}
+
+        create_bar = self._make_progress_bar(
+            total=len(parameter_list),
+            desc="Creating sampler calls",
+            colour=DW_BLUE,
+            enabled=progress,
+        )
 
         for index, param in enumerate(parameter_list):
             self.apply_param(param)
@@ -207,13 +215,28 @@ class Experiment:
                 call_dict.pop(index)
             else:
                 response_dict[index] = self.sampler.sample(
-                    call_dict[index].bqm * kwargs.get("scaling_factor", 1.0),
+                    call_dict[index].bqm * scaling_factor,
                     **call_dict[index].sampler_params,
                 )
+            if create_bar is not None:
+                create_bar.update()
+
+        if create_bar is not None:
+            create_bar.close()
 
         if len(call_dict) == 0:
-            print(f"***\n***\nFINISHED for all {len(parameter_list)} parameterizations.\n***\n***")
+            if progress:
+                tqdm.write(
+                    f"***\n***\nFINISHED for all {len(parameter_list)} parameterizations.\n***\n***"
+                )
             return True
+
+        wait_bar = self._make_progress_bar(
+            total=len(call_dict),
+            desc=" Awaiting/parsing data",
+            colour=DW_TEAL,
+            enabled=progress,
+        )
 
         # Get and manage all the results
         while response_dict:
@@ -227,6 +250,8 @@ class Experiment:
                     self._update_shim(call_dict[index], results)
                     savedata = self._generate_data_to_save(call_dict[index], results)
                     self._save_results(savedata, quiet=True)
+                    if wait_bar is not None:
+                        wait_bar.update()
                     del response_dict[index]
                     made_progress = True
                     break
@@ -234,6 +259,10 @@ class Experiment:
             if not made_progress:
                 time.sleep(0.1)  # Waiting for results to come in
 
+        if wait_bar is not None:
+            wait_bar.close()
+
+        self._print_iteration_status(call_dict, len(parameter_list), enabled=progress)
         return False
 
     def parse_results(self, call: SamplerCall, response: dimod.SampleSet) -> dict[str, Any]:
@@ -272,6 +301,78 @@ class Experiment:
                 results[observable.name] = np.asarray(results[observable.name])
 
         return results
+
+    def _make_progress_bar(
+        self,
+        *,
+        total: int,
+        desc: str,
+        colour: str,
+        enabled: bool,
+        bar_format: str | None = None,
+        initial: int | float = 0,
+    ) -> tqdm | None:
+        """Create a tqdm progress bar with consistent formatting."""
+        if not enabled:
+            return None
+
+        if bar_format is None:
+            bar_width = min(100, max(total, 20))
+            bar_format = f"{{desc}}: |{{bar:{bar_width}}}{{r_bar}}{{bar:-{bar_width}b}}"
+
+        return tqdm(
+            total=total,
+            initial=initial,
+            desc=desc,
+            bar_format=bar_format,
+            colour=colour,
+        )
+
+    def _print_iteration_status(
+        self,
+        call_dict: dict[int, SamplerCall],
+        num_params: int,
+        enabled: bool,
+    ) -> None:
+        """Print a summary of the iteration status, including progress and iteration ranges."""
+        if not enabled:
+            return
+        iteration_range = (
+            f"Iteration range "
+            f"{min(call.shimdata['total_iterations'] for call in call_dict.values())}-"
+            f"{max(call.shimdata['total_iterations'] for call in call_dict.values())} "
+        )
+        if self.max_iterations is None:
+            tqdm.write("        Total progress: " + iteration_range)
+            return
+
+        total = num_params * self.max_iterations
+        progress_value = (
+            sum(call.shimdata["total_iterations"] for call in call_dict.values())
+            + (num_params - len(call_dict)) * self.max_iterations
+        )
+
+        progress_string = (
+            f"{progress_value / total * 100:.1f}%  "
+            f"Iteration range "
+            f"{min(call.shimdata['total_iterations'] for call in call_dict.values())}-"
+            f"{max(call.shimdata['total_iterations'] for call in call_dict.values())} "
+            f"of {self.max_iterations} "
+            f"({num_params - len(call_dict)} of {num_params} parameters finished)"
+        )
+
+        bar_width = min(100, max(num_params, 20))
+        bar_format = f"{{desc}}: |{{bar:{bar_width}}}| {progress_string}"
+
+        total_bar = self._make_progress_bar(
+            total=total,
+            desc="        Total progress",
+            bar_format=bar_format,
+            colour=DW_ORANGE,
+            enabled=enabled,
+            initial=progress_value,
+        )
+        total_bar.close()
 
     def _save_results(
         self,

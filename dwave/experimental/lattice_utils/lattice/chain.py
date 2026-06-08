@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from pathlib import Path
 
 from numpy.typing import NDArray
@@ -27,7 +27,7 @@ class Chain(Lattice):
 
     This class represents a 1D chain of spins, where each spin is connected to
     its nearest neighbors. The chain can be periodic (forming a ring) or
-    non-periodic (open chain) based on the `periodic` parameter.
+    non-periodic (open chain) based on the ``periodic`` parameter.
 
     Args:
         dimensions: One-element tuple giving the number of spins in the chain.
@@ -65,11 +65,11 @@ class Chain(Lattice):
             coupler_orbits=coupler_orbits,
         )
 
-    def generate_edges(self) -> Iterator[tuple[int, int]]:
+    def generate_edges(self) -> Generator[tuple[int, int]]:
         """Yield edges for a 1D chain lattice.
 
         Returns:
-            An iterator of tuples, where each tuple represents an edge between
+            A generator of tuples, where each tuple represents an edge between
             two spins in the chain.
         """
         n = self.dimensions[0]

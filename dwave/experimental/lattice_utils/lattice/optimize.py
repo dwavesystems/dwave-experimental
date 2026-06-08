@@ -88,7 +88,7 @@ def optimize_increasing_sa_sweeps(
 
     Returns:
         A tuple containing the best energy found, the corresponding sample as a
-            NumPy array, and a string indicating the optimization method used.
+        NumPy array, and a string indicating the optimization method used.
     """
     sa = SimulatedAnnealingSampler()
 

@@ -125,8 +125,8 @@ fig, axes = plt.subplots(3, 3, figsize=(16, 10))
 fig.suptitle(title, fontsize=16)
 rng = np.random.default_rng(0)
 x = np.linspace(0, 2 * np.pi, 400)
-plt.tight_layout()
-plt.subplots_adjust(hspace=0.35, wspace=0.3, top=0.9, left=0.07, bottom=0.07)
+fig.tight_layout()
+fig.subplots_adjust(hspace=0.35, wspace=0.3, top=0.9, left=0.07, bottom=0.07)
 
 ax = axes[0, 0]
 ax.loglog()

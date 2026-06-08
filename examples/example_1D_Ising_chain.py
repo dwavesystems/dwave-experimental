@@ -34,8 +34,8 @@ kkc_dict = {}
 
 # Two samplers: an Advantage2 prototype and an Advantage system.
 samplers = [
-    DWaveSampler(solver="Advantage2_system1"),
-    DWaveSampler(solver="Advantage_system4.1"),
+    #DWaveSampler(solver="Advantage2_system1"),
+    DWaveSampler(solver="Advantage_system4"),
 ]
 
 NUM_SPINS = 256
@@ -86,7 +86,7 @@ for sampler in samplers:
         config = experiment.FastAnnealExperimentConfig(
             energy_scale=energy_scale,
             coupler_shim_step=0.05,
-            flux_bias_shim_step=1e-6,
+            flux_bias_shim_step=3e-6,
         )
         exp = experiment.Experiment(inst=inst, sampler=sampler, max_iterations=5, config=config)
 
@@ -95,13 +95,17 @@ for sampler in samplers:
         # In this case we will add the kink-kink correlator.  The observable
         # object is designed to provide a standard interface for adding whatever
         # experiment-specific observables you might require.
+
+        # Note that only running 5 iterations will give poor results for the
+        # kink-kink correlator, which is fairly sensitive and requires a
+        # converged shim, but this is just for demonstration purposes.
         exp.observables_to_collect.add(observable.KinkKinkCorrelator())
 
         # Make parameter list. We will only vary anneal time.
         parameter_list = [{"anneal_time": time} for time in ANNEAL_TIMES]
 
-        for _ in range(20): #TODO clean this up?
-            done = exp.run_iteration(parameter_list)
+        while True:
+            done = exp.run_iteration(parameter_list, progress=True)
             if done:
                 break
 
@@ -119,7 +123,7 @@ for sampler in samplers:
         fbshim = []  # flux bias shim
         kkc = []  # kink-kink correlator
         for param in parameter_list:
-            exp.apply_param(param) #TODO clean this up?
+            exp.apply_param(param)
             res = exp.load_results(num_iterations=1000)
 
             frust.append(np.array([np.mean(it["CouplerFrustration"]) for it in res]))
@@ -136,8 +140,8 @@ for sampler in samplers:
         fig.suptitle(title, fontsize=16)
         rng = np.random.default_rng(0)
         x = np.linspace(0, 2 * np.pi, 400)
-        plt.tight_layout()
-        plt.subplots_adjust(hspace=0.35, wspace=0.3, top=0.9)
+        fig.tight_layout()
+        fig.subplots_adjust(hspace=0.35, wspace=0.3, top=0.9)
 
         ax = axes[0, 0]
         ax.loglog()
@@ -173,7 +177,7 @@ for sampler in samplers:
             **point_style,
         )
 
-        ax.set_title("Kink density (with ~t_a^{-1/2} guideline)")
+        ax.set_title("Kink density (with ~$t_a^{-1/2}$ guideline)")
         ax.set_ylabel("kink density")
         ax.set_xlabel("$t_a$ (μs)")
         ax.set_ylim([5e-4, 5e-1])
@@ -200,37 +204,37 @@ for sampler in samplers:
 
         ax = axes[1, 0]
         ax.plot(fbshim[0])
-        ax.set_title(f"Flux bias shim, t_a={ANNEAL_TIMES[0]:.3f}μs")
+        ax.set_title(f"Flux bias shim, $t_a=${ANNEAL_TIMES[0]:.3f}μs")
         ax.set_xlabel("Iteration")
         ax.grid(which="both", alpha=0.3)
 
         ax = axes[1, 1]
         ax.plot(fbshim[1])
-        ax.set_title(f"Flux bias shim, t_a={ANNEAL_TIMES[1]:.3f}μs")
+        ax.set_title(f"Flux bias shim, $t_a$={ANNEAL_TIMES[1]:.3f}μs")
         ax.set_xlabel("Iteration")
         ax.grid(which="both", alpha=0.3)
 
         ax = axes[1, 2]
         ax.plot(fbshim[6])
-        ax.set_title(f"Flux bias shim, t_a={ANNEAL_TIMES[-1]:.3f}μs")
+        ax.set_title(f"Flux bias shim, $t_a$={ANNEAL_TIMES[-1]:.3f}μs")
         ax.set_xlabel("Iteration")
         ax.grid(which="both", alpha=0.3)
 
         ax = axes[2, 0]
         ax.plot(cshim[0])
-        ax.set_title(f"Coupler shim, t_a={ANNEAL_TIMES[0]:.3f}μs")
+        ax.set_title(f"Coupler shim, $t_a$={ANNEAL_TIMES[0]:.3f}μs")
         ax.set_xlabel("Iteration")
         ax.grid(which="both", alpha=0.3)
 
         ax = axes[2, 1]
         ax.plot(cshim[1])
-        ax.set_title(f"Coupler shim, t_a={ANNEAL_TIMES[1]:.3f}μs")
+        ax.set_title(f"Coupler shim, $t_a$={ANNEAL_TIMES[1]:.3f}μs")
         ax.set_xlabel("Iteration")
         ax.grid(which="both", alpha=0.3)
 
         ax = axes[2, 2]
         ax.plot(cshim[6])
-        ax.set_title(f"Coupler shim, t_a={ANNEAL_TIMES[-1]:.3f}μs")
+        ax.set_title(f"Coupler shim, $t_a$={ANNEAL_TIMES[-1]:.3f}μs")
         ax.set_xlabel("Iteration")
         ax.grid(which="both", alpha=0.3)
 
@@ -248,6 +252,7 @@ for sampler in samplers:
 fig2, ax2 = plt.subplots(1, 2, figsize=(10, 8))
 title = f"1D chain kink density, {'x'.join([str(dim) for dim in inst.dimensions])}"
 fig2.suptitle(title, fontsize=16)
+fig2.tight_layout(rect=(0.05, 0.05, 1, 0.95), w_pad=4.0)
 
 for isampler, sampler in enumerate(samplers):
 
@@ -303,6 +308,7 @@ dims = 'x'.join(map(str, inst.dimensions))
 time_ns = ANNEAL_TIMES[0] * 1000
 title = f"1D chain kink-kink correlator, {dims}, {time_ns:.1f} ns"
 fig3.suptitle(title, fontsize=16)
+fig3.tight_layout(rect=(0.05, 0.05, 1, 0.95), w_pad=4.0)
 
 for isampler, sampler in enumerate(samplers):
 

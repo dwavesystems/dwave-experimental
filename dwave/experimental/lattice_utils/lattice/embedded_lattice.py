@@ -15,7 +15,7 @@
 
 from itertools import combinations, product
 from numbers import Integral
-from collections.abc import Iterator, Hashable
+from collections.abc import Generator, Hashable
 
 import dimod
 import numpy as np
@@ -56,6 +56,7 @@ class EmbeddedLattice(Lattice):
         self.logical_lattice = logical_lattice
         if hasattr(self.logical_lattice, "logical_lattice"):
             raise NotImplementedError("Nested embedded lattices not supported.")
+
         self.chain_nodes: dict[tuple[int, Integral]] = chain_nodes
         self.chain_coupling: float = -kwargs.pop("chain_strength", 2)
         if not hasattr(self, "num_spins"):
@@ -76,7 +77,7 @@ class EmbeddedLattice(Lattice):
                 a chain edge (u == v).
         Returns:
             A tuple of tuples, where each inner tuple represents a pair of indices
-            in the chainscorresponding to u and v that should be connected. For
+            in the chains corresponding to u and v that should be connected. For
             a chain edge (u == v or v is None), this will return pairs of indices
             within the same chain. For a logical edge (u != v), this will return
             pairs of indices between the two chains.
@@ -88,11 +89,11 @@ class EmbeddedLattice(Lattice):
         # Connectivity between two edges. Generic version: add all possible edges.
         return tuple(product(range(len(self.chain_nodes[u])), range(len(self.chain_nodes[v]))))
 
-    def generate_edges(self) -> Iterator[tuple[Hashable, Hashable]]:
+    def generate_edges(self) -> Generator[tuple[Hashable, Hashable]]:
         """Yield physical edges for the embedded lattice.
 
         Returns:
-            An iterator of tuples, where each tuple represents an edge between
+            A generator of tuples, where each tuple represents an edge between
             two spins in the physical lattice.
         """
         logical_bqm = self.logical_lattice.make_nominal_bqm()

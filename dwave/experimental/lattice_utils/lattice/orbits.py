@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from collections.abc import Hashable
+from collections import defaultdict
 
 import dimod
 import networkx as nx
@@ -37,7 +38,7 @@ def reindex(mapping: dict[Hashable, int]) -> dict[Hashable, int]:
         mapping: Dictionary whose values represent indices or labels.
 
     Returns:
-        A new dictionary with the same keys as `mapping` but with values reindexed
+        A new dictionary with the same keys as ``mapping`` but with values reindexed
         to consecutive integers starting at zero.
     """
     value_mapping = {v: i for i, v in enumerate(dict.fromkeys(mapping.values()))}
@@ -113,9 +114,9 @@ def get_bqm_orbits(
     num_nodes = graph.number_of_nodes()
     node_to_idx = {node: i for i, node in enumerate(graph.nodes())}
 
-    mapping_h = {h: [] for h in set(bqm.linear.values())}
-    mapping_mp = {h: [] for h in set(bqm.linear.values())}
-    mapping_J = {J: [] for J in set(bqm.quadratic.values())}
+    mapping_h = defaultdict(list)
+    mapping_mp = defaultdict(list)
+    mapping_J = defaultdict(list)
 
     for p, q in bqm.linear.items():
         mapping_h[q].append(f"hnode_{p}")
@@ -213,8 +214,8 @@ def get_orbits(bqm: dimod.BQM, edge_list: list[int, int]) -> tuple[NDArray, NDAr
     """Provide a bqm and receive a set of usable orbits derived from the signed BQM.
 
     Args:
-        bqm: Ising model to analyze
-        edge_list
+        bqm: Ising model to analyze.
+        edge_list: List of edges from the original unsigned BQM.
 
     Returns:
         A tuple ``(qubit_orbits_array, coupler_orbits_array)`` where
