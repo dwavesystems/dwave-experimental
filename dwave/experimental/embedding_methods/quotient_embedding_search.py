@@ -109,9 +109,9 @@ def _extract_graph_properties(
 
     Raises:
         TypeError: If metadata values are not integers.
-        KeyError: If rows or tile metadata is missing from either graph.
-        ValueError: If rows or tile metadata are not compatible, i.e., not the same in the case of
-            rows, or if the target tile count is less than the source tile count.
+        KeyError: If graph shape metadata is missing from either graph.
+        ValueError: If graph shape metadata is inconsistent between the
+            source and target or the target is smaller than the source.
     """
     m = source.graph["rows"]
     if source.graph["family"] == "pegasus":
@@ -126,8 +126,8 @@ def _extract_graph_properties(
             raise TypeError(f"graph '{name}' metadata must be an integer")
         if v <= 0:
             raise ValueError(f"graph '{name}' metadata must be positive")
-    if target.graph["rows"] != m:
-        raise ValueError("source and target must have the same number of rows")
+    if not (m == target.graph["rows"] == target.graph["columns"] == source.graph["columns"]):
+        raise ValueError("source and target must have matched square grid parameters")
     if t < tp:
         raise ValueError("target tile count must be >= source tile count")
 
@@ -364,9 +364,13 @@ def _node_search(
 ) -> dict[tuple, tuple]:
     r"""Greedy node-level quotient search
 
-    Implementation status: currently implemented only for Zephyr. For Chimera and Pegasus,
-    this routine raises ``NotImplementedError``.
+    subgraph isomorphisms (1:1 embeddings) are searched subject to the restriction that nodes in the
+    source are mapped to nodes in the target aligned subject to the constraint of matched quotient
+    graph structure.
 
+    The following case describes specifically zephyr graphs, but the general approach applies to
+    chimera and pegasus graphs with the appropriate quotient graph structure and coordinate conventions.
+    
     The source and target are viewed in quotient blocks indexed by :math:`(u, w, j, z)`, each
     containing :math:`tp` source nodes. For each block, we propose target nodes with the same
     :math:`(u, w, j, z)` and varying target :math:`k`, optionally augmented with boundary proposals.
@@ -421,10 +425,11 @@ def _node_search(
 
     Args:
         source: Coordinate-labeled graph. 
-        target: Coordinate-labeled graph. 
+        target: Coordinate-labeled graph. The family should be matched to the source family.
         embedding: Current mapping, updated in-place.
         expand_boundary_search: If ``True``, augment boundary columns using the adjacent
-            internal column. Defaults to ``True``.
+            internal column. Defaults to ``True``. This argument is only applicable to Zephyr
+            graph applications, and is ignored for Pegasus and Chimera graph families.
         ksymmetric: If ``True``, assume the order of source ``k`` indices is interchangeable
             for scoring and use top-``tp`` selection. Defaults to ``False``.
         yield_type: ``"node"``, ``"edge"``, or ``"rail-edge"``. Defaults to ``"edge"``.
@@ -434,7 +439,7 @@ def _node_search(
 
     Raises:
         ValueError: If graph geometry metadata is inconsistent.
-        NotImplementedError: If called on a non-Zephyr family.
+            This includes source/target family mismatch and unsupported geometry assumptions.
     """
     expand_boundary_search = source.graph["family"] == "zephyr" and expand_boundary_search
     m = source.graph["rows"]
@@ -444,12 +449,12 @@ def _node_search(
     else:
         tp = source.graph["tile"]
         t = target.graph["tile"]
-    if source.graph["family"] != "zephyr":
-        raise NotImplementedError(
-            "node search is currently only implemented for Zephyr graphs"
+    if source.graph["family"] != target.graph["family"]:
+        raise ValueError(
+            "source and target families should be matched for implemented searches"
         )
-    if m != target.graph["rows"]:
-        raise ValueError("source and target rows must match for node search")
+    if not (m == target.graph["rows"] == target.graph["columns"] == source.graph["columns"]):
+        raise ValueError("source and target must have matched square grid parameters")
 
     if expand_boundary_search:
         # Visit interior columns first so boundary expansion can reuse already-assigned assignments:
@@ -463,11 +468,29 @@ def _node_search(
         def _quotient_to_var(nq, k):
             return nq[:2] + (k,) + nq[2:]
     else:
-        quotient_node_iterator = itertools.product(
-            range(2), range(2 * m + 1), range(2), range(m)
-        )
-        def _quotient_to_var(nq, k):
-            return nq[:2] + (k,) + nq[2:]
+        if source.graph['family'] == 'zephyr':
+            quotient_node_iterator = itertools.product(
+                range(2), range(2 * m + 1), range(2), range(m)
+            )
+            def _quotient_to_var(nq, k):
+                return nq[:2] + (k,) + nq[2:]
+        elif source.graph['family'] == 'pegasus':
+            quotient_node_iterator = itertools.product(
+                range(2), range(6*m), range(m-1)
+            )
+            def _quotient_to_var(nq, k):
+                u, w, z = nq
+                return (u, w//6, 2*(w % 6) + k, z)
+        elif source.graph['family'] == 'chimera':
+            quotient_node_iterator = itertools.product(
+                range(2), range(m), range(m)
+            ) # Orientation, orthogonal displacement, parallel displacement
+            def _quotient_to_var(nq, k):
+                u, w, z = nq
+                return (w * u + z * (1 - u), w * (1 - u) + z * u, u, k)
+        else:
+            raise ValueError('Unknown family')
+
     for nq in quotient_node_iterator:
         # Base proposals preserve (u, w, j, z) and search only over target k-indices:
         proposals = [_quotient_to_var(nq, k) for k in range(t)]
@@ -537,7 +560,7 @@ def _rail_search(
     ksymmetric: bool = False,
     yield_type: YieldType = "edge",
 ) -> dict[tuple, tuple]:
-    r"""Greedy rail-level quotient search over rails.
+    r"""Greedy rail-level quotient search
 
     Implementation status: rail-level search supports Zephyr, Chimera, and Pegasus coordinate
     families. 
@@ -630,7 +653,7 @@ def _rail_search(
 
     Raises:
         ValueError: If duplicate target assignments are produced.
-        NotImplementedError: If called on a non-Zephyr family.
+        ValueError: If graph family is unknown.
     """
 
     expand_boundary_search = (
@@ -839,12 +862,10 @@ def quotient_search(
     selecting rails :math:`(u,w_t,k_t)` that maximise yield.; and (3) hybrid mode
     (``search_strategy='by_rail_then_node'``): rail search followed by node refinement.
 
-        Family-specific support status:
-
-        - Zephyr: supports all three search strategies.
-        - Chimera and Pegasus: currently support only ``search_strategy='by_quotient_rail'`` when
-            additional search is required. Node-level refinement is not implemented for these families,
-            so ``'by_quotient_node'`` and ``'by_rail_then_node'`` may raise ``NotImplementedError``.
+    Family-specific support status:
+        - Zephyr and Chimera: support all three search strategies.
+        - Pegasus: supports all three strategies in the implemented quotient setting
+            (``tp=1``, ``t=2``).
 
     When ``expand_boundary_search=True``, boundary columns ``w=0`` and ``w=2m`` are augmented using
     proposals drawn from adjacent internal columns. Whenever this behaviour is activated, nodes from
@@ -859,8 +880,8 @@ def quotient_search(
     ``"edge"`` and ``"rail-edge"`` is reported as a number of preserved source edges.
 
     Multi-family API note: this function accepts Zephyr/Pegasus/Chimera graph metadata and
-    coordinate-form embedding validation at the API boundary. Full strategy coverage is currently
-    available for Zephyr; Chimera and Pegasus currently have rail-level-only search support.
+    coordinate-form embedding validation at the API boundary. Strategy coverage is implemented for
+    Zephyr, Chimera, and Pegasus (with the Pegasus quotient-search constraints above).
 
     Args:
         source: Source graph (linear or coordinate labels) from a supported D-Wave topology
@@ -869,8 +890,7 @@ def quotient_search(
             family: ``'zephyr'``, ``'pegasus'``, or ``'chimera'``.
         search_strategy: Search strategy. One of ``'by_quotient_rail'``,
             ``'by_quotient_node'``, or ``'by_rail_then_node'``. See full docstrings for a
-            description of these. For Chimera/Pegasus, only ``'by_quotient_rail'`` is currently
-            implemented when search is required. Defaults to ``'by_quotient_rail'``.
+            description of these. Defaults to ``'by_quotient_rail'``.
         embedding: Optional initial one-to-one chain mapping. If omitted,
             the identity on source coordinate indices is used (wrapped in singleton chains).
             Defaults to ``None``. This must be a chain mapping where each source node maps to

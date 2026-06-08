@@ -24,7 +24,12 @@ from dwave.experimental.embedding_methods import quotient_search
 from dwave.experimental.embedding_methods.quotient_embedding_search import \
     QuotientSearchMetadata
 
-
+# To do:
+# It would make sense to simplify this function. The two phase process might better capture practical distributions,
+# but is difficult to understand and adds no value in the context of the tests.
+# It would make sense to add the feature that displacements apply to default rails (or relative to a given
+# embedding), rather than randomly. It would then be possible to guarantee a strict improvement in objectives,
+# strengthening tests.
 def generate_faulty_graph(
     m: int, t: int, proportion: float, uniform_proportion: float, seed: int | None = None, family: Literal["chimera", "pegasus", "zephyr"] = "zephyr"
 ) -> nx.Graph:
@@ -198,12 +203,10 @@ class TestZephyrYieldImprovement(unittest.TestCase):
 
 
 class TestYieldImprovement(unittest.TestCase):
-    """Check yield non-decrease for the currently implemented multi-family options.
+    """Check yield non-decrease across implemented multi-family search options.
 
-    This class is restricted to paths implemented for all three graph families:
-    - ``search_strategy='by_quotient_rail'``
-    - tile settings ``t=2`` and ``tp=1``
-    - families ``zephyr``, ``chimera``, and ``pegasus``
+    This class validates all currently implemented search strategies for all three
+    graph families under the tested tile constraints ``t=2`` and ``tp=1``.
     """
 
     _M = 6
@@ -214,6 +217,7 @@ class TestYieldImprovement(unittest.TestCase):
     _SEED = 1337
     _TRUE_FALSE = [True, False]
     _YIELD_TYPES = ["node", "edge", "rail-edge"]
+    _BY_STRATEGIES = ["by_quotient_rail", "by_quotient_node", "by_rail_then_node"]
     _FAMILIES = ["zephyr", "chimera", "pegasus"]
 
     @classmethod
@@ -246,6 +250,9 @@ class TestYieldImprovement(unittest.TestCase):
     def _assert_search_improves_yield(
         self,
         family: Literal["zephyr", "chimera", "pegasus"],
+        search_strategy: Literal[
+            "by_quotient_rail", "by_quotient_node", "by_rail_then_node"
+        ],
         yield_type: Literal["node", "edge", "rail-edge"],
         expand_boundary_search: bool,
         ksymmetric: bool,
@@ -257,7 +264,7 @@ class TestYieldImprovement(unittest.TestCase):
             source,
             target,
             yield_type=yield_type,
-            search_strategy="by_quotient_rail",
+            search_strategy=search_strategy,
             expand_boundary_search=expand_boundary_search,
             ksymmetric=ksymmetric,
         )
@@ -269,6 +276,7 @@ class TestYieldImprovement(unittest.TestCase):
             msg=(
                 f"Yield decreased from {metadata.starting_num_yielded} to "
                 f"{metadata.final_num_yielded} with family={family}, "
+                f"search_strategy={search_strategy}, "
                 f"yield_type={yield_type}, expand={expand_boundary_search}, "
                 f"ksymmetric={ksymmetric}"
             ),
@@ -281,18 +289,23 @@ class TestYieldImprovement(unittest.TestCase):
         self.assertTrue(set(sub_emb.keys()).issubset(set(source.nodes())))
 
     def test_search_yields_improvement(self):
-        for family, expand, ksym, yt in itertools.product(
-            self._FAMILIES, self._TRUE_FALSE, self._TRUE_FALSE, self._YIELD_TYPES
+        for family, strategy, expand, ksym, yt in itertools.product(
+            self._FAMILIES,
+            self._BY_STRATEGIES,
+            self._TRUE_FALSE,
+            self._TRUE_FALSE,
+            self._YIELD_TYPES,
         ):
             with self.subTest(
                 family=family,
-                search_strategy="by_quotient_rail",
+                search_strategy=strategy,
                 expand_boundary_search=expand,
                 ksymmetric=ksym,
                 yield_type=yt,
             ):
                 self._assert_search_improves_yield(
                     family=family,
+                    search_strategy=strategy,
                     yield_type=yt,
                     expand_boundary_search=expand,
                     ksymmetric=ksym,
@@ -399,7 +412,7 @@ class TestGraphInputValidation(unittest.TestCase):
     def test_incompatible_m_raises_value_error(self):
         target_diff_m = zephyr_graph(5, 4, coordinates=True)
         with self.assertRaisesRegex(
-            ValueError, r"source and target must have the same number of rows"
+            ValueError, r"source and target must have matched square grid parameters"
         ):
             quotient_search(self.source, target_diff_m)
 
