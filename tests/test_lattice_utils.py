@@ -45,7 +45,10 @@ from dwave.experimental.lattice_utils.observable.kinks import KinkKinkCorrelator
 from dwave.experimental.lattice_utils.observable.triangular import TriangularOP
 from dwave.experimental.lattice_utils.experiment.samplercall import SamplerCall
 from dwave.experimental.lattice_utils.experiment.experiment import Experiment
-from dwave.experimental.lattice_utils.experiment.fast_anneal_experiment import FastAnnealExperiment
+from dwave.experimental.lattice_utils.experiment.fast_anneal_experiment import (
+    FastAnnealExperimentConfig,
+)
+from dwave.experimental.lattice_utils.experiment.experiment import ExperimentConfig
 
 
 def _make_triangular(
@@ -55,12 +58,14 @@ def _make_triangular(
     orbit_type="singleton",
     halve_boundary_couplers=False,
 ):
-    return Triangular(
-        dimensions=(ly, lx),
-        periodic=periodic,
-        orbit_type=orbit_type,
-        halve_boundary_couplers=halve_boundary_couplers,
-    )
+    with tempfile.TemporaryDirectory() as tmpdir:
+        return Triangular(
+            dimensions=(ly, lx),
+            periodic=periodic,
+            data_root=tmpdir,
+            orbit_type=orbit_type,
+            halve_boundary_couplers=halve_boundary_couplers,
+        )
 
 
 def _make_mock_sampler(num_qubits=128, nodelist=None, solver_name="TestSolver"):
@@ -100,12 +105,12 @@ def _make_sync_sampler(n_cols=128, solver_name="TestSolver"):
 
 
 def _make_mock_experiment(
-    inst, energy_scale=1.0, run_index=0, num_random_instances=1, extra_params=None
+    inst, signed_energy_scale=1.0, run_index=0, num_random_instances=1, extra_params=None
 ):
     """Return a lightweight mock Experiment with .inst and .param."""
     exp = mock.MagicMock()
     exp.inst = inst
-    exp.param = {"energy_scale": energy_scale, "num_random_instances": num_random_instances}
+    exp.param = {"signed_energy_scale": signed_energy_scale, "num_random_instances": num_random_instances}
     exp.run_index = run_index
     if extra_params:
         exp.param.update(extra_params)
@@ -113,16 +118,17 @@ def _make_mock_experiment(
 
 
 def _make_embedded_chain(chain_nodes):
-    return EmbeddedLattice(
-        logical_lattice=Chain(
-            dimensions=(len(chain_nodes),),
+    with tempfile.TemporaryDirectory() as tmpdir:
+        return EmbeddedLattice(
+            logical_lattice=Chain(
+                dimensions=(len(chain_nodes),),
+                periodic=(False,),
+                data_root=tmpdir,
+            ),
+            chain_nodes=chain_nodes,
+            dimensions=(sum(len(chain) for chain in chain_nodes.values()),),
             periodic=(False,),
-            ignore_embedding=True,
-        ),
-        chain_nodes=chain_nodes,
-        dimensions=(sum(len(chain) for chain in chain_nodes.values()),),
-        periodic=(False,),
-    )
+        )
 
 
 class TestUtils(unittest.TestCase):
@@ -161,81 +167,98 @@ class TestUtils(unittest.TestCase):
 
 class TestChain(unittest.TestCase):
     def test_periodic(self):
-        chain = Chain(dimensions=(6,), periodic=(True,))
-        self.assertEqual(chain.num_spins, 6)
-        self.assertEqual(chain.num_edges, 6)
-        self.assertIn((5, 0), chain.edge_list)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(6,), periodic=(True,), data_root=tmpdir)
+            self.assertEqual(chain.num_spins, 6)
+            self.assertEqual(chain.num_edges, 6)
+            self.assertIn((5, 0), chain.edge_list)
 
     def test_non_periodic(self):
-        chain = Chain(dimensions=(6,), periodic=(False,))
-        self.assertEqual(chain.num_spins, 6)
-        self.assertEqual(chain.num_edges, 5)
-        self.assertNotIn((5, 0), chain.edge_list)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(6,), periodic=(False,), data_root=tmpdir)
+            self.assertEqual(chain.num_spins, 6)
+            self.assertEqual(chain.num_edges, 5)
+            self.assertNotIn((5, 0), chain.edge_list)
 
     def test_single_node_periodic(self):
-        chain = Chain(dimensions=(1,), periodic=(True,))
-        self.assertEqual(chain.num_spins, 1)
-        self.assertEqual(chain.num_edges, 0)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(1,), periodic=(True,), data_root=tmpdir)
+            self.assertEqual(chain.num_spins, 1)
+            self.assertEqual(chain.num_edges, 0)
 
     def test_two_node_periodic(self):
-        chain = Chain(dimensions=(2,), periodic=(True,))
-        self.assertEqual(chain.num_edges, 2)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(2,), periodic=(True,), data_root=tmpdir)
+            self.assertEqual(chain.num_edges, 2)
 
     def test_geometry_name(self):
-        chain = Chain(dimensions=(6,), periodic=(True,))
-        self.assertEqual(chain.geometry_name, "Chain")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(6,), periodic=(True,), data_root=tmpdir)
+            self.assertEqual(chain.geometry_name, "Chain")
 
 
 class TestLattice(unittest.TestCase):
     def test_default_periodic(self):
-        chain = Chain(dimensions=(4,), periodic=(False,))
-        self.assertFalse(chain.periodic[0])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(4,), periodic=(False,), data_root=tmpdir)
+            self.assertFalse(chain.periodic[0])
 
     def test_edge_list_sorted(self):
-        chain = Chain(dimensions=(5,), periodic=(False,))
-        for u, v in chain.edge_list:
-            self.assertLess(u, v)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(5,), periodic=(False,), data_root=tmpdir)
+            for u, v in chain.edge_list:
+                self.assertLess(u, v)
 
     def test_bqm_structure(self):
-        chain = Chain(dimensions=(4,), periodic=(False,))
-        bqm = chain.make_nominal_bqm()
-        self.assertEqual(len(bqm.variables), 4)
-        self.assertEqual(len(bqm.quadratic), 3)
-        for u, v in chain.edge_list:
-            self.assertAlmostEqual(bqm.quadratic[(u, v)], 1.0)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(4,), periodic=(False,), data_root=tmpdir)
+            bqm = chain.make_nominal_bqm()
+            self.assertEqual(len(bqm.variables), 4)
+            self.assertEqual(len(bqm.quadratic), 3)
+            for u, v in chain.edge_list:
+                self.assertAlmostEqual(bqm.quadratic[(u, v)], 1.0)
 
     def test_bqm_vartype(self):
-        bqm = Chain(dimensions=(3,), periodic=(True,)).make_nominal_bqm()
-        self.assertEqual(bqm.vartype, dimod.SPIN)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bqm = Chain(dimensions=(3,), data_root=tmpdir).make_nominal_bqm()
+            self.assertEqual(bqm.vartype, dimod.SPIN)
 
     def test_orbit_singleton(self):
-        chain = Chain(dimensions=(4,), periodic=(True,), orbit_type="singleton")
-        np.testing.assert_array_equal(chain.qubit_orbits, np.arange(4))
-        np.testing.assert_array_equal(chain.coupler_orbits, np.arange(chain.num_edges))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(4,), orbit_type="singleton", data_root=tmpdir)
+            np.testing.assert_array_equal(chain.qubit_orbits, np.arange(4))
+            np.testing.assert_array_equal(chain.coupler_orbits, np.arange(chain.num_edges))
 
     def test_orbit_global(self):
-        chain = Chain(dimensions=(4,), periodic=(True,), orbit_type="global")
-        np.testing.assert_array_equal(chain.qubit_orbits, np.zeros(4, dtype=int))
-        np.testing.assert_array_equal(chain.coupler_orbits, np.zeros(chain.num_edges, dtype=int))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(4,), orbit_type="global", data_root=tmpdir)
+            np.testing.assert_array_equal(chain.qubit_orbits, np.zeros(4, dtype=int))
+            np.testing.assert_array_equal(
+                chain.coupler_orbits, np.zeros(chain.num_edges, dtype=int)
+            )
 
     def test_orbit_explicit(self):
-        chain = Chain(
-            dimensions=(4,),
-            periodic=(True,),
-            orbit_type="explicit",
-            qubit_orbits=np.array([0, 0, 1, 1]),
-            coupler_orbits=np.array([0, 0, 1, 1]),
-        )
-        np.testing.assert_array_equal(chain.qubit_orbits, [0, 0, 1, 1])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(
+                dimensions=(4,),
+                periodic=(True,),
+                orbit_type="explicit",
+                qubit_orbits=np.array([0, 0, 1, 1]),
+                coupler_orbits=np.array([0, 0, 1, 1]),
+                data_root=tmpdir,
+            )
+            np.testing.assert_array_equal(chain.qubit_orbits, [0, 0, 1, 1])
 
     def test_unknown_orbit_type(self):
-        with self.assertRaises(ValueError):
-            Chain(dimensions=(4,), periodic=(True,), orbit_type="bogus")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaises(ValueError):
+                Chain(dimensions=(4,), periodic=(True,), orbit_type="bogus", data_root=tmpdir)
 
     def test_get_path_invalid_kind(self):
-        chain = Chain(dimensions=(4,), periodic=(True,))
-        with self.assertRaises(ValueError):
-            chain._get_path(None, "invalid")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
+            with self.assertRaises(ValueError):
+                chain._get_path(None, "invalid")
 
     def test_standard_orbit_save_and_load(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -243,7 +266,7 @@ class TestLattice(unittest.TestCase):
                 dimensions=(4,),
                 periodic=(True,),
                 orbit_type="standard",
-                lattice_data_root=Path(tmpdir),
+                data_root=tmpdir,
             )
             self.assertIsNotNone(chain.qubit_orbits)
             self.assertIsNotNone(chain.coupler_orbits)
@@ -252,47 +275,61 @@ class TestLattice(unittest.TestCase):
                 dimensions=(4,),
                 periodic=(True,),
                 orbit_type="standard",
-                lattice_data_root=Path(tmpdir),
+                data_root=tmpdir,
             )
             np.testing.assert_array_equal(chain.qubit_orbits, chain2.qubit_orbits)
 
     def test_nested_embedded_raises(self):
-        dt = DimerizedTriangular(dimensions=(3, 3), periodic=(True, False), orbit_type="singleton")
-        # Fake a nested embedded lattice
-        dt.logical_lattice.logical_lattice = mock.MagicMock()
-        dt.orbit_type = "global"
-        with self.assertRaises(NotImplementedError):
-            dt.initialize_orbits()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base_chain = Chain(
+                dimensions=(2,),
+                periodic=(False,),
+                data_root=tmpdir,
+            )
+            embedded_once = EmbeddedLattice(
+                logical_lattice=base_chain,
+                chain_nodes={0: (0, 1), 1: (2, 3)},
+                dimensions=(4,),
+                periodic=(False,),
+            )
+            with self.assertRaises(NotImplementedError):
+                EmbeddedLattice(
+                    logical_lattice=embedded_once,
+                    chain_nodes={0: (0, 1), 1: (2, 3), 2: (4, 5), 3: (6, 7)},
+                    dimensions=(8,),
+                    periodic=(False,),
+                )
 
     def test_embed_no_embeddings_found(self):
-        chain = Chain(dimensions=(4,), periodic=(True,))
-        sampler = mock.MagicMock()
-        type(sampler).__name__ = "MockDWaveSampler"
-        sampler.to_networkx_graph.return_value = chain._make_networkx_graph()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
+            sampler = mock.MagicMock()
+            type(sampler).__name__ = "MockDWaveSampler"
+            sampler.to_networkx_graph.return_value = chain._make_networkx_graph()
 
-        with mock.patch(
-            "dwave.experimental.lattice_utils.lattice.lattice.find_multiple_embeddings",
-            return_value=[],
-        ):
-            with self.assertRaises(ValueError):
-                chain.embed_lattice(sampler, try_to_load=False, timeout=1)
+            with mock.patch(
+                "dwave.experimental.lattice_utils.lattice.lattice.find_multiple_embeddings",
+                return_value=[],
+            ):
+                with self.assertRaises(ValueError):
+                    chain.embed_lattice(sampler, try_to_load=False, timeout=1)
 
     def test_embed_load_existing(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = Chain(dimensions=(4,), periodic=(True,), lattice_data_root=Path(tmpdir))
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
             sampler = mock.MagicMock()
             type(sampler).__name__ = "MockDWaveSampler"
             sampler.to_networkx_graph.return_value = chain._make_networkx_graph()
 
             embeddings = np.array([[0, 1, 2, 3]])
-            chain._save_embeddings(sampler, embeddings, data_root=Path(tmpdir))
+            chain._save_embeddings(sampler, embeddings)
 
-            chain.embed_lattice(sampler, try_to_load=True, data_root=Path(tmpdir))
+            chain.embed_lattice(sampler, try_to_load=True, data_root=tmpdir)
             np.testing.assert_array_equal(chain.embedding_list, embeddings)
 
     def test_embed_find_and_save(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = Chain(dimensions=(4,), periodic=(True,), lattice_data_root=Path(tmpdir))
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
             sampler = mock.MagicMock()
             type(sampler).__name__ = "MockDWaveSampler"
             sampler.to_networkx_graph.return_value = chain._make_networkx_graph()
@@ -302,18 +339,25 @@ class TestLattice(unittest.TestCase):
                 "dwave.experimental.lattice_utils.lattice.lattice.find_multiple_embeddings",
                 return_value=[emb_dict],
             ):
-                chain.embed_lattice(sampler, try_to_load=False, timeout=1, data_root=Path(tmpdir))
+                chain.embed_lattice(sampler, try_to_load=False, timeout=1, data_root=tmpdir)
             # Verify embedding was found and saved
-            emb_path = chain._get_path(Path(tmpdir), "embedding", sampler_name="MockDWaveSampler")
+            emb_path = chain._get_path("embedding", sampler_name="MockDWaveSampler")
             self.assertTrue(emb_path.exists())
 
 
 class TestTriangular(unittest.TestCase):
     def test_basic_construction(self):
-        tri = _make_triangular(3, 3)
-        self.assertEqual(tri.num_spins, 9)
-        self.assertGreater(tri.num_edges, 0)
-        self.assertEqual(tri.geometry_name, "Triangular")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tri = Triangular(
+                dimensions=(3, 3),
+                periodic=(True, False),
+                data_root=tmpdir,
+                orbit_type="singleton",
+                halve_boundary_couplers=False,
+            )
+            self.assertEqual(tri.num_spins, 9)
+            self.assertGreater(tri.num_edges, 0)
+            self.assertEqual(tri.geometry_name, "Triangular")
 
     def test_coordinates(self):
         tri = _make_triangular(3, 3)
@@ -340,44 +384,61 @@ class TestTriangular(unittest.TestCase):
 
 class TestDimerizedTriangular(unittest.TestCase):
     def test_basic_construction(self):
-        dt = DimerizedTriangular(dimensions=(3, 3), periodic=(True, False), orbit_type="singleton")
-        self.assertEqual(dt.geometry_name, "DimerizedTriangular")
-        self.assertIsNotNone(dt.logical_lattice)
-        self.assertEqual(dt.num_spins, 18)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dt = DimerizedTriangular(
+                dimensions=(3, 3), periodic=(True, False), orbit_type="singleton", data_root=tmpdir
+            )
+            self.assertEqual(dt.geometry_name, "DimerizedTriangular")
+            self.assertIsNotNone(dt.logical_lattice)
+            self.assertEqual(dt.num_spins, 18)
 
     def test_chain_connectivity_self(self):
-        dt = DimerizedTriangular(dimensions=(3, 3), periodic=(True, False), orbit_type="singleton")
-        cc = dt.get_chain_connectivity(0)
-        self.assertEqual(cc, ((0, 1),))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dt = DimerizedTriangular(dimensions=(3, 3), data_root=tmpdir)
+            cc = dt.get_chain_connectivity(0)
+            self.assertEqual(cc, ((0, 1),))
 
     def test_chain_connectivity_cases(self):
-        dt = DimerizedTriangular(dimensions=(3, 3), periodic=(True, False), orbit_type="singleton")
-        cases = [
-            ((0,), ((0, 1),)),
-            ((0, 1), ((1, 0),)),
-            ((0, 3), ((1, 0),)),
-        ]
-        for args, expected in cases:
-            with self.subTest(args=args):
-                self.assertEqual(dt.get_chain_connectivity(*args), expected)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dt = DimerizedTriangular(dimensions=(3, 3), data_root=tmpdir)
+            cases = [
+                ((0,), ((0, 1),)),
+                ((0, 1), ((1, 0),)),
+                ((0, 3), ((1, 0),)),
+            ]
+            for args, expected in cases:
+                with self.subTest(args=args):
+                    self.assertEqual(dt.get_chain_connectivity(*args), expected)
 
 
 class TestEmbeddedLattice(unittest.TestCase):
     def test_embed_sample(self):
-        dt = DimerizedTriangular(dimensions=(3, 3), periodic=(True, False), orbit_type="singleton")
-        logical_sample = np.array([1, -1, 1, -1, 1, -1, 1, -1, 1])
-        embedded = dt.embed_sample(logical_sample)
-        self.assertEqual(len(embedded), dt.num_spins)
-        # Each chain should have the same value
-        for spin, chain in dt.chain_nodes.items():
-            for node in chain:
-                self.assertEqual(embedded[node], logical_sample[spin])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dt = DimerizedTriangular(dimensions=(3, 3), data_root=tmpdir)
+            logical_sample = np.array([1, -1, 1, -1, 1, -1, 1, -1, 1])
+            embedded = dt.embed_sample(logical_sample)
+            self.assertEqual(len(embedded), dt.num_spins)
+            # Each chain should have the same value
+            for spin, chain in dt.chain_nodes.items():
+                for node in chain:
+                    self.assertEqual(embedded[node], logical_sample[spin])
 
     def test_unembed_sample(self):
-        embedded = _make_embedded_chain({0: (0, 1, 2), 1: (3, 4, 5)})
-        physical_sample = np.array([1, 1, -1, -1, -1, 1])
-        logical = embedded.unembed_sample(physical_sample)
-        np.testing.assert_array_equal(logical, np.array([1, -1]))
+        chain_nodes = {0: (0, 1, 2), 1: (3, 4, 5)}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            embedded = EmbeddedLattice(
+                logical_lattice=Chain(
+                    dimensions=(len(chain_nodes),),
+                    periodic=(False,),
+                    data_root=tmpdir,
+                ),
+                chain_nodes=chain_nodes,
+                dimensions=(sum(len(chain) for chain in chain_nodes.values()),),
+                periodic=(False,),
+            )
+            physical_sample = np.array([1, 1, -1, -1, -1, 1])
+            logical = embedded.unembed_sample(physical_sample)
+            np.testing.assert_array_equal(logical, np.array([1, -1]))
 
     def test_unembed_sample_breaks_ties_randomly(self):
         embedded = _make_embedded_chain({0: (0, 1), 1: (2, 3)})
@@ -436,77 +497,84 @@ class TestOrbits(unittest.TestCase):
 
 class TestOptimize(unittest.TestCase):
     def test_plain_lattice(self):
-        chain = Chain(dimensions=(4,), periodic=(False,))
-        bqm = chain.make_nominal_bqm()
-        energy, sample, _ = optimize(chain, bqm, sa_kwargs={"num_sweeps": 256, "num_reads": 16})
-        self.assertEqual(energy, -3.0)
-        self.assertEqual(bqm.energy(sample), energy)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(4,), periodic=(False,), data_root=tmpdir)
+            bqm = chain.make_nominal_bqm()
+            energy, sample, _ = optimize(chain, bqm, sa_kwargs={"num_sweeps": 256, "num_reads": 16})
+            self.assertEqual(energy, -3.0)
+            self.assertEqual(bqm.energy(sample), energy)
 
     def test_embedded_lattice(self):
-        dt = DimerizedTriangular(dimensions=(3, 3), periodic=(True, False), orbit_type="singleton")
-        bqm = dt.make_nominal_bqm()
-        energy, sample, _ = optimize(dt, bqm, sa_kwargs={"num_sweeps": 256, "num_reads": 16})
-        self.assertEqual(len(sample), dt.num_spins)
-        self.assertEqual(bqm.energy(sample), energy)
-        self.assertTrue(set(sample).issubset({-1, 1}))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dt = DimerizedTriangular(dimensions=(3, 3), data_root=tmpdir)
+            bqm = dt.make_nominal_bqm()
+            energy, sample, _ = optimize(dt, bqm, sa_kwargs={"num_sweeps": 256, "num_reads": 16})
+            self.assertEqual(len(sample), dt.num_spins)
+            self.assertEqual(bqm.energy(sample), energy)
+            self.assertTrue(set(sample).issubset({-1, 1}))
 
 
 class TestObservables(unittest.TestCase):
     def test_qubit_magnetization(self):
-        chain = Chain(dimensions=(4,), periodic=(False,))
-        bqm = chain.make_nominal_bqm()
-        samples = np.array([[1, 1, -1, -1], [-1, -1, 1, 1]])
-        ss = dimod.SampleSet.from_samples_bqm(samples, bqm)
-        exp = _make_mock_experiment(chain)
-        result = QubitMagnetization().evaluate(exp, bqm, ss)
-        np.testing.assert_array_equal(result, [0.0, 0.0, 0.0, 0.0])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(4,), periodic=(False,), data_root=tmpdir)
+            bqm = chain.make_nominal_bqm()
+            samples = np.array([[1, 1, -1, -1], [-1, -1, 1, 1]])
+            ss = dimod.SampleSet.from_samples_bqm(samples, bqm)
+            exp = _make_mock_experiment(chain)
+            result = QubitMagnetization().evaluate(exp, bqm, ss)
+            np.testing.assert_array_equal(result, [0.0, 0.0, 0.0, 0.0])
 
     def test_coupler_correlation(self):
-        chain = Chain(dimensions=(4,), periodic=(False,))
-        bqm = chain.make_nominal_bqm()
-        exp = _make_mock_experiment(chain)
-        alt = np.tile([1, -1, 1, -1], (4, 1))
-        ss_alt = dimod.SampleSet.from_samples_bqm(alt, bqm)
-        np.testing.assert_array_equal(
-            CouplerCorrelation().evaluate(exp, bqm, ss_alt), -np.ones(chain.num_edges)
-        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(4,), periodic=(False,), data_root=tmpdir)
+            bqm = chain.make_nominal_bqm()
+            exp = _make_mock_experiment(chain)
+            alt = np.tile([1, -1, 1, -1], (4, 1))
+            ss_alt = dimod.SampleSet.from_samples_bqm(alt, bqm)
+            np.testing.assert_array_equal(
+                CouplerCorrelation().evaluate(exp, bqm, ss_alt), -np.ones(chain.num_edges)
+            )
 
     def test_coupler_frustration(self):
-        # All aligned (corr=1) -> frustration = 1.0
-        chain = Chain(dimensions=(4,), periodic=(False,))
-        bqm = chain.make_nominal_bqm()
-        samples = np.ones((4, 4))
-        ss = dimod.SampleSet.from_samples_bqm(samples, bqm)
-        exp = _make_mock_experiment(chain)
-        np.testing.assert_array_almost_equal(
-            CouplerFrustration().evaluate(exp, bqm, ss), np.ones(chain.num_edges)
-        )
+        """All aligned (corr=1) -> frustration = 1.0"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(4,), periodic=(False,), data_root=tmpdir)
+            bqm = chain.make_nominal_bqm()
+            samples = np.ones((4, 4))
+            ss = dimod.SampleSet.from_samples_bqm(samples, bqm)
+            exp = _make_mock_experiment(chain)
+            np.testing.assert_array_almost_equal(
+                CouplerFrustration().evaluate(exp, bqm, ss), np.ones(chain.num_edges)
+            )
 
     def test_sample_energy(self):
-        chain = Chain(dimensions=(4,), periodic=(False,))
-        bqm = chain.make_nominal_bqm()
-        # All-ones: energy = sum of J for 3 edges = 3.0
-        samples = np.ones((1, 4))
-        ss = dimod.SampleSet.from_samples_bqm(samples, bqm)
-        exp_pos = _make_mock_experiment(chain, energy_scale=1.0)
-        np.testing.assert_array_almost_equal(SampleEnergy().evaluate(exp_pos, bqm, ss), [3.0])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(4,), periodic=(False,), data_root=tmpdir)
+            bqm = chain.make_nominal_bqm()
+            # All-ones: energy = sum of J for 3 edges = 3.0
+            samples = np.ones((1, 4))
+            ss = dimod.SampleSet.from_samples_bqm(samples, bqm)
+            exp_pos = _make_mock_experiment(chain, signed_energy_scale=1.0)
+            np.testing.assert_array_almost_equal(SampleEnergy().evaluate(exp_pos, bqm, ss), [3.0])
 
     def test_bitpacked_spins(self):
-        chain = Chain(dimensions=(4,), periodic=(False,))
-        bqm = chain.make_nominal_bqm()
-        samples = np.array([[1, -1, 1, -1], [-1, 1, -1, 1]])
-        ss = dimod.SampleSet.from_samples_bqm(samples, bqm)
-        exp = _make_mock_experiment(chain)
-        packed, shape = BitpackedSpins().evaluate(exp, bqm, ss)
-        self.assertEqual(shape, (2, 4))
-        # Unpack and verify round-trip
-        unpacked = np.unpackbits(packed)[: shape[0] * shape[1]].reshape(shape)
-        np.testing.assert_array_equal(unpacked, np.equal(samples, 1))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(4,), periodic=(False,), data_root=tmpdir)
+            bqm = chain.make_nominal_bqm()
+            samples = np.array([[1, -1, 1, -1], [-1, 1, -1, 1]])
+            ss = dimod.SampleSet.from_samples_bqm(samples, bqm)
+            exp = _make_mock_experiment(chain)
+            packed, shape = BitpackedSpins().evaluate(exp, bqm, ss)
+            self.assertEqual(shape, (2, 4))
+            # Unpack and verify round-trip
+            unpacked = np.unpackbits(packed)[: shape[0] * shape[1]].reshape(shape)
+            np.testing.assert_array_equal(unpacked, np.equal(samples, 1))
 
     def test_reference_energy_save_load_roundtrip(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "ref.txt"
-            chain = Chain(dimensions=(4,), periodic=(False,))
+            chain = Chain(dimensions=(4,), periodic=(False,), data_root=tmpdir)
             bqm = chain.make_nominal_bqm()
             sample = np.array([1, -1, 1, -1])
             obs = ReferenceEnergy()
@@ -520,7 +588,7 @@ class TestObservables(unittest.TestCase):
 
     def test_reference_energy_evaluate_generates_and_caches(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = Chain(dimensions=(4,), periodic=(False,), lattice_data_root=Path(tmpdir))
+            chain = Chain(dimensions=(4,), periodic=(False,), data_root=tmpdir)
             bqm = chain.make_nominal_bqm()
             obs = ReferenceEnergy()
 
@@ -540,7 +608,7 @@ class TestObservables(unittest.TestCase):
     def test_reference_energy_update(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "ref.txt"
-            chain = Chain(dimensions=(4,), periodic=(False,))
+            chain = Chain(dimensions=(4,), periodic=(False,), data_root=tmpdir)
             bqm = chain.make_nominal_bqm()
             obs = ReferenceEnergy()
             exp = _make_mock_experiment(chain)
@@ -558,47 +626,47 @@ class TestObservables(unittest.TestCase):
                 obs.update(exp, bqm, bad_sample, path=path)
 
     def test_reference_energy_path(self):
-        chain = Chain(dimensions=(4,), periodic=(True,))
-        bqm = chain.make_nominal_bqm()
-        exp = _make_mock_experiment(chain)
-
-        with self.assertRaises(NotImplementedError):
-            get_reference_energy_path(experiment=None, bqm=None)
-
-        path = get_reference_energy_path(experiment=exp, bqm=bqm)
-        self.assertTrue(str(path).endswith(".txt"))
-
-        # Via dummy data dict (experiment=None)
-        dummy = {"run_index": 0, "num_random_instances": 1, "inst": chain}
-        path2 = get_reference_energy_path(bqm=bqm, dummy_experiment_data_dict=dummy)
-        self.assertTrue(str(path2).endswith(".txt"))
-
         with tempfile.TemporaryDirectory() as tmpdir:
-            path3 = get_reference_energy_path(experiment=exp, bqm=bqm, root=tmpdir)
-            self.assertIn(tmpdir, str(path3))
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
+            bqm = chain.make_nominal_bqm()
+            exp = _make_mock_experiment(chain)
+
+            path = get_reference_energy_path(bqm, experiment=exp)
+            self.assertTrue(str(path).endswith(".txt"))
+
+            # Via dummy data dict (experiment=None)
+            dummy = {"run_index": 0, "num_random_instances": 1, "inst": chain}
+            path2 = get_reference_energy_path(bqm, dummy_experiment_data_dict=dummy)
+            self.assertTrue(str(path2).endswith(".txt"))
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                path3 = get_reference_energy_path(bqm, experiment=exp, root=tmpdir)
+                self.assertIn(tmpdir, str(path3))
 
 
 class TestKinks(unittest.TestCase):
     def test_all_aligned(self):
-        chain = Chain(dimensions=(6,), periodic=(True,))
-        bqm = chain.make_nominal_bqm()
-        samples = np.ones((10, 6))
-        ss = dimod.SampleSet.from_samples_bqm(samples, bqm)
-        exp = _make_mock_experiment(chain)
-        result = KinkKinkCorrelator().evaluate(exp, bqm, ss)
-        # All neighbors aligned -> every site is a "kink" (K=1 everywhere)
-        np.testing.assert_array_equal(result, np.zeros(6))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(6,), periodic=(True,), data_root=tmpdir)
+            bqm = chain.make_nominal_bqm()
+            samples = np.ones((10, 6))
+            ss = dimod.SampleSet.from_samples_bqm(samples, bqm)
+            exp = _make_mock_experiment(chain)
+            result = KinkKinkCorrelator().evaluate(exp, bqm, ss)
+            # All neighbors aligned -> every site is a "kink" (K=1 everywhere)
+            np.testing.assert_array_equal(result, np.zeros(6))
 
     def test_mixed_pattern(self):
-        chain = Chain(dimensions=(6,), periodic=(True,))
-        bqm = chain.make_nominal_bqm()
-        # [1,1,-1,-1,1,1]: kink at sites 2,4 (domain walls)
-        samples = np.tile([1, 1, -1, -1, 1, 1], (20, 1))
-        ss = dimod.SampleSet.from_samples_bqm(samples, bqm)
-        exp = _make_mock_experiment(chain)
-        result = KinkKinkCorrelator().evaluate(exp, bqm, ss)
-        expected = np.array([0.0, -0.25, 0.125, -0.25, 0.125, -0.25])
-        np.testing.assert_array_almost_equal(result, expected)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(6,), periodic=(True,), data_root=tmpdir)
+            bqm = chain.make_nominal_bqm()
+            # [1,1,-1,-1,1,1]: kink at sites 2,4 (domain walls)
+            samples = np.tile([1, 1, -1, -1, 1, 1], (20, 1))
+            ss = dimod.SampleSet.from_samples_bqm(samples, bqm)
+            exp = _make_mock_experiment(chain)
+            result = KinkKinkCorrelator().evaluate(exp, bqm, ss)
+            expected = np.array([0.0, -0.25, 0.125, -0.25, 0.125, -0.25])
+            np.testing.assert_array_almost_equal(result, expected)
 
 
 class TestTriangularOP(unittest.TestCase):
@@ -613,14 +681,15 @@ class TestTriangularOP(unittest.TestCase):
         np.testing.assert_array_almost_equal(np.abs(result), np.zeros(5), decimal=10)
 
     def test_evaluate_embedded(self):
-        dt = DimerizedTriangular(dimensions=(3, 3), periodic=(True, False), orbit_type="singleton")
-        bqm = dt.make_nominal_bqm()
-        # Uniform embedded spins
-        samples = np.ones((5, dt.num_spins))
-        ss = dimod.SampleSet.from_samples_bqm(samples, bqm)
-        exp = _make_mock_experiment(dt)
-        result = TriangularOP().evaluate(exp, bqm, ss)
-        np.testing.assert_array_almost_equal(np.abs(result), np.zeros(5), decimal=10)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dt = DimerizedTriangular(dimensions=(3, 3), data_root=tmpdir)
+            bqm = dt.make_nominal_bqm()
+            # Uniform embedded spins
+            samples = np.ones((5, dt.num_spins))
+            ss = dimod.SampleSet.from_samples_bqm(samples, bqm)
+            exp = _make_mock_experiment(dt)
+            result = TriangularOP().evaluate(exp, bqm, ss)
+            np.testing.assert_array_almost_equal(np.abs(result), np.zeros(5), decimal=10)
 
 
 class TestSamplerCall(unittest.TestCase):
@@ -648,83 +717,80 @@ class TestSamplerCall(unittest.TestCase):
 
 class TestExperiment(unittest.TestCase):
     def test_default_params(self):
-        chain = Chain(dimensions=(4,), periodic=(True,))
-        sampler = _make_mock_sampler()
-        exp = Experiment(chain, sampler)
-        self.assertEqual(exp.param["energy_scale"], 1.0)
-        self.assertEqual(exp.param["num_reads"], 100)
-        self.assertIs(exp.inst, chain)
-
-    def test_results_root(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = Chain(dimensions=(4,), periodic=(True,))
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
             sampler = _make_mock_sampler()
-            exp = Experiment(chain, sampler, results_root=tmpdir)
-            self.assertEqual(exp.experiment_results_root, Path(tmpdir).resolve())
+            exp = Experiment(inst=chain, sampler=sampler)
+            self.assertEqual(exp.param["signed_energy_scale"], 1.0)
+            self.assertEqual(exp.param["num_reads"], 100)
+            self.assertIs(exp.inst, chain)
 
     def test_data_path_with_schedule(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = Chain(dimensions=(4,), periodic=(True,))
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
             sampler = _make_mock_sampler()
-            exp = Experiment(chain, sampler, results_root=tmpdir, anneal_time=5.0)
+            exp = Experiment(inst=chain, sampler=sampler)
             exp.param["anneal_schedule"] = [(0, 1), (5, 0.5)]
             del exp.param["anneal_time"]
-            exp.apply_param({"energy_scale": 1.0, "anneal_schedule": [(0, 1), (5, 0.5)]})
+            exp.apply_param({"signed_energy_scale": 1.0, "anneal_schedule": [(0, 1), (5, 0.5)]})
             self.assertIn("asched", str(exp.data_path))
 
     def test_apply_param_unknown_sampler_raises(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = Chain(dimensions=(4,), periodic=(True,))
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
             sampler = _make_mock_sampler()
             type(sampler).__name__ = "UnknownSampler"
-            exp = Experiment(chain, sampler, results_root=tmpdir)
+            exp = Experiment(inst=chain, sampler=sampler)
             with self.assertRaises(TypeError):
-                exp.apply_param({"energy_scale": 1.0, "anneal_time": 1.0})
+                exp.apply_param({"signed_energy_scale": 1.0, "anneal_time": 1.0})
 
     def test_apply_param_no_anneal_or_schedule_raises(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = Chain(dimensions=(4,), periodic=(True,))
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
             sampler = _make_mock_sampler()
-            exp = Experiment(chain, sampler, results_root=tmpdir)
+            exp = Experiment(inst=chain, sampler=sampler)
             del exp.param["anneal_time"]
             with self.assertRaises(ValueError):
-                exp.apply_param({"energy_scale": 1.0})
+                exp.apply_param({"signed_energy_scale": 1.0})
 
     def test_initial_shim_no_embeddings(self):
-        chain = Chain(dimensions=(4,), periodic=(True,))
-        sampler = _make_mock_sampler()
-        exp = Experiment(chain, sampler)
-        exp.already_initialized = False
-        shimdata = exp._make_initial_shim()
-        self.assertEqual(shimdata["total_iterations"], 0)
-        self.assertNotIn("flux_biases", shimdata)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
+            sampler = _make_mock_sampler()
+            exp = Experiment(inst=chain, sampler=sampler)
+            exp.already_initialized = False
+            shimdata = exp._make_initial_shim()
+            self.assertEqual(shimdata["total_iterations"], 0)
+            self.assertNotIn("flux_biases", shimdata)
 
     def test_initial_shim_with_embeddings(self):
-        chain = Chain(dimensions=(4,), periodic=(True,))
-        chain.embedding_list = np.array([[0, 1, 2, 3]])
-        sampler = _make_mock_sampler(num_qubits=128)
-        exp = Experiment(chain, sampler)
-        shimdata = exp._make_initial_shim()
-        self.assertIn("flux_biases", shimdata)
-        self.assertEqual(len(shimdata["flux_biases"]), 128)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
+            chain.embedding_list = np.array([[0, 1, 2, 3]])
+            sampler = _make_mock_sampler(num_qubits=128)
+            exp = Experiment(inst=chain, sampler=sampler)
+            shimdata = exp._make_initial_shim()
+            self.assertIn("flux_biases", shimdata)
+            self.assertEqual(len(shimdata["flux_biases"]), 128)
 
     def test_initial_shim_with_preset_flux_biases(self):
-        chain = Chain(dimensions=(4,), periodic=(True,))
-        chain.embedding_list = np.array([[0, 1, 2, 3]])
-        sampler = _make_mock_sampler(num_qubits=128)
-        fb = np.ones(128) * 0.01
-        exp = Experiment(chain, sampler)
-        exp.param["flux_biases"] = fb
-        shimdata = exp._make_initial_shim()
-        np.testing.assert_array_almost_equal(shimdata["flux_biases"], fb)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
+            chain.embedding_list = np.array([[0, 1, 2, 3]])
+            sampler = _make_mock_sampler(num_qubits=128)
+            fb = np.ones(128) * 0.01
+            exp = Experiment(inst=chain, sampler=sampler)
+            exp.param["flux_biases"] = fb
+            shimdata = exp._make_initial_shim()
+            np.testing.assert_array_almost_equal(shimdata["flux_biases"], fb)
 
     def test_load_shim_from_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = Chain(dimensions=(4,), periodic=(True,))
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
             sampler = _make_mock_sampler()
-            exp = Experiment(chain, sampler, results_root=tmpdir)
-            exp.data_path = Path(tmpdir)
+            exp = Experiment(inst=chain, sampler=sampler)
             exp.run_index = 1
+            exp.data_path = Path(tmpdir)
 
             shimdata = {"total_iterations": 5, "flux_biases": np.zeros(10)}
             data = {"shimdata": shimdata}
@@ -737,11 +803,12 @@ class TestExperiment(unittest.TestCase):
 
     def test_load_shim_empty_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = Chain(dimensions=(4,), periodic=(True,))
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
             sampler = _make_mock_sampler()
-            exp = Experiment(chain, sampler, results_root=tmpdir)
-            exp.data_path = Path(tmpdir)
+            exp = Experiment(inst=chain, sampler=sampler)
             exp.run_index = 1
+            exp.data_path = Path(tmpdir)
+
             fn = Path(tmpdir) / "iter00000.pkl.lzma"
             fn.touch()
 
@@ -750,11 +817,11 @@ class TestExperiment(unittest.TestCase):
 
     def test_load_shim_corrupted_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = Chain(dimensions=(4,), periodic=(True,))
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
             sampler = _make_mock_sampler()
-            exp = Experiment(chain, sampler, results_root=tmpdir)
-            exp.data_path = Path(tmpdir)
+            exp = Experiment(inst=chain, sampler=sampler)
             exp.run_index = 1
+            exp.data_path = Path(tmpdir)
             fn = Path(tmpdir) / "iter00000.pkl.lzma"
             fn.write_bytes(b"not a valid lzma file")
 
@@ -763,9 +830,9 @@ class TestExperiment(unittest.TestCase):
 
     def test_load_shim_missing_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = Chain(dimensions=(4,), periodic=(True,))
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
             sampler = _make_mock_sampler()
-            exp = Experiment(chain, sampler, results_root=tmpdir)
+            exp = Experiment(inst=chain, sampler=sampler)
             exp.data_path = Path(tmpdir)
             exp.run_index = 1
 
@@ -776,9 +843,9 @@ class TestExperiment(unittest.TestCase):
 
     def test_save_and_reload(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = Chain(dimensions=(4,), periodic=(True,))
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
             sampler = _make_mock_sampler()
-            exp = Experiment(chain, sampler, results_root=tmpdir)
+            exp = Experiment(inst=chain, sampler=sampler)
             exp.data_path = Path(tmpdir)
             exp.run_index = 0
             data = {"QubitMagnetization": np.zeros(4)}
@@ -792,18 +859,18 @@ class TestExperiment(unittest.TestCase):
 
     def test_save_with_filename_and_run_index_raises(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = Chain(dimensions=(4,), periodic=(True,))
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
             sampler = _make_mock_sampler()
-            exp = Experiment(chain, sampler, results_root=tmpdir)
+            exp = Experiment(inst=chain, sampler=sampler)
             exp.data_path = Path(tmpdir)
             with self.assertRaises(ValueError):
                 exp._save_results({}, run_index=0, filename="test.pkl.lzma")
 
     def test_save_custom_filename(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = Chain(dimensions=(4,), periodic=(True,))
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
             sampler = _make_mock_sampler()
-            exp = Experiment(chain, sampler, results_root=tmpdir)
+            exp = Experiment(inst=chain, sampler=sampler)
             exp.data_path = Path(tmpdir)
             data = {"x": 1}
             exp._save_results(data, filename="custom.pkl.lzma")
@@ -811,33 +878,33 @@ class TestExperiment(unittest.TestCase):
 
     def test_apply_param_sets_run_index_zero(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = Chain(dimensions=(4,), periodic=(True,))
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
             sampler = _make_mock_sampler()
-            exp = Experiment(chain, sampler, results_root=tmpdir, anneal_time=1.0)
-            exp.apply_param({"energy_scale": 1.0, "anneal_time": 1.0})
+            exp = Experiment(inst=chain, sampler=sampler)
+            exp.apply_param({"signed_energy_scale": 1.0, "anneal_time": 1.0})
             self.assertEqual(exp.run_index, 0)
 
     def test_apply_param_resumes_from_existing_iterations(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = Chain(dimensions=(4,), periodic=(True,))
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
             sampler = _make_mock_sampler()
-            exp = Experiment(chain, sampler, results_root=tmpdir, anneal_time=1.0)
-            exp.apply_param({"energy_scale": 1.0, "anneal_time": 1.0})
+            exp = Experiment(inst=chain, sampler=sampler)
+            exp.apply_param({"signed_energy_scale": 1.0, "anneal_time": 1.0})
             for i in range(3):
                 fn = exp.data_path / f"iter{i:05d}.pkl.lzma"
                 fn.parent.mkdir(parents=True, exist_ok=True)
                 with lzma.open(fn, "wb") as f:
                     pickle.dump({}, f)
 
-            exp.apply_param({"energy_scale": 1.0, "anneal_time": 1.0})
+            exp.apply_param({"signed_energy_scale": 1.0, "anneal_time": 1.0})
             self.assertEqual(exp.run_index, 3)
 
     def test_load_results_ignore_shim(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = Chain(dimensions=(4,), periodic=(True,))
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
             sampler = _make_mock_sampler()
-            exp = Experiment(chain, sampler, results_root=tmpdir, anneal_time=1.0)
-            exp.apply_param({"energy_scale": 1.0, "anneal_time": 1.0})
+            exp = Experiment(inst=chain, sampler=sampler)
+            exp.apply_param({"signed_energy_scale": 1.0, "anneal_time": 1.0})
             fn = exp.data_path / "iter00000.pkl.lzma"
             fn.parent.mkdir(parents=True, exist_ok=True)
             with lzma.open(fn, "wb") as f:
@@ -848,25 +915,25 @@ class TestExperiment(unittest.TestCase):
 
     def test_load_results_starting_iteration(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = Chain(dimensions=(4,), periodic=(True,))
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
             sampler = _make_mock_sampler()
-            exp = Experiment(chain, sampler, results_root=tmpdir, anneal_time=1.0)
-            exp.apply_param({"energy_scale": 1.0, "anneal_time": 1.0})
+            exp = Experiment(inst=chain, sampler=sampler)
+            exp.apply_param({"signed_energy_scale": 1.0, "anneal_time": 1.0})
             for i in range(10):
                 fn = exp.data_path / f"iter{i:05d}.pkl.lzma"
                 fn.parent.mkdir(parents=True, exist_ok=True)
                 with lzma.open(fn, "wb") as f:
                     pickle.dump({"value": i, "shimdata": {}}, f)
 
-            results = exp.load_results(num_iterations=3, starting_iteration=2)
+            results = exp.load_results(num_iterations=3, start_iteration=2)
             self.assertEqual(len(results), 3)
 
     def test_load_results_corrupted_lzma(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = Chain(dimensions=(4,), periodic=(True,))
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
             sampler = _make_mock_sampler()
-            exp = Experiment(chain, sampler, results_root=tmpdir, anneal_time=1.0)
-            exp.apply_param({"energy_scale": 1.0, "anneal_time": 1.0})
+            exp = Experiment(inst=chain, sampler=sampler)
+            exp.apply_param({"signed_energy_scale": 1.0, "anneal_time": 1.0})
             fn = exp.data_path / "iter00000.pkl.lzma"
             fn.parent.mkdir(parents=True, exist_ok=True)
             fn.write_bytes(b"corrupted data")
@@ -875,44 +942,51 @@ class TestExperiment(unittest.TestCase):
                 exp.load_results(num_iterations=1)
 
     def test_generate_data_type_conversions(self):
-        chain = Chain(dimensions=(4,), periodic=(True,))
-        sampler = _make_mock_sampler()
-        exp = Experiment(chain, sampler)
-        sc = SamplerCall(run_index=0)
-        sc.shimdata = {"total_iterations": 1, "flux_biases": np.zeros(4)}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
+            sampler = _make_mock_sampler()
+            exp = Experiment(inst=chain, sampler=sampler)
+            sc = SamplerCall(run_index=0)
+            sc.shimdata = {"total_iterations": 1, "flux_biases": np.zeros(4)}
 
-        results = {
-            "QubitMagnetization": np.array([0.1, 0.2, 0.3, 0.4]),
-            "Complex": np.array([1 + 2j, 3 + 4j]),
-            "ListData": [1, 2, 3],
-        }
-        savedata = exp._generate_data_to_save(sc, results)
-        self.assertEqual(savedata["QubitMagnetization"].dtype, np.float32)
-        self.assertEqual(savedata["Complex"].dtype, np.complex64)
-        self.assertEqual(savedata["shimdata"]["total_iterations"], 1)
+            results = {
+                "QubitMagnetization": np.array([0.1, 0.2, 0.3, 0.4]),
+                "Complex": np.array([1 + 2j, 3 + 4j]),
+                "ListData": [1, 2, 3],
+            }
+            savedata = exp._generate_data_to_save(sc, results)
+            self.assertEqual(savedata["QubitMagnetization"].dtype, np.float32)
+            self.assertEqual(savedata["Complex"].dtype, np.complex64)
+            self.assertEqual(savedata["shimdata"]["total_iterations"], 1)
 
     def test_make_bqm_no_embeddings(self):
-        chain = Chain(dimensions=(4,), periodic=(False,))
-        sampler = _make_mock_sampler()
-        exp = Experiment(chain, sampler, energy_scale=0.5)
-        sc = SamplerCall(run_index=0)
-        sc.nominal_bqms = [chain.make_nominal_bqm()]
-        sc.shimdata = {"total_iterations": 0}
-        bqm = exp._make_bqm(sc)
-        for u, v in chain.edge_list:
-            self.assertAlmostEqual(bqm.quadratic[(u, v)], 0.5)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(4,), periodic=(False,), data_root=tmpdir)
+            sampler = _make_mock_sampler()
+            exp = Experiment(
+                inst=chain,
+                sampler=sampler,
+                config=ExperimentConfig(signed_energy_scale=0.5)
+            )
+            sc = SamplerCall(run_index=0)
+            sc.nominal_bqms = [chain.make_nominal_bqm()]
+            sc.shimdata = {"total_iterations": 0}
+            bqm = exp._make_bqm(sc)
+            for u, v in chain.edge_list:
+                self.assertAlmostEqual(bqm.quadratic[(u, v)], 0.5)
 
     def test_make_bqm_with_embeddings(self):
-        chain = Chain(dimensions=(4,), periodic=(False,))
-        chain.embedding_list = np.array([[0, 1, 2, 3]])
-        sampler = _make_mock_sampler()
-        exp = Experiment(chain, sampler, energy_scale=1.0)
-        sc = SamplerCall(run_index=0)
-        sc.nominal_bqms = [chain.make_nominal_bqm()]
-        sc.shimdata = {
-            "total_iterations": 0,
-            "relative_coupler_strength": np.ones((1, chain.num_edges)),
-        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(4,), periodic=(False,), data_root=tmpdir)
+            chain.embedding_list = np.array([[0, 1, 2, 3]])
+            sampler = _make_mock_sampler()
+            exp = Experiment(inst=chain, sampler=sampler)
+            sc = SamplerCall(run_index=0)
+            sc.nominal_bqms = [chain.make_nominal_bqm()]
+            sc.shimdata = {
+                "total_iterations": 0,
+                "relative_coupler_strength": np.ones((1, chain.num_edges)),
+            }
 
         bqm = exp._make_bqm(sc)
         self.assertGreater(len(bqm.quadratic), 0)
@@ -920,18 +994,18 @@ class TestExperiment(unittest.TestCase):
     def test_run_iteration_basic(self):
         """run_iteration() exercises the full pipeline: build call, sample, parse, shim, save."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = Chain(dimensions=(4,), periodic=(False,), lattice_data_root=Path(tmpdir))
-            exp = Experiment(
-                chain, _make_sync_sampler(), results_root=tmpdir, anneal_time=1.0, max_iterations=1
-            )
+            chain = Chain(dimensions=(4,), periodic=(False,), data_root=tmpdir)
+            exp = Experiment(inst=chain, sampler=_make_sync_sampler(), max_iterations=1)
             chain._load_embeddings = mock.MagicMock()
-            finished = exp.run_iteration([{"energy_scale": 1.0, "anneal_time": 1.0}])
+            finished = exp.run_iteration([{"signed_energy_scale": 1.0, "anneal_time": 1.0}])
 
             self.assertFalse(finished)
             result_files = list(exp.data_path.glob("iter*.pkl.lzma"))
             self.assertEqual(len(result_files), 1)
+
             with lzma.open(result_files[0], "rb") as f:
                 data = pickle.load(f)
+
             self.assertIn("QubitMagnetization", data)
             self.assertIn("CouplerCorrelation", data)
             self.assertIn("shimdata", data)
@@ -940,67 +1014,67 @@ class TestExperiment(unittest.TestCase):
     def test_run_iteration_returns_true_when_finished(self):
         """run_iteration() returns True when max_iterations already reached."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = Chain(dimensions=(4,), periodic=(False,), lattice_data_root=Path(tmpdir))
+            chain = Chain(dimensions=(4,), periodic=(False,), data_root=tmpdir)
+            config = ExperimentConfig()
             exp = Experiment(
-                chain, _make_sync_sampler(), results_root=tmpdir, anneal_time=1.0, max_iterations=0
+                inst=chain, sampler=_make_sync_sampler(), config=config, max_iterations=0
             )
             chain._load_embeddings = mock.MagicMock()
-            finished = exp.run_iteration([{"energy_scale": 1.0, "anneal_time": 1.0}])
+            finished = exp.run_iteration([{"signed_energy_scale": 1.0, "anneal_time": 1.0}])
 
             self.assertTrue(finished)
             self.assertEqual(list(exp.data_path.glob("iter*.pkl.lzma")), [])
 
     def test_flux_bias_shim_basic_update(self):
-        chain = Chain(dimensions=(4,), periodic=(False,))
-        chain.embedding_list = np.array([[0, 1, 2, 3]])
-        sampler = _make_mock_sampler()
-        exp = Experiment(chain, sampler, flux_bias_shim_step=0.001)
-
-        sc = SamplerCall(run_index=0)
-        sc.shimdata = {"flux_biases": np.zeros(128), "total_iterations": 0}
-        results = {"QubitMagnetization": np.array([0.1, -0.1, 0.2, -0.2])}
-        exp._update_flux_bias_shim(sc, results)
-        self.assertFalse(np.all(sc.shimdata["flux_biases"] == 0))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(4,), periodic=(False,), data_root=tmpdir)
+            chain.embedding_list = np.array([[0, 1, 2, 3]])
+            sampler = _make_mock_sampler()
+            config = ExperimentConfig(flux_bias_shim_step=0.001)
+            exp = Experiment(inst=chain, sampler=sampler, config=config)
+            sc = SamplerCall(run_index=0)
+            sc.shimdata = {"flux_biases": np.zeros(128), "total_iterations": 0}
+            results = {"QubitMagnetization": np.array([0.1, -0.1, 0.2, -0.2])}
+            exp._update_flux_bias_shim(sc, results)
+            self.assertFalse(np.all(sc.shimdata["flux_biases"] == 0))
 
     def test_coupler_shim_basic_update(self):
-        chain = Chain(dimensions=(4,), periodic=(False,))
-        chain.embedding_list = np.array([[0, 1, 2, 3]])
-        sampler = _make_mock_sampler()
-        exp = Experiment(chain, sampler, coupler_shim_step=0.01, energy_scale=1.0)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(4,), periodic=(False,), data_root=tmpdir)
+            chain.embedding_list = np.array([[0, 1, 2, 3]])
+            sampler = _make_mock_sampler()
+            config = ExperimentConfig(coupler_shim_step=0.01)
+            exp = Experiment(inst=chain, sampler=sampler, config=config)
 
-        sc = SamplerCall(run_index=0)
-        bqm = chain.make_nominal_bqm()
-        sc.nominal_bqms = [bqm]
-        sc.shimdata = {
-            "total_iterations": 0,
-            "relative_coupler_strength": np.ones((1, chain.num_edges)),
-        }
-        results = {"CouplerFrustration": np.random.rand(1, chain.num_edges)}
-        exp._update_coupler_shim(sc, results)
-        self.assertEqual(sc.shimdata["relative_coupler_strength"].shape, (1, chain.num_edges))
+            sc = SamplerCall(run_index=0)
+            bqm = chain.make_nominal_bqm()
+            sc.nominal_bqms = [bqm]
+            sc.shimdata = {
+                "total_iterations": 0,
+                "relative_coupler_strength": np.ones((1, chain.num_edges)),
+            }
+            results = {"CouplerFrustration": np.random.rand(1, chain.num_edges)}
+            exp._update_coupler_shim(sc, results)
+            self.assertEqual(sc.shimdata["relative_coupler_strength"].shape, (1, chain.num_edges))
 
     def test_get_shimdata_not_initialized(self):
-        chain = Chain(dimensions=(4,), periodic=(True,))
-        sampler = _make_mock_sampler()
-        exp = Experiment(chain, sampler)
-        exp.already_initialized = False
-        shimdata = exp._get_shimdata()
-        self.assertEqual(shimdata["total_iterations"], 0)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
+            sampler = _make_mock_sampler()
+            exp = Experiment(inst=chain, sampler=sampler)
+            exp.already_initialized = False
+            shimdata = exp._get_shimdata()
+            self.assertEqual(shimdata["total_iterations"], 0)
 
 
 class TestFastAnnealExperiment(unittest.TestCase):
     def test_default_params(self):
-        chain = Chain(dimensions=(4,), periodic=(True,))
-        sampler = _make_mock_sampler()
-        exp = FastAnnealExperiment(chain, sampler)
-        self.assertTrue(exp.param.get("fast_anneal"))
-        self.assertEqual(exp.param["num_reads"], 100)
-
-    def test_observables(self):
-        obs_names = {type(o).__name__ for o in FastAnnealExperiment.observables_to_collect}
-        self.assertIn("QubitMagnetization", obs_names)
-        self.assertIn("SampleEnergy", obs_names)
-        self.assertIn("ReferenceEnergy", obs_names)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
+            sampler = _make_mock_sampler()
+            exp = Experiment(inst=chain, sampler=sampler, config=FastAnnealExperimentConfig())
+            self.assertTrue(exp.param.get("fast_anneal"))
+            self.assertEqual(exp.param["num_reads"], 100)
 
 
 if __name__ == "__main__":

@@ -40,7 +40,7 @@ class KinkKinkCorrelator(Observable):
         samples = dimod.as_samples(sample_set)[0]
 
         shifted_samples = np.roll(samples, 1, axis=1)
-        kink_mask = shifted_samples * samples == np.sign(experiment.param["energy_scale"])
+        kink_mask = shifted_samples * samples == np.sign(experiment.param["signed_energy_scale"])
         chain_length = kink_mask.shape[-1]
         kink_mask = np.reshape(kink_mask, (-1, chain_length))
         kink_density = np.mean(kink_mask)

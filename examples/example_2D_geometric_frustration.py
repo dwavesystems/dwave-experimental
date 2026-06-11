@@ -67,34 +67,21 @@ coupler_orbit = np.array(
 qubit_orbit = np.ones(inst.num_spins, dtype=int)
 inst.initialize_orbits(qubit_orbits=qubit_orbit, coupler_orbits=coupler_orbit)
 
-exp = experiment.FastAnnealExperiment(
-    inst=inst,
-    sampler=sampler,
-    num_reads=100,
-    readout_thermalization=100,
-    max_iterations=210,
-    results_root=Path("./results"),
-    automorph_embeddings=False,
-    energy_scale=0.8,
+config = experiment.FastAnnealExperimentConfig(
+    signed_energy_scale=0.8,
     coupler_shim_step=0.1,
     flux_bias_shim_step=5e-6,
+    readout_thermalization=100,
+    num_reads=100,
 )
-
-exp.observables_to_collect = [
-    observable.QubitMagnetization(),
-    observable.CouplerCorrelation(),
-    observable.CouplerFrustration(),
-    observable.SampleEnergy(),
-    observable.TriangularOP(),
-    observable.ReferenceEnergy(),
-    observable.BitpackedSpins(),
-]
+exp = experiment.Experiment(inst=inst, sampler=sampler, max_iterations=210, config=config)
+exp.observables_to_collect.add(observable.TriangularOP())
 
 # Make parameter list
 parameter_list = [{"anneal_time": rate} for rate in ANNEAL_TIMES]
 
 for _ in range(1000):
-    done = exp.run_iteration(parameter_list)
+    done = exp.run_iteration(parameter_list, progress=True)
     if done:
         break
 
@@ -119,7 +106,7 @@ for param in parameter_list:
 
 title = (
     f"DimerizedTriangular, {'x'.join([str(dim) for dim in inst.dimensions])}, "
-    f"J={exp.param["energy_scale"]}, {sampler.solver.name}"
+    f"J={exp.param["signed_energy_scale"]}, {sampler.solver.name}"
 )
 fig, axes = plt.subplots(3, 3, figsize=(16, 10))
 fig.suptitle(title, fontsize=16)
@@ -216,7 +203,7 @@ psi_dict[sampler.solver.name] = np.asarray(psi)
 
 # Now plot the order parameters together, for a nice comparison.
 fig2, ax2 = plt.subplots(2, 1, figsize=(8, 12))
-title = f'Triangular, global orbit, J={exp.param["energy_scale"]}'
+title = f'Triangular, global orbit, J={exp.param["signed_energy_scale"]}'
 fig2.suptitle(title, fontsize=16)
 
 M = m_dict[sampler.solver.name]

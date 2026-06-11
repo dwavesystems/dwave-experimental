@@ -16,6 +16,7 @@
 from itertools import combinations, product
 from numbers import Integral
 from collections.abc import Generator, Hashable
+from pathlib import Path
 
 import dimod
 import numpy as np
@@ -46,9 +47,16 @@ class EmbeddedLattice(Lattice):
 
     def __init__(
         self,
+        *,
         logical_lattice: Lattice,
         chain_nodes: dict[int, tuple[int, Integral]],
-        **kwargs,
+        dimensions: tuple[int, ...],
+        data_root: str | Path | None = None,
+        periodic: tuple[bool, ...] | None = None,
+        orbit_type: str = "singleton",
+        qubit_orbits: NDArray | None = None,
+        coupler_orbits: NDArray | None = None,
+        chain_strength: float = 2,
     ):
         if not isinstance(logical_lattice, Lattice):
             raise TypeError("logical_lattice must be a Lattice instance.")
@@ -57,12 +65,26 @@ class EmbeddedLattice(Lattice):
         if hasattr(self.logical_lattice, "logical_lattice"):
             raise NotImplementedError("Nested embedded lattices not supported.")
 
-        self.chain_nodes: dict[tuple[int, Integral]] = chain_nodes
-        self.chain_coupling: float = -kwargs.pop("chain_strength", 2)
+        if data_root is None:
+            data_root = logical_lattice.data_root
+
+        self.chain_nodes = chain_nodes
+        self.chain_coupling = -chain_strength
+
         if not hasattr(self, "num_spins"):
             self.num_spins = sum(len(c) for c in chain_nodes.values())
-        kwargs.setdefault("periodic", self.logical_lattice.periodic)
-        super().__init__(**kwargs)
+
+        if periodic is None:
+            periodic = self.logical_lattice.periodic
+
+        super().__init__(
+            dimensions=dimensions,
+            data_root=data_root,
+            periodic=periodic,
+            orbit_type=orbit_type,
+            qubit_orbits=qubit_orbits,
+            coupler_orbits=coupler_orbits,
+        )
 
     def get_chain_connectivity(
         self,

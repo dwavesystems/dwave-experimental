@@ -134,7 +134,7 @@ class CouplerFrustration(Observable):
         spin_product = np.matmul(sample_array.T, sample_array)[row, col] / len(sample_array)
         coupler_signs = np.sign(
             [bqm.quadratic[edge] for edge in experiment.inst.edge_list]
-        ) * np.sign(experiment.param["energy_scale"])
+        ) * np.sign(experiment.param["signed_energy_scale"])
 
         return spin_product * coupler_signs / 2 + 1 / 2
 
@@ -142,7 +142,7 @@ class CouplerFrustration(Observable):
 class SampleEnergy(Observable):
     """Compute sample energies with respect to the nominal BQM.
 
-    Energies exclude the magnitude of ``energy_scale`` but include its sign.
+    Energies exclude the magnitude of ``signed_energy_scale`` but include its sign.
     """
 
     def evaluate(
@@ -154,15 +154,15 @@ class SampleEnergy(Observable):
         """Return signed sample energies from the sample set.
 
         Args:
-            experiment: Experiment context providing the ``energy_scale`` sign.
+            experiment: Experiment context providing ``signed_energy_scale``.
             bqm: The binary quadratic model corresponding to the problem instance.
             sample_set: Samples containing energy data.
 
         Returns:
             A numpy array containing the sample energies multiplied by the sign
-            of ``energy_scale``.
+            of ``signed_energy_scale``.
         """
-        return sample_set.data_vectors["energy"] * np.sign(experiment.param["energy_scale"])
+        return sample_set.data_vectors["energy"] * np.sign(experiment.param["signed_energy_scale"])
 
 
 class BitpackedSpins(Observable):

@@ -56,7 +56,7 @@ class Triangular(Lattice):
         *,
         dimensions: tuple[int, int],
         periodic: tuple[bool, bool] = (True, False),
-        data_root: Path | None = None,
+        data_root: str | Path,
         orbit_type: str = "singleton",
         qubit_orbits: NDArray | None = None,
         coupler_orbits: NDArray | None = None,
@@ -72,14 +72,6 @@ class Triangular(Lattice):
         self.integer_coords: list[tuple[int, int]] | None = None
         self.xy_coords: list[tuple[float, float]] | None = None
         self.xy_size: tuple[float, float] | None = None
-        if self.periodic[0] and self.dimensions[0] % 3 != 0:
-            raise ValueError(
-                "For Triangular with periodic[0]=True, dimensions[0] must be divisible by 3."
-            )
-        if self.periodic[1] and self.dimensions[1] % 3 != 0:
-            raise ValueError(
-                "For Triangular with periodic[1]=True, dimensions[1] must be divisible by 3."
-            )
         super().__init__(
             dimensions=dimensions,
             periodic=periodic,
@@ -88,6 +80,14 @@ class Triangular(Lattice):
             qubit_orbits=qubit_orbits,
             coupler_orbits=coupler_orbits,
         )
+        if self.periodic[0] and self.dimensions[0] % 3 != 0:
+            raise ValueError(
+                "For Triangular with periodic[0]=True, dimensions[0] must be divisible by 3."
+            )
+        if self.periodic[1] and self.dimensions[1] % 3 != 0:
+            raise ValueError(
+                "For Triangular with periodic[1]=True, dimensions[1] must be divisible by 3."
+            )
 
     def coordinates(self, node: int) -> tuple[int, int]:
         """Return the coordinates of a node in the lattice given its index.
@@ -210,7 +210,7 @@ class DimerizedTriangular(EmbeddedLattice):
         *,
         dimensions: tuple[int, int],
         periodic: tuple[bool, bool] = (True, False),
-        data_root: Path | None = None,
+        data_root: str | Path,
         orbit_type: str = "singleton",
         qubit_orbits: NDArray | None = None,
         coupler_orbits: NDArray | None = None,

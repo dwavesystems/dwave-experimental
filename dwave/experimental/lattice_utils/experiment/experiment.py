@@ -48,7 +48,7 @@ DW_ORANGE = "#f37820"
 class ExperimentConfig:
     """Container for the parameters that define an experiment."""
 
-    energy_scale: float = 1.0
+    signed_energy_scale: float = 1.0
     num_reads: int = 100
     anneal_time: float = 1.0
     num_random_instances: int | None = 1
@@ -78,7 +78,7 @@ class Experiment:
         inst: Lattice,
         sampler: dimod.Sampler,
         max_iterations: int | None = None,
-        config: ExperimentConfig,
+        config: ExperimentConfig = ExperimentConfig(),
     ):
         self.inst = inst
         self.sampler = sampler
@@ -190,12 +190,13 @@ class Experiment:
         except FileNotFoundError as e:
             raise FileNotFoundError("No Embedding Found: ", e) from e
 
-        tqdm.write(
-            f"\n{type(self.inst).__name__}={self.inst.dimensions}, "
-            f"J={self.param['energy_scale']}, "
-            f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} "
-            f"({self.inst._get_instance_pathstring()}/{self._get_solver_pathstring()})"
-        )
+        if progress:
+            tqdm.write(
+                f"\n{type(self.inst).__name__}={self.inst.dimensions}, "
+                f"J={self.param['signed_energy_scale']}, "
+                f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} "
+                f"({self.inst._get_instance_pathstring()}/{self._get_solver_pathstring()})"
+            )
 
         parameter_list = self._format_parameter_list(parameter_list)
         response_dict = {}
@@ -378,7 +379,7 @@ class Experiment:
         self,
         data_dict: dict[str, Any],
         run_index: int | None = None,
-        quiet: bool = False,
+        quiet: bool = True,
         filename: str | None = None,
     ) -> None:
         """Save results to disk using LZMA-compressed pickle."""
@@ -453,12 +454,12 @@ class Experiment:
         Assumes a forward anneal. Annealing time format is in microseconds (up
         to 999.9999us), with six decimal places (picosecond resolution).
         """
-        energy_scale = self.param["energy_scale"]
+        signed_energy_scale = self.param["signed_energy_scale"]
 
         if "anneal_time" in self.param:
-            pathstring = f'energyscale{energy_scale:0.3}/atime{self.param["anneal_time"]:010.6f}us'
+            pathstring = f'energyscale{signed_energy_scale:0.3}/atime{self.param["anneal_time"]:010.6f}us'
         elif "anneal_schedule" in self.param:
-            pathstring = f'energyscale{energy_scale:0.3}/asched{self.param["anneal_schedule"]}'
+            pathstring = f'energyscale{signed_energy_scale:0.3}/asched{self.param["anneal_schedule"]}'
         else:
             raise ValueError
 
@@ -671,7 +672,7 @@ class Experiment:
     ) -> None:
         """Update relative coupler strength based on measured frustration."""
         orbits = self.inst.coupler_orbits
-        energy_scale = self.param["energy_scale"]
+        signed_energy_scale = self.param["signed_energy_scale"]
         relative_coupler_strength = sampler_call.shimdata["relative_coupler_strength"]
 
         # Allow for zero step size, which will just truncate the shim.
@@ -713,21 +714,21 @@ class Experiment:
                 violators = (
                     relative_coupler_strength[iemb, bin_edges]
                     * nominal_values[bin_edges]
-                    * energy_scale
+                    * signed_energy_scale
                     > 1
                 )
                 relative_coupler_strength[iemb, bin_edges[violators]] = (
-                    0.99999 / nominal_values[bin_edges[violators]] / energy_scale
+                    0.99999 / nominal_values[bin_edges[violators]] / signed_energy_scale
                 )
 
                 violators = (
                     relative_coupler_strength[iemb, bin_edges]
                     * nominal_values[bin_edges]
-                    * energy_scale
+                    * signed_energy_scale
                     < -2
                 )
                 relative_coupler_strength[iemb, bin_edges[violators]] = (
-                    -1.99999 / nominal_values[bin_edges[violators]] / energy_scale
+                    -1.99999 / nominal_values[bin_edges[violators]] / signed_energy_scale
                 )
 
         # Renormalize each orbit after truncation
@@ -748,24 +749,24 @@ class Experiment:
                 violators = (
                     relative_coupler_strength[iemb, bin_edges]
                     * nominal_values[bin_edges]
-                    * energy_scale
+                    * signed_energy_scale
                     > 1
                 )
                 relative_coupler_strength[iemb, bin_edges[violators]] = (
-                    0.99999 / nominal_values[bin_edges[violators]] / energy_scale
+                    0.99999 / nominal_values[bin_edges[violators]] / signed_energy_scale
                 )
 
                 violators = (
                     relative_coupler_strength[iemb, bin_edges]
                     * nominal_values[bin_edges]
-                    * energy_scale
+                    * signed_energy_scale
                     < -2
                 )
                 relative_coupler_strength[iemb, bin_edges[violators]] = (
-                    -1.99999 / nominal_values[bin_edges[violators]] / energy_scale
+                    -1.99999 / nominal_values[bin_edges[violators]] / signed_energy_scale
                 )
 
-        Q = nominal_values * relative_coupler_strength * energy_scale
+        Q = nominal_values * relative_coupler_strength * signed_energy_scale
         Q_max = np.max(Q)
         Q_min = np.min(Q)
         if Q_max > 1 or Q_min < -2:
@@ -776,7 +777,7 @@ class Experiment:
 
     def _make_bqm(self, sampler_call: SamplerCall) -> dimod.BQM:
         """Construct a BQM for the current sampler call."""
-        energy_scale = self.param["energy_scale"]
+        signed_energy_scale = self.param["signed_energy_scale"]
         bqm = dimod.BQM(vartype="SPIN")
         if not hasattr(self.inst, "embedding_list"):
             nominal_bqm = sampler_call.nominal_bqms[0]
@@ -787,8 +788,8 @@ class Experiment:
                 if v in nominal_bqm.variables:
                     bqm.add_linear(v, nominal_bqm.linear[v])
 
-            for iedge, edge in enumerate(self.inst.edge_list):
-                bqm.add_quadratic(edge[0], edge[1], nominal_bqm.quadratic[*edge] * energy_scale)
+            for u, v in self.inst.edge_list:
+                bqm.add_quadratic(u, v, nominal_bqm.quadratic[u, v] * signed_energy_scale)
 
             return bqm
 
@@ -805,7 +806,7 @@ class Experiment:
                 bias = (
                     nominal_bqm.quadratic[*edge]
                     * relative_coupler_strength[iemb, iedge]
-                    * energy_scale
+                    * signed_energy_scale
                 )
                 bqm.add_quadratic(emb[edge[0]], emb[edge[1]], bias)
 

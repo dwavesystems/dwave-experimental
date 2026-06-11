@@ -82,9 +82,9 @@ for sampler in samplers:
     # scales are equivalent by gauge transformation, but we run the strong coupling
     # on the FM side because the maximum FM magnitude (-2) is larger than the
     # maximum AFM magnitude (+1).
-    for energy_scale in ENERGY_SCALES:
+    for signed_energy_scale in ENERGY_SCALES:
         config = experiment.FastAnnealExperimentConfig(
-            energy_scale=energy_scale,
+            signed_energy_scale=signed_energy_scale,
             coupler_shim_step=0.05,
             flux_bias_shim_step=3e-6,
         )
@@ -135,7 +135,10 @@ for sampler in samplers:
                 np.reshape(np.asarray([it["KinkKinkCorrelator"] for it in res]), (-1, NUM_SPINS))
             )
 
-        title = f"1D chain, {'x'.join([str(dim) for dim in inst.dimensions])}, J={exp.param["energy_scale"]}, {sampler.solver.name}"
+        dimensions = "x".join(str(dim) for dim in inst.dimensions)
+        signed_energy_scale = exp.param["signed_energy_scale"]
+        title = f"1D chain, {dimensions}, J={signed_energy_scale}, {sampler.solver.name}"
+
         fig, axes = plt.subplots(3, 3, figsize=(16, 10))
         fig.suptitle(title, fontsize=16)
         rng = np.random.default_rng(0)
@@ -245,8 +248,8 @@ for sampler in samplers:
         plt.show()
 
         # Put kink density in a dict so we can plot them all together.
-        kd_dict[sampler.solver.name, energy_scale] = np.asarray(frust)
-        kkc_dict[sampler.solver.name, energy_scale] = np.asarray(kkc)
+        kd_dict[sampler.solver.name, signed_energy_scale] = np.asarray(frust)
+        kkc_dict[sampler.solver.name, signed_energy_scale] = np.asarray(kkc)
 
 # Now plot the kink densities together, for a nice comparison.
 fig2, ax2 = plt.subplots(1, 2, figsize=(10, 8))
@@ -256,8 +259,8 @@ fig2.tight_layout(rect=(0.05, 0.05, 1, 0.95), w_pad=4.0)
 
 for isampler, sampler in enumerate(samplers):
 
-    for energy_scale in [-1.8, 0.1]:
-        M = kd_dict[sampler.solver.name, energy_scale]
+    for signed_energy_scale in [-1.8, 0.1]:
+        M = kd_dict[sampler.solver.name, signed_energy_scale]
 
         # Kink density plot
         theoryx = ANNEAL_TIMES[0]
@@ -281,7 +284,7 @@ for isampler, sampler in enumerate(samplers):
         ax2[isampler].set_xlim([0.002, 9e1])
 
         x = ANNEAL_TIMES
-        M = kd_dict[sampler.solver.name, energy_scale]
+        M = kd_dict[sampler.solver.name, signed_energy_scale]
         bs = np.asarray([bootstrap(m, rng, bootstrap_function=np.nanmedian) for m in M])
         ci = np.asarray([confidence_interval(b) for b in bs])
 
@@ -312,9 +315,9 @@ fig3.tight_layout(rect=(0.05, 0.05, 1, 0.95), w_pad=4.0)
 
 for isampler, sampler in enumerate(samplers):
 
-    for energy_scale in [-1.8, 0.1]:
-        magnetization = kkc_dict[sampler.solver.name, energy_scale][0].T
-        kd = np.mean(kd_dict[sampler.solver.name, energy_scale][0])
+    for signed_energy_scale in [-1.8, 0.1]:
+        magnetization = kkc_dict[sampler.solver.name, signed_energy_scale][0].T
+        kd = np.mean(kd_dict[sampler.solver.name, signed_energy_scale][0])
 
         # Kink density plot
         ax3[isampler].grid(which="both", alpha=0.3)
