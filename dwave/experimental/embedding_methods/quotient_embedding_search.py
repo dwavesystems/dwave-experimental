@@ -20,7 +20,7 @@ from typing import Callable, Hashable, Literal, get_args
 import networkx as nx
 import numpy as np
 from dwave.embedding import verify_embedding
-from dwave_networkx import (
+from dwave.graphs import (
     zephyr_coordinates,
     zephyr_graph,
     pegasus_coordinates,
@@ -917,7 +917,7 @@ def quotient_search(
         .. code-block:: python
 
             import networkx as nx
-            import dwave_networkx as dnx
+            import dwave.graphs as dnx
             from minorminer.utils.parallel_embeddings import find_sublattice_embeddings
 
             # Build an mp-row Zephyr tile and locate it in the original target.

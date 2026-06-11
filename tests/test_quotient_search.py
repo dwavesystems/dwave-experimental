@@ -18,7 +18,7 @@ from typing import Literal
 
 import networkx as nx
 import numpy as np
-from dwave_networkx import zephyr_graph, pegasus_graph, chimera_graph
+from dwave.graphs import zephyr_graph, pegasus_graph, chimera_graph
 
 from dwave.experimental.embedding_methods import quotient_search
 from dwave.experimental.embedding_methods.quotient_embedding_search import \
