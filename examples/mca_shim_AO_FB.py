@@ -316,6 +316,7 @@ def main(
     delay_max_fit: float | None = None,
     fn_schedule: str = "09-1317A-D_Advantage2_research1_4_annealing_schedule.xlsx",
     use_01_c_range: bool = False,
+    symmetrize_c_bounds: bool = True,
     save_figures: bool = False,
 ):
     """Demonstrate t-d-s variability and mitigation strategies
@@ -482,10 +483,9 @@ def main(
         target_c=target_c,
         detector_lines=(line_detector,),
         source_lines=(line_source,),
+        use_01_c_range=use_01_c_range,
+        symmetrize_c_bounds=symmetrize_c_bounds,
     )
-
-    if use_01_c_range:
-        _fix_standard_c_range(x_anneal_schedules)
     _plot_tds_schedules(
         x_polarizing_schedule,
         x_anneal_schedules,
@@ -988,6 +988,14 @@ if __name__ == "__main__":
         help="Add this flag to use a schedule range restricted to [minC, maxC] = [0,1]. This lowers the detector and source quench rates, impacting fidelity and some other parameters. TODO later - support symmetrized crange (for better quenbch rate but maintaining delay regularization, or overshoot crange (for higher performance)",
     )
     parser.add_argument(
+        "--no_symmetrize_c_bounds",
+        "--no-symmetrize-c-bounds",
+        dest="symmetrize_c_bounds",
+        action="store_false",
+        default=True,
+        help="Disable symmetric c-bounds.",
+    )
+    parser.add_argument(
         "--save_figures",
         action="store_true",
         help="Add this flag to save figures generated during the experiment to a figures folder. The experiment hash is appended to figure filenames.",
@@ -1012,5 +1020,6 @@ if __name__ == "__main__":
         no_anneal_offsets=args.no_anneal_offsets,
         no_flux_biases=args.no_flux_biases,
         use_01_c_range=args.use_01_c_range,
+        symmetrize_c_bounds=args.symmetrize_c_bounds,
         save_figures=args.save_figures,
     )

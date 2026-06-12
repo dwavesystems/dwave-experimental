@@ -410,6 +410,150 @@ def verify_schedules(
                     )
 
 
+def parse_exp_feature_info(
+    exp_feature_info: list[LineFeatureInfo],
+    use_common_bounds: bool,
+    symmetrize_c_bounds: bool,
+    sigfigs: int = 3,
+    standard_01_c_range: bool = False
+) -> tuple[
+    dict[int, float],
+    dict[int, float],
+    dict[int, float],
+    dict[int, float],
+    dict[int, float],
+    dict[int, float],
+]:
+    """Parse line feature metadata into normalized per-line schedule parameters.
+
+    This helper extracts the per-line bounds and timing parameters used by
+    schedule construction and optionally transforms them:
+
+    - rounds C and C-overshoot bounds to a fixed number of significant figures,
+        this prevents client side errors.
+    - optionally computes one set of bounds compatible with all lines.
+    - optionally enforces symmetric bounds by setting ``min = -max``.
+    - optionally forces both C and C-overshoot ranges to ``[0, 1]``.
+
+    Args:
+        exp_feature_info: Per-line experimental feature dictionaries, typically
+            as returned by ``get_properties``.
+        use_common_bounds: When True, replace per-line bounds with values that
+            are jointly valid across all lines. This applies to time
+            steps as well as c-ranges. False allows faster quench rates for
+            high performance applications, but delays need to be considered
+            more carefully between lines and QPUs.
+        symmetrize_c_bounds: When True, enforce symmetric bounds line-by-line
+            (``minC = -maxC`` and ``minCOvershoot = -maxCOvershoot``) after any
+            common-bound reduction.
+        sigfigs: Significant figures used when rounding C and overshoot bounds.
+        standard_01_c_range: When True, C and C-overshoot ranges are set to
+            ``[0, 1]`` for all lines. In this mode, ``use_common_bounds`` and
+            ``symmetrize_c_bounds`` are ignored for C ranges.
+    
+    Returns:
+        A 6-tuple containing:
+
+        1. ``maxCs``: maximum anneal value per line.
+        2. ``minCs``: minimum anneal value per line.
+        3. ``maxCOvershoots``: maximum overshoot value per line.
+        4. ``minCOvershoots``: minimum overshoot value per line.
+        5. ``min_time_steps``: minimum annealing time step per line.
+        6. ``holdOvershootFors``: overshoot hold durations per line.
+
+    Raises:
+        ValueError: If any line has non-ordered bounds after rounding,
+            i.e. if ``minCOvershoot <= minC < maxC <= maxCOvershoot`` is not
+            satisfied.
+        ValueError: If ``use_common_bounds`` is requested but no compatible
+            shared ``minC/maxC`` or ``minCOvershoot/maxCOvershoot`` interval
+            exists across lines.
+    """
+
+    num_lines = len(exp_feature_info)
+
+    min_time_steps = {
+        line: efi["minAnnealingTimeStep"] for line, efi in enumerate(exp_feature_info)
+    }
+    holdOvershootFors = {
+        line: efi.get("holdOvershootFor", 0)
+        for line, efi in enumerate(exp_feature_info)
+    }
+    if use_common_bounds:
+        min_time_step = min(min_time_steps.values())
+        min_time_steps = {line: min_time_step for line in range(num_lines)}
+        holdOvershootFor = max(holdOvershootFors.values())
+        holdOvershootFors = {line: holdOvershootFor for line in range(num_lines)}
+    
+    if standard_01_c_range:
+        maxCs = maxCOvershoots = {line: 1.0 for line in range(num_lines)}
+        minCs = minCOvershoots = {line: 0.0 for line in range(num_lines)}
+    else:
+        maxCs = {
+            line: _round_sigfigs(efi["maxC"], sigfigs=sigfigs, mode="down")
+            for line, efi in enumerate(exp_feature_info)
+        }
+        minCs = {
+            line: _round_sigfigs(efi["minC"], sigfigs=sigfigs, mode="up")
+            for line, efi in enumerate(exp_feature_info)
+        }
+        maxCOvershoots = {
+            line: _round_sigfigs(efi["maxCOvershoot"], sigfigs=sigfigs, mode="down")
+            for line, efi in enumerate(exp_feature_info)
+        }
+        minCOvershoots = {
+            line: _round_sigfigs(efi["minCOvershoot"], sigfigs=sigfigs, mode="up")
+            for line, efi in enumerate(exp_feature_info)
+        }
+        invalid_lines = [line for line in range(num_lines) if not (minCOvershoots[line] <= minCs[line] < maxCs[line] <= maxCOvershoots[line])]
+        if invalid_lines:
+            raise ValueError(
+                f"minCOvershoot, minC, maxC and  maxCOvershoot are not ordered on line(s) {invalid_lines}."
+            )
+
+    if use_common_bounds and not standard_01_c_range:
+        maxC = min(maxCs.values())
+        maxCs = {line: maxC for line in range(num_lines)}
+        minC = max(minCs.values())
+        minCs = {line: minC for line in range(num_lines)}
+        if minC >= maxC:
+            raise ValueError(
+                "Incompatible maxC and minC values across lines, cannot use common bounds."
+            )
+        maxCOvershoot = min(maxCOvershoots.values())
+        maxCOvershoots = {line: maxCOvershoot for line in range(num_lines)}
+        minCOvershoot = max(minCOvershoots.values())
+        minCOvershoots = {line: minCOvershoot for line in range(num_lines)}
+        if minCOvershoot >= maxCOvershoot:
+            raise ValueError(
+                "Incompatible maxCOvershoot and minCOvershoot values across lines, cannot use common bounds."
+            )
+
+    if symmetrize_c_bounds and not standard_01_c_range:
+        maxCs = {
+            line: min(-v1, v2)
+            for line, (v1, v2) in enumerate(zip(minCs.values(), maxCs.values()))
+        }
+        maxCOvershoots = {
+            line: min(-v1, v2)
+            for line, (v1, v2) in enumerate(
+                zip(minCOvershoots.values(), maxCOvershoots.values())
+            )
+        }
+        minCs = {line: -c for line, c in maxCs.items()}
+        minCOvershoots = {line: -c for line, c in maxCOvershoots.items()}
+
+
+
+    return (
+        maxCs,
+        minCs,
+        maxCOvershoots,
+        minCOvershoots,
+        min_time_steps,
+        holdOvershootFors,
+    )
+
 def make_tds_x_anneal_schedules(
     exp_feature_info: list[LineFeatureInfo],
     target_lines: Iterable[int],
@@ -422,6 +566,8 @@ def make_tds_x_anneal_schedules(
     source_lines: Iterable[int] = tuple(),
     source_quench_time: float | None = None,
     use_common_bounds: bool = False,
+    symmetrize_c_bounds: bool = False,
+    use_standard_01_c_range: bool = False,
     use_overshoot: bool = True,
     post_pwl_delay: float = 1.0,
 ) -> AnnealSchedules:
@@ -476,7 +622,15 @@ def make_tds_x_anneal_schedules(
             ``detector_quench_time`` is recommended as `x_schedule_delays` can
             be used for higher fidelity variation of the time difference.
         use_common_bounds: Parameters can vary by line. When True is used,
-            a set of common compatible values define all lines.
+            a set of common compatible values define all lines. False allows
+            faster quench rates for high performance applications, but delays
+            need to be considered more carefully between lines and QPUs.
+        symmetrize_c_bounds: Whether to enforce maxC = -minC across all lines.
+            Defaults to False. False allows faster quench rates for high
+            performance applications, but delays need to be considered more
+            carefully between lines and QPUs.
+        use_standard_01_c_range: Whether to ignore exp_feature_info C bounds and
+            use C and C-overshoot ranges ``[0, 1]`` for all lines.
         use_overshoot: Whether to use overshoot transitions for source and
             detector quenches.
         post_pwl_delay: Additional delay, in microseconds, used to extend the
@@ -511,58 +665,20 @@ def make_tds_x_anneal_schedules(
             "Source, detector and target lines must be valid line indices."
         )
 
-    maxCs = {
-        line: _round_sigfigs(exp_feature_info[line]["maxC"], sigfigs=3, mode="down")
-        for line in range(num_lines)
-    }
-    minCs = {
-        line: _round_sigfigs(exp_feature_info[line]["minC"], sigfigs=3, mode="up")
-        for line in range(num_lines)
-    }
-    maxCOvershoots = {
-        line: _round_sigfigs(
-            exp_feature_info[line]["maxCOvershoot"], sigfigs=3, mode="down"
-        )
-        for line in range(num_lines)
-    }
-    minCOvershoots = {
-        line: _round_sigfigs(
-            exp_feature_info[line]["minCOvershoot"], sigfigs=3, mode="up"
-        )
-        for line in range(num_lines)
-    }
-    min_time_steps = {
-        line: exp_feature_info[line]["minAnnealingTimeStep"]
-        for line in range(num_lines)
-    }
-    holdOvershootFors = {
-        line: exp_feature_info[line].get("holdOvershootFor", 0)
-        for line in range(num_lines)
-    }
-
-    if use_common_bounds:
-        maxC = min(maxCs.values())
-        minC = max(minCs.values())
-        if minC >= maxC:
-            raise ValueError(
-                "Incompatible maxC and minC values across lines, cannot use common bounds."
-            )
-        maxCOvershoot = min(maxCOvershoots.values())
-        minCOvershoot = max(minCOvershoots.values())
-        if minCOvershoot >= maxCOvershoot:
-            raise ValueError(
-                "Incompatible maxCOvershoot and minCOvershoot values across lines, cannot use common bounds."
-            )
-        min_time_step = min(min_time_steps.values())  #  Should check this is uniform
-        holdOvershootFor = max(holdOvershootFors.values())
-
-        maxCs = {line: maxC for line in range(num_lines)}
-        minCs = {line: minC for line in range(num_lines)}
-        maxCOvershoots = {line: maxCOvershoot for line in range(num_lines)}
-        minCOvershoots = {line: minCOvershoot for line in range(num_lines)}
-        min_time_steps = {line: min_time_step for line in range(num_lines)}
-        holdOvershootFors = {line: holdOvershootFor for line in range(num_lines)}
-
+    (
+        maxCs,
+        minCs,
+        maxCOvershoots,
+        minCOvershoots,
+        min_time_steps,
+        holdOvershootFors,
+    ) = parse_exp_feature_info(
+        exp_feature_info,
+        use_common_bounds=use_common_bounds,
+        symmetrize_c_bounds=symmetrize_c_bounds,
+        standard_01_c_range=use_standard_01_c_range,
+    )
+    
     times = []
     if len(source_lines) > 0:
         if polarized_preparation_interval is None:
@@ -771,6 +887,8 @@ def make_tds_x_schedules(
     *,
     post_preparation_delay: float = 20.0,
     depolarization_time_scale: float = 2.0,
+    use_01_c_range: bool = False,
+    symmetrize_c_bounds: bool = False,
     use_overshoot: bool = True,
     sign_polarization: Literal[-1, 1] = 1,
 ) -> tuple[AnnealSchedules, AnnealSchedule]:
@@ -792,6 +910,13 @@ def make_tds_x_schedules(
         depolarization_time_scale: Time scale for slow (quasi-static)
             modification of the polarizing signal and
             preparation of qubits to polarized/depolarized states.
+        use_01_c_range: Whether to force C and C-overshoot bounds to ``[0, 1]``
+            when constructing anneal schedules.
+        symmetrize_c_bounds: Whether to enforce symmetric per-line C-bounds,
+            i.e. ``minC = -maxC`` and ``minCOvershoot = -maxCOvershoot``.
+            Defaults to False. False allows faster quench rates for high
+            performance applications, but delays need to be considered more
+            carefully between lines and QPUs.
         use_overshoot: Whether to use overshoot transitions for source and
             detector quenches.
         sign_polarization: Initial sign of the polarizing bias, +1 or -1.
@@ -827,6 +952,8 @@ def make_tds_x_schedules(
         polarized_preparation_interval=polarized_preparation_interval,
         target_c=target_c,
         post_pwl_delay=0.0,
+        use_standard_01_c_range=use_01_c_range,
+        symmetrize_c_bounds=symmetrize_c_bounds,
         use_overshoot=use_overshoot,
     )
     x_polarizing_schedule = make_tds_x_polarizing_schedule(
