@@ -887,6 +887,7 @@ def make_tds_x_schedules(
     *,
     post_preparation_delay: float = 20.0,
     depolarization_time_scale: float = 2.0,
+    use_common_bounds: bool = False,
     use_01_c_range: bool = False,
     symmetrize_c_bounds: bool = False,
     use_overshoot: bool = True,
@@ -910,6 +911,11 @@ def make_tds_x_schedules(
         depolarization_time_scale: Time scale for slow (quasi-static)
             modification of the polarizing signal and
             preparation of qubits to polarized/depolarized states.
+        use_common_bounds: When True, replace per-line bounds with values that
+            are jointly valid across all lines. This applies to time
+            steps as well as c-ranges. False allows faster quench rates for
+            high performance applications, but delays need to be considered
+            more carefully between lines and QPUs.
         use_01_c_range: Whether to force C and C-overshoot bounds to ``[0, 1]``
             when constructing anneal schedules.
         symmetrize_c_bounds: Whether to enforce symmetric per-line C-bounds,
@@ -952,6 +958,7 @@ def make_tds_x_schedules(
         polarized_preparation_interval=polarized_preparation_interval,
         target_c=target_c,
         post_pwl_delay=0.0,
+        use_common_bounds=use_common_bounds,
         use_standard_01_c_range=use_01_c_range,
         symmetrize_c_bounds=symmetrize_c_bounds,
         use_overshoot=use_overshoot,
