@@ -2,4 +2,5 @@
 
 dwave-hybrid>=0.6.12
 pandas>=2.3.0
+qutip>=5.3
 tqdm
