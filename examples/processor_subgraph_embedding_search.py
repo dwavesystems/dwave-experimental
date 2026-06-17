@@ -22,11 +22,20 @@ import numpy as np
 from minorminer import find_embedding
 from minorminer.utils.parallel_embeddings import find_sublattice_embeddings
 
-from dwave.experimental.embedding_methods import quotient_search
+from dwave.experimental.embedding_methods import quotient_search, find_labeled_subgraph
 from dwave.experimental.embedding_methods.quotient_embedding_search import _rail_nodes
 
 
-def main(family="zephyr", seed=None, m_t=12, m_s=5, t=4, t_s=2, node_yield=0.97, save_figs=False):
+def main(
+    family="zephyr",
+    seed=None,
+    m_t=12,
+    m_s=5,
+    t=4,
+    t_s=2,
+    node_yield=0.97,
+    save_figs=False,
+):
     rng = np.random.default_rng(seed)
 
     print(
@@ -58,63 +67,62 @@ def main(family="zephyr", seed=None, m_t=12, m_s=5, t=4, t_s=2, node_yield=0.97,
         shape_step6 = (m_s,)
     else:
         raise ValueError("Unknown family")
-    print('A primer: lets first show the graph intended for embedding'
-          'highlighting a set of vertical rails.'
-          'Note that rails can be permuted without modify the '
-          'graph (an automorphism)')
+    print(
+        "A primer: lets first show the graph intended for embedding"
+        "highlighting a set of vertical rails."
+        "Note that rails can be permuted without modify the "
+        "graph (an automorphism)"
+    )
 
     target = graph_generator(*shape_t, coordinates=True)
     tile = graph_generator(*shape_s, coordinates=True)
-    
+
     _rail_nodes_s = _rail_nodes(m_s, family)
     if family == "pegasus":
         shape = (m_s,)
         k_range = 2
         w_range = m_s * 6
-        pos = dnx.pegasus_layout
-    elif family == "chimera": 
+        make_pos = dnx.pegasus_layout
+    elif family == "chimera":
         shape = (m_s, m_s, t)
         k_range = shape_t[-1]
         w_range = m_s
-        pos = dnx.chimera_layout
+        make_pos = dnx.chimera_layout
     elif family == "zephyr":
         shape = (m_s, t)
         k_range = shape_t[-1]
-        w_range = 2*m_s + 1
-        pos = dnx.zephyr_layout
-    
-    rail_edges = [tile.subgraph(_rail_nodes_s(0, w_range//2, k)).edges for k in range(k_range)]
-    all_edges_subgraph = tile.edge_subgraph(e for edge_set in rail_edges for e in edge_set)
-    all_nodes = set(all_edges_subgraph.nodes())
-    node_color = ['blue' if n in all_nodes else 'lightgray' for n in tile.nodes()]
-    edge_color = ['blue' if all_edges_subgraph.has_edge(*e) else 'lightgray' for e in tile.edges()]
-    node_size = 50/np.sqrt(tile.number_of_nodes())
-    fig_name = f"{family}{shape}: first vertical rail sets"
-    plt.figure(fig_name)
-    nx.draw_networkx(
-        G=tile,
-        node_color=node_color,
-        edge_color=edge_color,
-        pos = pos(tile),
-        with_labels=False,
-        node_size=node_size,
+        w_range = 2 * m_s + 1
+        make_pos = dnx.zephyr_layout
+
+    rail_edges = [
+        tile.subgraph(_rail_nodes_s(0, w_range // 2, k)).edges for k in range(k_range)
+    ]
+    all_edges_subgraph = tile.edge_subgraph(
+        e for edge_set in rail_edges for e in edge_set
     )
+    rail_nodes = set(all_edges_subgraph.nodes())
+    fig_name = f"{family}{shape}: central vertical rail sets"
+    plt.figure(fig_name)
+    dnx.draw_parallel_embeddings(
+        G=tile,
+        embeddings=[{n: n for n in all_edges_subgraph.nodes()}],
+        S=all_edges_subgraph,
+        one_to_iterable=False,
+    )  # Use embedding visualization tools for purposes of highlighting edges.
     plt.title(fig_name)
-    
-    quotient_nodes = {n for u in range(2) for w in range(w_range) for n in _rail_nodes_s(u, w, 0)}
+
+    quotient_nodes = {
+        n for u in range(2) for w in range(w_range) for n in _rail_nodes_s(u, w, 0)
+    }
     tile_q = tile.subgraph(quotient_nodes)
-    node_color = ['blue' if n in all_nodes else 'gray' for n in tile_q.nodes()]
-    edge_color = ['blue' if all_edges_subgraph.has_edge(*e) else 'gray' for e in tile_q.edges()]
     fig_name = f"{family}{shape}: Quotient Graph"
     plt.figure(fig_name)
-    nx.draw_networkx(
+    dnx.draw_parallel_embeddings(
         G=tile_q,
-        pos = pos(tile),
-        with_labels=False,
-        node_color=node_color,
-        edge_color=edge_color,
-        node_size=node_size,
-    )
+        embeddings=[{n: n for n in quotient_nodes}],
+        S=tile_q.subgraph(rail_nodes),
+        one_to_iterable=False,
+    )  # Use embedding visualization tools for purposes of highlighting edges.
     plt.title(fig_name)
 
     print(
@@ -208,7 +216,9 @@ def main(family="zephyr", seed=None, m_t=12, m_s=5, t=4, t_s=2, node_yield=0.97,
         target_node: tile_node for tile_node, target_node in tile_embedding.items()
     }
     target_sub = nx.relabel_nodes(target_sub, inv_map, copy=True)
-    target_sub.graph.update(family=family, rows=m_s, columns=m_s, t=t, labels="coordinate")
+    target_sub.graph.update(
+        family=family, rows=m_s, columns=m_s, t=t, labels="coordinate"
+    )
 
     print(
         f"Step 5: Now apply the node_yield parameter to remove a fraction of nodes also on the "
@@ -225,9 +235,7 @@ def main(family="zephyr", seed=None, m_t=12, m_s=5, t=4, t_s=2, node_yield=0.97,
     if source.graph["family"] == "pegasus":
         # The tp=1 (quotient graph) of pegasus.
         # remove odd k nodes to get single-rail pegasus graph
-        source.remove_nodes_from(
-            [n for n in source.nodes() if n[2] % 2 != 0]
-        )
+        source.remove_nodes_from([n for n in source.nodes() if n[2] % 2 != 0])
 
     print(
         "Step 6: With any defects present on a sublattice, the graph of shape "
@@ -283,9 +291,7 @@ def main(family="zephyr", seed=None, m_t=12, m_s=5, t=4, t_s=2, node_yield=0.97,
     plt.title(fig_name)
     G = target_sub.copy()
     # For sake of plotting we add back singleton nodes (no edges) marked in red
-    G.add_nodes_from(
-        inv_map[n] for n in removed_nodes2
-    )
+    G.add_nodes_from(inv_map[n] for n in removed_nodes2)
     node_color = ["r" if G.degree(n) == 0 else "lightgray" for n in G.nodes()]
     dnx.draw_parallel_embeddings(
         G=G,
@@ -312,17 +318,48 @@ def main(family="zephyr", seed=None, m_t=12, m_s=5, t=4, t_s=2, node_yield=0.97,
     plt.title(fig_name)
     dnx.draw_parallel_embeddings(
         G=G,
-        embeddings=tile_embeddings,
+        embeddings=[embedding_in_original_target],
         S=source,
-        one_to_iterable=False,
+        one_to_iterable=True,
         shuffle_colormap=False,
         node_color=node_color,
     )
+    print(
+        "Step 9: find_labeled_subgraph is an alternative subgraph"
+        "automorphism search method that can determine such an embedding. It can "
+        "be accelerated by providing topological information"
+        "In this case, subject to a timeout of 20 seconds we attempt"
+        "to find an embedding on the same graph, we use the "
+        "insight that vertical/horizontal qubits on the source graph"
+        "should map to vertical/horizontal qubits on the target graph only."
+        "Unlike quotient_search it does not greedily search for an improvement about"
+        "a provided (or defaulted) embedding, and does not return partial solutions."
+        "It is however a complete method, and so if the timeout is set large"
+        "enough (and label hinting is not detrimental) it is guaranteed to return "
+        "a solution, should it exist, or verify inviability."
+    )
+    subgraph_kwargs = dict(timeout=20)
+    fls_emb = find_labeled_subgraph(source, target, **subgraph_kwargs)
+    fig_name = "Embedding on full-scale defective target by find_labeled_subgraph"
+    plt.figure(fig_name)
+    plt.title(fig_name)
+    if fls_emb is not None:
+        dnx.draw_parallel_embeddings(
+            G=G,
+            embeddings=[fls_emb],
+            S=source,
+            one_to_iterable=False,
+            shuffle_colormap=False,
+            node_color=node_color,
+        )
+    else:
+        raise ValueError("Failed to determine an embedding within the timeout")
     for i in plt.get_fignums():
         fig = plt.figure(i)
         print(f"Figure {i} label: {fig.get_label()}")
         if save_figs:
-            fig.savefig(f'{family}_{seed}_{i}.png')
+            fig.savefig(f"{family}_{seed}_{i}.png")
+
     plt.show()
 
 

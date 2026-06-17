@@ -13,10 +13,10 @@
 #    limitations under the License.
 
 import itertools
-import warnings
 from collections import namedtuple
 from typing import Callable, Hashable, Literal, get_args
 
+from minorminer.subgraph import find_subgraph
 import networkx as nx
 import numpy as np
 from dwave.embedding import verify_embedding
@@ -28,8 +28,9 @@ from dwave.graphs import (
     chimera_coordinates,
     chimera_graph,
 )
+from dwave_networkx import zephyr_four_color, pegasus_four_color, chimera_two_color
 
-__all__ = ["quotient_search"]
+__all__ = ["quotient_search", "find_labeled_subgraph"]
 
 YieldType = Literal["node", "edge", "rail-edge"]
 SearchStrategy = Literal["by_quotient_rail", "by_quotient_node", "by_rail_then_node"]
@@ -126,7 +127,9 @@ def _extract_graph_properties(
             raise TypeError(f"graph '{name}' metadata must be an integer")
         if v <= 0:
             raise ValueError(f"graph '{name}' metadata must be positive")
-    if not (m == target.graph["rows"] == target.graph["columns"] == source.graph["columns"]):
+    if not (
+        m == target.graph["rows"] == target.graph["columns"] == source.graph["columns"]
+    ):
         raise ValueError("source and target must have matched square grid parameters")
     if t < tp:
         raise ValueError("target tile count must be >= source tile count")
@@ -441,7 +444,9 @@ def _node_search(
         ValueError: If graph geometry metadata is inconsistent.
             This includes source/target family mismatch and unsupported geometry assumptions.
     """
-    expand_boundary_search = source.graph["family"] == "zephyr" and expand_boundary_search
+    expand_boundary_search = (
+        source.graph["family"] == "zephyr" and expand_boundary_search
+    )
     m = source.graph["rows"]
     if source.graph["family"] == "pegasus":
         tp = 1  # Only non-trivial case
@@ -453,7 +458,9 @@ def _node_search(
         raise ValueError(
             "source and target families should be matched for implemented searches"
         )
-    if not (m == target.graph["rows"] == target.graph["columns"] == source.graph["columns"]):
+    if not (
+        m == target.graph["rows"] == target.graph["columns"] == source.graph["columns"]
+    ):
         raise ValueError("source and target must have matched square grid parameters")
 
     if expand_boundary_search:
@@ -465,31 +472,39 @@ def _node_search(
             range(m),
         )
         ksymmetric_original = ksymmetric
+
         def _quotient_to_var(nq, k):
             return nq[:2] + (k,) + nq[2:]
+
     else:
-        if source.graph['family'] == 'zephyr':
+        if source.graph["family"] == "zephyr":
             quotient_node_iterator = itertools.product(
                 range(2), range(2 * m + 1), range(2), range(m)
             )
+
             def _quotient_to_var(nq, k):
                 return nq[:2] + (k,) + nq[2:]
-        elif source.graph['family'] == 'pegasus':
+
+        elif source.graph["family"] == "pegasus":
             quotient_node_iterator = itertools.product(
-                range(2), range(6*m), range(m-1)
+                range(2), range(6 * m), range(m - 1)
             )
+
             def _quotient_to_var(nq, k):
                 u, w, z = nq
-                return (u, w//6, 2*(w % 6) + k, z)
-        elif source.graph['family'] == 'chimera':
+                return (u, w // 6, 2 * (w % 6) + k, z)
+
+        elif source.graph["family"] == "chimera":
             quotient_node_iterator = itertools.product(
                 range(2), range(m), range(m)
-            ) # Orientation, orthogonal displacement, parallel displacement
+            )  # Orientation, orthogonal displacement, parallel displacement
+
             def _quotient_to_var(nq, k):
                 u, w, z = nq
                 return (w * u + z * (1 - u), w * (1 - u) + z * u, u, k)
+
         else:
-            raise ValueError('Unknown family')
+            raise ValueError("Unknown family")
 
     for nq in quotient_node_iterator:
         # Base proposals preserve (u, w, j, z) and search only over target k-indices:
@@ -517,7 +532,7 @@ def _node_search(
             else:
                 # Count preserved edges from already-mapped neighboring source nodes into each
                 # proposed target node.
-                source_neighbours = source.neighbors(_quotient_to_var(nq, 0))
+                source_neighbours = list(source.neighbors(_quotient_to_var(nq, 0)))
                 counts = [
                     sum(
                         int(target.has_edge(embedding[n_s], n_t))
@@ -545,27 +560,37 @@ def _node_search(
             selected = list(selected_key)
 
         embedding.update(
-            {_quotient_to_var(nq, k): proposal for k, proposal in zip(range(tp), selected)}
+            {
+                _quotient_to_var(nq, k): proposal
+                for k, proposal in zip(range(tp), selected)
+            }
         )
 
     return embedding
 
+
 def _rail_nodes(m, family):
-    if family == 'chimera':
+    if family == "chimera":
+
         def to_nodes(u, w, k):
             for z in range(m):
                 yield (w * u + z * (1 - u), w * (1 - u) + z * u, u, k)
-    elif family == 'zephyr':
+
+    elif family == "zephyr":
+
         def to_nodes(u, w, k):
             for j in range(2):
                 for z in range(m):
                     yield (u, w, k, j, z)
-    elif family == 'pegasus':
+
+    elif family == "pegasus":
+
         def to_nodes(u, w, k):
             for z in range(m - 1):
                 yield (u, w // 6, 2 * (w % 6) + k, z)
+
     else:
-        raise ValueError(f'Unknown rails for {family}')
+        raise ValueError(f"Unknown rails for {family}")
     return to_nodes
 
 
@@ -581,7 +606,7 @@ def _rail_search(
     r"""Greedy rail-level quotient search
 
     Implementation status: rail-level search supports Zephyr, Chimera, and Pegasus coordinate
-    families. 
+    families.
 
     Rails are connected components that consist of connected node sequences of the same orientation:
     vertical (u=0) or horizontal (u=1) qubits. Removing internal edges (those that connect
@@ -660,7 +685,7 @@ def _rail_search(
         target: Coordinate-labeled target graph.
         embedding: Current mapping, updated in-place.
         expand_boundary_search: If ``True``, include adjacent-column rail proposals when
-            :math:`w` is at a boundary. Defaults to ``True``. Boundary expansion is only 
+            :math:`w` is at a boundary. Defaults to ``True``. Boundary expansion is only
             relevant for Zephyr, it is ignored for other graph families.
         ksymmetric: If ``True``, treat source :math:`k` order as interchangeable when scoring
             rails. Defaults to ``False``.
@@ -688,7 +713,7 @@ def _rail_search(
         u_index = 0
         tp = source.graph["tile"]
         t = target.graph["tile"]
-        num_orthogonal_displacements = 2 * m + 1    
+        num_orthogonal_displacements = 2 * m + 1
     elif source.graph["family"] == "chimera":
         u_index = 2
         tp = source.graph["tile"]
@@ -696,7 +721,7 @@ def _rail_search(
         num_orthogonal_displacements = m
     else:
         raise ValueError("unknown graph family")
-    rail_nodes = _rail_nodes(m, source.graph["family"])    
+    rail_nodes = _rail_nodes(m, source.graph["family"])
     uw_iterator = list(itertools.product(range(2), range(num_orthogonal_displacements)))
 
     if yield_type == "node":
@@ -969,6 +994,7 @@ def quotient_search(
 
     _validate_graph_inputs(source, target)
     m, tp, t = _extract_graph_properties(source, target)
+
     _validate_search_parameters(
         search_strategy,
         yield_type,
@@ -978,7 +1004,6 @@ def quotient_search(
         source_labels=source.graph["labels"],
         target_labels=target.graph["labels"],
     )
-
     # Make sure source and target are in coordinate form (tuples)
     _source, to_source = _normalize_coordinate(source, m, tp, add_singleton_nodes=True)
     _target, to_target = _normalize_coordinate(target, m, t)
@@ -987,8 +1012,12 @@ def quotient_search(
         # Start with the identity mapping
         working_embedding = {n: n for n in _source.nodes()}
     else:
+        from_source = {to_source(n): n for n in source.nodes()}
+        from_target = {to_target(n): n for n in target.nodes()}
         # Convert chain format to internal single-node format
-        working_embedding = {k: v[0] for k, v in embedding.items()}
+        working_embedding = {
+            from_source[k]: from_target[v[0]] for k, v in embedding.items()
+        }
 
     if yield_type == "node":
         max_num_yielded = source.number_of_nodes()
@@ -1079,3 +1108,128 @@ def quotient_search(
         final_num_yielded=num_yielded,
     )
     return pruned_embedding, metadata
+
+
+def node_labels_by_orientation(graph, as_str: bool = True):
+    if graph.graph["family"] in ("pegasus", "zephyr"):
+        col = {n: n[0] for n in graph.nodes()}
+    elif graph.graph["family"] == "chimera":
+        col = {n: n[2] for n in graph.nodes()}
+    else:
+        col = nx.greedy_color(graph)
+        if len(set(col.values())) != 2:
+            raise ValueError(
+                "Orientation labeling requires a bipartite graph, but greedy coloring produced more than 2 colors"
+            )
+    if as_str:
+        return {k: str(v) for k, v in col.items()}
+    else:
+        return col
+
+
+def node_labels_by_coloring(graph, as_str: bool = True):
+    if graph.graph["family"] == "chimera":
+        col = chimera_two_color(graph)
+    elif graph.graph["family"] == "pegasus":
+        col = pegasus_four_color(graph)
+    elif graph.graph["family"] == "zephyr":
+        col = zephyr_four_color(graph)
+    else:
+        col = nx.greedy_color(graph)
+    if as_str:
+        return {k: str(v) for k, v in col.items()}
+    else:
+        return col
+
+
+def node_labels_by_quotient(
+    graph: nx.Graph, expand_boundary_search: bool = True, as_str: bool = True
+):
+    if "family" in graph.graph:
+        if graph.graph["family"] == "chimera":
+            col = {n: n[:2] + n[3:] for n in graph.nodes()}
+        elif graph.graph["family"] == "pegasus":
+            col = {n: n[:2] + (n[2] // 2,) + n[3:] for n in graph.nodes()}
+        elif graph.graph["family"] == "zephyr":
+            if expand_boundary_search:
+                m = graph.graph["rows"]
+
+                def wmap(w):
+                    if w == 0:
+                        return 1
+                    elif w == 2 * m:
+                        return 2 * m - 1
+                    else:
+                        return w
+
+                col = {n: n[:1] + (wmap(n[1]),) + n[2:] for n in graph.nodes()}
+            else:
+                col = {n: n[:2] + n[3:] for n in graph.nodes()}
+    if as_str:
+        col = {k: str(v) for k, v in col.items()}
+    else:
+        return col
+    raise ValueError("Unrecognized graph family")
+
+
+def find_labeled_subgraph(
+    source,
+    target,
+    labeling_method: Literal["orientation", "quotient", "coloring"] = "orientation",
+    node_labels: tuple[dict, dict] | None = None,
+    **kwargs,
+):
+    """Find a subgraph of target isomorphic to source that preserves node colors.
+
+    This is a helper function that calls :code:``find_subgraph``
+    with node_labels. Node labeling can significantly accelerate
+    the search when well chosen. Methods are provide to support
+    specifically the embedding of bipartite or D-Wave
+    (Zephyr, Pegasus and Chimera) source graphs onto D-Wave target graphs.
+
+    Args:
+        source: Source graph.
+        target: Target graph.
+        labeling_method: Method to use for coloring the graphs. Options are:
+            - 'orientation': It is assumed variables in source must
+                map to variables of the same orientation in target.
+                If the graph orientation is unclear (the graph is not
+                Chimera, Pegasus or Zephyr) the orientation is assigned by
+                a greedy min-coloring and an error is thrown if there are
+                not precisely two colors.
+            - 'quotient': Quotient labeling is used. The graphs must
+                be of type Chimera, Pegasus or Zephyr. Qubits are labeled
+                by orientation and horizontal displacement. Not this is
+                only a good choice if the grid parameter (number of rows
+                and columns) of source and target are matched.
+            - 'coloring': According to the 2-coloring of Chimera,
+                or the 4-coloring of Pegasus/Zephyr. If the graph orientation
+                is unclear, the coloring is assigned by a greedy min-coloring.
+        node_labels: A tuple of dicts mapping nodes in source and target graphs
+            to labels.
+        **kwargs: Additional keyword arguments to pass to find_subgraph.
+            Use of a timeout > 0 is recommended.
+    """
+    if node_labels is None:
+        # use provided coloring
+        if labeling_method == "orientation":
+            node_labels = tuple(node_labels_by_orientation(G) for G in (source, target))
+        elif labeling_method == "quotient":
+            if (
+                "family" not in target.graph
+                or target.graph["family"] != source.graph["family"]
+            ):
+                raise ValueError(
+                    "Source and target graph families should match for quotient coloring"
+                )
+            if target.graph["family"] not in ("chimera", "pegasus", "zephyr"):
+                raise ValueError(
+                    "Quotient coloring is only implemented for Chimera, Pegasus and Zephyr graph families"
+                )
+            node_labels = tuple(node_labels_by_quotient(G) for G in (source, target))
+        elif labeling_method == "coloring":
+            node_labels = tuple(node_labels_by_coloring(G) for G in (source, target))
+        else:
+            raise ValueError(f"Unknown coloring method {labeling_method}")
+
+    return find_subgraph(source, target, node_labels=node_labels, **kwargs)
