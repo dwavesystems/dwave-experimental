@@ -1084,8 +1084,17 @@ def quotient_search(
             )
         full_yield = max_num_yielded == num_yielded
 
-        if num_yielded < starting_yield and not ksymmetric and not (yield_type == "rail-edge" and search_strategy in ("by_quotient_node", "by_rail_then_node")):
-            raise ValueError(f"Greedy quotient search reduced the objective value: {yield_type}: {num_yielded} < {starting_yield} for {search_strategy}")
+        if (
+            num_yielded < starting_yield
+            and not ksymmetric
+            and not (
+                yield_type == "rail-edge"
+                and search_strategy in ("by_quotient_node", "by_rail_then_node")
+            )
+        ):
+            raise ValueError(
+                f"Greedy quotient search reduced the objective value: {yield_type}: {num_yielded} < {starting_yield} for {search_strategy}"
+            )
 
     # If there are unfeasible mappings to target nodes, the final working_embedding might contain
     # entries that map to non-existent target nodes. We prune those out before returning the final
@@ -1165,7 +1174,11 @@ def node_labels_by_coloring(graph, as_str: bool = True):
     Returns:
         A dictionary mapping graph nodes to color labels.
     """
-    if 'family' in graph.graph and graph.graph['family'] in ('chimera', 'pegasus', 'zephyr'):
+    if "family" in graph.graph and graph.graph["family"] in (
+        "chimera",
+        "pegasus",
+        "zephyr",
+    ):
         graph, to_source = _normalize_coordinate(
             graph, graph.graph["rows"], graph.graph["tile"]
         )
@@ -1212,7 +1225,11 @@ def node_labels_by_quotient(
         ValueError: If graph family is not found in metadata or is not 'zephyr', 'pegasus',
             or 'chimera'.
     """
-    if "family" in graph.graph and graph.graph["family"] in ("chimera", "pegasus", "zephyr"):
+    if "family" in graph.graph and graph.graph["family"] in (
+        "chimera",
+        "pegasus",
+        "zephyr",
+    ):
         graph, to_source = _normalize_coordinate(
             graph, graph.graph["rows"], graph.graph["tile"]
         )
@@ -1232,7 +1249,9 @@ def node_labels_by_quotient(
                     else:
                         return w
 
-                col = {to_source(n): n[:1] + (wmap(n[1]),) + n[3:] for n in graph.nodes()}
+                col = {
+                    to_source(n): n[:1] + (wmap(n[1]),) + n[3:] for n in graph.nodes()
+                }
             else:
                 col = {to_source(n): n[:2] + n[3:] for n in graph.nodes()}
     else:
@@ -1242,7 +1261,7 @@ def node_labels_by_quotient(
         return {k: str(v) for k, v in col.items()}
     else:
         return col
-    
+
 
 def find_labeled_subgraph(
     source,
