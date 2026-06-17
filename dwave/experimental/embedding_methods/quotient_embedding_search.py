@@ -1166,16 +1166,18 @@ def node_labels_by_coloring(graph, as_str: bool = True):
         A dictionary mapping graph nodes to color labels.
     """
     if 'family' in graph.graph and graph.graph['family'] in ('chimera', 'pegasus', 'zephyr'):
-        graph, to_source = _normalize_coordinate(graph, graph.graph["rows"], graph.graph["tile"])[0]
+        graph, to_source = _normalize_coordinate(
+            graph, graph.graph["rows"], graph.graph["tile"]
+        )
         if graph.graph["family"] == "chimera":
-            col = chimera_two_color(graph)
+            col = {n: chimera_two_color(graph) for n in graph.nodes()}
         elif graph.graph["family"] == "pegasus":
-            col = pegasus_four_color(graph)
+            col = {n: pegasus_four_color(n) for n in graph.nodes()}
         elif graph.graph["family"] == "zephyr":
-            col = zephyr_four_color(graph)
+            col = {n: zephyr_four_color(n) for n in graph.nodes()}
         else:
             col = nx.greedy_color(graph)
-        col = {to_source[n]: color for n, color in col.items()}
+        col = {to_source(n): color for n, color in col.items()}
     else:
         col = nx.greedy_color(graph)
     if as_str:
@@ -1211,11 +1213,13 @@ def node_labels_by_quotient(
             or 'chimera'.
     """
     if "family" in graph.graph and graph.graph["family"] in ("chimera", "pegasus", "zephyr"):
-        graph, to_source = _normalize_coordinate(graph, graph.graph["rows"], graph.graph["tile"])[0]
+        graph, to_source = _normalize_coordinate(
+            graph, graph.graph["rows"], graph.graph["tile"]
+        )
         if graph.graph["family"] == "chimera":
-            col = {to_source[n]: n[:2] + n[3:] for n in graph.nodes()}
+            col = {to_source(n): n[:2] + n[3:] for n in graph.nodes()}
         elif graph.graph["family"] == "pegasus":
-            col = {to_source[n]: n[:2] + (n[2] // 2,) + n[3:] for n in graph.nodes()}
+            col = {to_source(n): n[:2] + (n[2] // 2,) + n[3:] for n in graph.nodes()}
         elif graph.graph["family"] == "zephyr":
             if expand_boundary_search:
                 m = graph.graph["rows"]
@@ -1228,9 +1232,9 @@ def node_labels_by_quotient(
                     else:
                         return w
 
-                col = {to_source[n]: n[:1] + (wmap(n[1]),) + n[2:] for n in graph.nodes()}
+                col = {to_source(n): n[:1] + (wmap(n[1]),) + n[3:] for n in graph.nodes()}
             else:
-                col = {to_source[n]: n[:2] + n[3:] for n in graph.nodes()}
+                col = {to_source(n): n[:2] + n[3:] for n in graph.nodes()}
     else:
         raise ValueError("Unrecognized graph family")
 

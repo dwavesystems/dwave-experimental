@@ -22,7 +22,8 @@ from dwave.graphs import zephyr_graph, pegasus_graph, chimera_graph
 
 from dwave.experimental.embedding_methods import quotient_search
 from dwave.experimental.embedding_methods.quotient_embedding_search import \
-    QuotientSearchMetadata
+    QuotientSearchMetadata, find_labeled_subgraph, node_labels_by_coloring, \
+    node_labels_by_orientation, node_labels_by_quotient
 
 # To do:
 # It would make sense to simplify this function. The two phase process might better capture practical distributions,
@@ -123,7 +124,7 @@ def generate_faulty_graph(
 
 class TestZephyrYieldImprovement(unittest.TestCase):
     """Check that the greedy search never reduces the yield objective."""
-
+    
     _SOURCE_M = 6
     _SOURCE_TP = 2
     _TARGET_M = 6
@@ -559,3 +560,48 @@ class TestLabelingSchemeErrors(unittest.TestCase):
         target.graph["labels"] = "custom_scheme"
         with self.assertRaisesRegex(ValueError, r"unknown labelling scheme"):
             quotient_search(source, target)
+
+
+class TestNodeLabelHelpers(unittest.TestCase):
+    """Basic tests for helper labeling functions."""
+
+    def test_node_labels_by_orientation_zephyr_matches_orientation_axis(self):
+        graph = zephyr_graph(2, 2, coordinates=True)
+
+        labels = node_labels_by_orientation(graph, as_str=False)
+
+        self.assertEqual(set(labels), set(graph.nodes()))
+        for node in graph.nodes():
+            self.assertEqual(labels[node], node[0])
+
+    def test_node_labels_by_coloring_preserves_original_linear_labels(self):
+        graph = zephyr_graph(2, 2, coordinates=False)
+
+        labels = node_labels_by_coloring(graph, as_str=False)
+
+        self.assertEqual(set(labels), set(graph.nodes()))
+        self.assertTrue(set(labels.values()).issubset({0, 1, 2, 3}))
+
+    def test_node_labels_by_quotient_remaps_zephyr_boundaries(self):
+        graph = zephyr_graph(2, 2, coordinates=True)
+
+        labels = node_labels_by_quotient(
+            graph, expand_boundary_search=True, as_str=False
+        )
+
+        self.assertEqual(labels[(0, 0, 0, 0, 0)], (0, 1, 0, 0))
+        self.assertEqual(labels[(0, 4, 0, 0, 0)], (0, 3, 0, 0))
+        self.assertEqual(labels[(0, 2, 0, 0, 0)], (0, 2, 0, 0))
+
+    def test_find_labeled_subgraph_returns_identity_on_simple_graph(self):
+        source = nx.path_graph(2)
+        target = nx.path_graph(2)
+        node_labels = ({0: "0", 1: "1"}, {0: "0", 1: "1"})
+
+        embedding = find_labeled_subgraph(
+            source, target, node_labels=node_labels, timeout=1
+        )
+
+        self.assertIsInstance(embedding, dict)
+        self.assertEqual(set(embedding.keys()), set(source.nodes()))
+        self.assertEqual(set(embedding.values()), set(target.nodes()))
