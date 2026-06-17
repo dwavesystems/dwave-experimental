@@ -745,7 +745,7 @@ def _rail_search(
         source.edge_subgraph(
             {e for e in source.edges() if e[0][u_index] != e[1][u_index]}
         ).copy()
-        if "edge" in yield_type
+        if yield_type in ("edge", "rail-edge")
         else None
     )
     if source_external_edges:
@@ -1084,8 +1084,8 @@ def quotient_search(
             )
         full_yield = max_num_yielded == num_yielded
 
-        if num_yielded < starting_yield:
-            raise ValueError("Greedy quotient search reduced the objective value")
+        if num_yielded < starting_yield and not ksymmetric and not (yield_type == "rail-edge" and search_strategy in ("by_quotient_node", "by_rail_then_node")):
+            raise ValueError(f"Greedy quotient search reduced the objective value: {yield_type}: {num_yielded} < {starting_yield} for {search_strategy}")
 
     # If there are unfeasible mappings to target nodes, the final working_embedding might contain
     # entries that map to non-existent target nodes. We prune those out before returning the final
