@@ -25,6 +25,12 @@ import networkx as nx
 import numpy as np
 from tqdm import tqdm
 
+from pathlib import Path
+import sys
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 import dimod
 from dwave.system import DWaveSampler
 from dwave.system.composites import ParallelEmbeddingComposite
@@ -37,7 +43,6 @@ from dwave.experimental.multicolor_anneal import (
     qubit_to_Advantage2_annealing_line,
 )
 from dwave.experimental.shimming import shim_flux_biases
-
 
 def _make_anneal_schedules(
     exp_feature_info: list,
