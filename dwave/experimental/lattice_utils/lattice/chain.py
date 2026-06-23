@@ -14,8 +14,10 @@
 
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 
 from numpy.typing import NDArray
+import dimod
 
 from dwave.experimental.lattice_utils.lattice import Lattice
 
@@ -50,6 +52,8 @@ class Chain(Lattice):
         orbit_type: str = "singleton",
         qubit_orbits: NDArray | None = None,
         coupler_orbits: NDArray | None = None,
+        reference_energy_sampler: dimod.Sampler | None = None,
+        reference_energy_sampler_kwargs: dict[str, Any] | None = None,
     ):
         self.geometry_name = "Chain"
         self.num_spins = dimensions[0]
@@ -63,6 +67,8 @@ class Chain(Lattice):
             orbit_type=orbit_type,
             qubit_orbits=qubit_orbits,
             coupler_orbits=coupler_orbits,
+            reference_energy_sampler=reference_energy_sampler,
+            reference_energy_sampler_kwargs=reference_energy_sampler_kwargs,
         )
 
     def generate_edges(self) -> Generator[tuple[int, int]]:

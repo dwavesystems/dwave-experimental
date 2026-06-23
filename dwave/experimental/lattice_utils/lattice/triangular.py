@@ -103,7 +103,7 @@ class Triangular(Lattice):
         length_y = self.dimensions[0]
         return node % length_y, node // length_y
 
-    def make_nominal_bqm(self) -> dimod.BQM:
+    def make_bqm(self) -> dimod.BQM:
         """Construct the nominal triangular lattice BQM.
 
         If ``halve_boundary_couplers`` is True, couplers that are on the boundary
@@ -112,7 +112,7 @@ class Triangular(Lattice):
         Returns:
             A dimod.BQM representing the nominal triangular lattice.
         """
-        graph = self._make_networkx_graph()
+        graph = self.make_networkx_graph()
         bqm = dimod.BQM(vartype="SPIN")
 
         for v in range(self.num_spins):

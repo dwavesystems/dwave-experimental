@@ -118,7 +118,7 @@ class EmbeddedLattice(Lattice):
             A generator of tuples, where each tuple represents an edge between
             two spins in the physical lattice.
         """
-        logical_bqm = self.logical_lattice.make_nominal_bqm()
+        logical_bqm = self.logical_lattice.make_bqm()
 
         # Now embed it.  First make embedded spins and connect the chains.
         for v in logical_bqm.variables:
@@ -132,24 +132,40 @@ class EmbeddedLattice(Lattice):
             for edge in self.get_chain_connectivity(u, v):
                 yield u_chain[edge[0]], v_chain[edge[1]]
 
-    def make_nominal_bqm(self, **kwargs) -> dimod.BQM:
-        """Construct and embed the nominal BQM.
+    def make_bqm(self, **kwargs) -> dimod.BQM:
+        """Construct the physical BQM for this embedded lattice.
+
+        Overrides the base class ``make_bqm`` for the
 
         Args:
             kwargs: Keyword arguments to pass to the logical lattice's
-                `make_nominal_bqm` method.
+                `make_bqm` method.
 
         Returns:
-            A dimod.BQM representing the embedded nominal BQM.
+            A dimod.BQM representing the embedded logical BQM.
         """
         if hasattr(self, "fixed_seed"):
             self.logical_lattice.fixed_seed = self.fixed_seed
             kwargs.pop("seed", None)
 
-        return self.embed_bqm(self.logical_lattice.make_nominal_bqm(**kwargs))
+        return self.embed_bqm(self.logical_lattice.make_bqm(**kwargs))
 
     def embed_bqm(self, logical_bqm: dimod.BQM) -> dimod.BQM:
         """Embed a logical BQM onto the physical lattice.
+
+        This is a lattice-aware alternative to ``dwave.embedding.embed_bqm``.
+        The standard implementation treats each chain as an unodered set of
+        physical qubits and routes interactions across whatever target edges
+        happen to be available. Here, chains are ordered tuples and the
+        physical edges used for each logical interaction are chosen
+        deterministically by ``get_chain_connectivity``, so that the position of
+        a qubit within its chain carries geometric meaining (e.g. in dimerized
+        lattices, index 0 vs. 1 corresponds to a specific sublattice). This
+        allows for more structured embeddings that can be tailored to the
+        geometry of the logical lattice and the physics of the problem.
+
+        Chain couplings are fixed at ``self.chain_coupling`` rather than
+        computed by a chain-strength heuristic.
 
         Args:
             logical_bqm: A dimod.BQM representing the BQM defined on the logical

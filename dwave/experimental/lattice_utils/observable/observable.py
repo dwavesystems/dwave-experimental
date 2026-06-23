@@ -232,9 +232,9 @@ class ReferenceEnergy(Observable):
 
         # And if we can't load, we generate a reference sample.
         if experiment is not None:
-            energy, sample, method_string = experiment.inst._optimize(bqm)
+            energy, sample, method_string = experiment.inst.optimize(bqm)
         elif inst is not None:
-            energy, sample, method_string = inst._optimize(bqm)
+            energy, sample, method_string = inst.optimize(bqm)
         else:
             raise ValueError(
                 "Must provide either an experiment or a lattice to compute reference energy."

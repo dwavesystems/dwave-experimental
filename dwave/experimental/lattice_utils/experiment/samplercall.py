@@ -27,12 +27,12 @@ class SamplerCall:
         self,
         run_index: int,
         shimdata: dict | None = None,
-        bqm: dimod.BQM | None = None,
-        nominal_bqms: list | None = None,
+        embedded_bqm: dimod.BQM | None = None,
+        logical_bqms: list | None = None,
         sampler_params: dict | None = None,
     ):
         self.run_index: int = run_index
-        self.bqm: dimod.BQM | None = bqm
+        self.bqm: dimod.BQM | None = embedded_bqm
         self.shimdata: dict = {} if shimdata is None else shimdata
-        self.nominal_bqms: list = [] if nominal_bqms is None else nominal_bqms
+        self.logical_bqms: list = [] if logical_bqms is None else logical_bqms
         self.sampler_params: dict = {} if sampler_params is None else sampler_params

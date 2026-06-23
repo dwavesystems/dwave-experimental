@@ -77,11 +77,18 @@ class Experiment:
         *,
         inst: Lattice,
         sampler: dimod.Sampler,
+        reference_energy_sampler: dimod.Sampler | None = None,
+        reference_energy_sampler_kwargs: dict[str, Any] | None = None,
         max_iterations: int | None = None,
-        config: ExperimentConfig = ExperimentConfig(),
+        config: ExperimentConfig | None = None,
     ):
+        if config is None:
+            config = ExperimentConfig()
+
         self.inst = inst
         self.sampler = sampler
+        self.reference_energy_sampler = reference_energy_sampler
+        self.reference_energy_sampler_kwargs = reference_energy_sampler_kwargs
         self.param = dict(vars(config))
         self.experiment_results_root = inst.data_root / "results"
         self.data_path = None
@@ -158,6 +165,13 @@ class Experiment:
             param: Dictionary of parameter values to apply to the experiment.
         """
         param = self._format_parameter_list([param])[0]
+
+        # anneal_time and anneal_schedule are mutually exclusive
+        if "anneal_schedule" in param:
+            self.param.pop("anneal_time", None)
+        elif "anneal_time" in param:
+            self.param.pop("anneal_schedule", None)
+
         for param_name, param_val in param.items():
             self.param[param_name] = param_val
 
@@ -270,7 +284,7 @@ class Experiment:
         """Parse a sampler response into per-embedding observable results.
 
         Args:
-            call: Sampler call metadata, inluding the nominal BQMs
+            call: Sampler call metadata, inluding the logical BQMs
             response: Raw sample set returned by the sampler.
 
         Returns:
@@ -287,14 +301,14 @@ class Experiment:
         sample_set = {}
         for iemb, sample_array in enumerate(sample_arrays):
             sample_set[iemb] = dimod.SampleSet.from_samples_bqm(
-                sample_array, call.nominal_bqms[iemb]
+                sample_array, call.logical_bqms[iemb]
             )
 
         results = {}
         for observable in set(self.observables_to_collect):
             results[observable.name] = []
             for iemb, sample_array in enumerate(sample_arrays):
-                bqm = call.nominal_bqms[iemb]
+                bqm = call.logical_bqms[iemb]
                 obs_result = observable.evaluate(self, bqm, sample_set[iemb])
                 results[observable.name].append(obs_result)
 
@@ -457,9 +471,13 @@ class Experiment:
         signed_energy_scale = self.param["signed_energy_scale"]
 
         if "anneal_time" in self.param:
-            pathstring = f'energyscale{signed_energy_scale:0.3}/atime{self.param["anneal_time"]:010.6f}us'
+            pathstring = (
+                f'energyscale{signed_energy_scale:0.3}/atime{self.param["anneal_time"]:010.6f}us'
+            )
         elif "anneal_schedule" in self.param:
-            pathstring = f'energyscale{signed_energy_scale:0.3}/asched{self.param["anneal_schedule"]}'
+            pathstring = (
+                f'energyscale{signed_energy_scale:0.3}/asched{self.param["anneal_schedule"]}'
+            )
         else:
             raise ValueError
 
@@ -480,14 +498,14 @@ class Experiment:
             ]
         )
 
-    def _make_nominal_bqms(self) -> list[dimod.BQM]:
-        """Make nominal BQMs (one per embedding) for the experiment."""
-        nominal_bqm = self.inst.make_nominal_bqm()
+    def _make_logical_bqms(self) -> list[dimod.BQM]:
+        """Make logical BQMs for the experiment."""
+        logical_bqm = self.inst.make_bqm()
 
         if not hasattr(self.inst, "embedding_list"):
-            return [nominal_bqm]
+            return [logical_bqm]
 
-        return [nominal_bqm] * len(self.inst.embedding_list)
+        return [logical_bqm] * len(self.inst.embedding_list)
 
     def _build_sampler_call(self) -> None | SamplerCall:
         """Build the sampler call using attributes of the experiment and instance.
@@ -495,7 +513,7 @@ class Experiment:
         Returns a SamplerCall.
         """
         sampler_call = SamplerCall(run_index=self.run_index)
-        sampler_call.nominal_bqms = self._make_nominal_bqms()
+        sampler_call.logical_bqms = self._make_logical_bqms()
         sampler_call.shimdata = self._get_shimdata()
 
         # Here we can find out that we're finished.
@@ -685,13 +703,13 @@ class Experiment:
         normalization_basis = np.ones_like(orbits, dtype=bool)
 
         # Assume we have multiple embeddings of the same BQM.
-        bqms = sampler_call.nominal_bqms
+        bqms = sampler_call.logical_bqms
         if len(bqms) > 1 and any(bqm != bqms[0] for bqm in bqms[1:]):
             raise NotImplementedError("Case for distinct embedded BQMs not implemented yet.")
 
         bqm = bqms[0]
-        nominal_values = np.array([bqm.quadratic[edge] for edge in self.inst.edge_list])
-        coupler_signs = np.sign(nominal_values)
+        logical_values = np.array([bqm.quadratic[edge] for edge in self.inst.edge_list])
+        coupler_signs = np.sign(logical_values)
         for orbit_bin in range(max(orbits) + 1):
             bin_edges = np.argwhere(orbits == orbit_bin).ravel()
             if step_size != 0:
@@ -708,27 +726,27 @@ class Experiment:
                     np.multiply(coupler_signs[bin_edges], excess) * self.param["coupler_damp"]
                 )
 
-            # New truncation method... previous is buggy when we mix signs of nominal values.
+            # New truncation method... previous is buggy when we mix signs of logical values.
             # Let's try being more explicit.
             for iemb in range(len(relative_coupler_strength)):
                 violators = (
                     relative_coupler_strength[iemb, bin_edges]
-                    * nominal_values[bin_edges]
+                    * logical_values[bin_edges]
                     * signed_energy_scale
                     > 1
                 )
                 relative_coupler_strength[iemb, bin_edges[violators]] = (
-                    0.99999 / nominal_values[bin_edges[violators]] / signed_energy_scale
+                    0.99999 / logical_values[bin_edges[violators]] / signed_energy_scale
                 )
 
                 violators = (
                     relative_coupler_strength[iemb, bin_edges]
-                    * nominal_values[bin_edges]
+                    * logical_values[bin_edges]
                     * signed_energy_scale
                     < -2
                 )
                 relative_coupler_strength[iemb, bin_edges[violators]] = (
-                    -1.99999 / nominal_values[bin_edges[violators]] / signed_energy_scale
+                    -1.99999 / logical_values[bin_edges[violators]] / signed_energy_scale
                 )
 
         # Renormalize each orbit after truncation
@@ -743,30 +761,30 @@ class Experiment:
         for orbit_bin in range(np.max(orbits) + 1):
             bin_edges = np.argwhere(orbits == orbit_bin).ravel()
 
-            # New truncation method... previous is buggy when we mix signs of nominal values.
+            # New truncation method... previous is buggy when we mix signs of logical values.
             # Let's try being more explicit.
             for iemb in range(len(relative_coupler_strength)):
                 violators = (
                     relative_coupler_strength[iemb, bin_edges]
-                    * nominal_values[bin_edges]
+                    * logical_values[bin_edges]
                     * signed_energy_scale
                     > 1
                 )
                 relative_coupler_strength[iemb, bin_edges[violators]] = (
-                    0.99999 / nominal_values[bin_edges[violators]] / signed_energy_scale
+                    0.99999 / logical_values[bin_edges[violators]] / signed_energy_scale
                 )
 
                 violators = (
                     relative_coupler_strength[iemb, bin_edges]
-                    * nominal_values[bin_edges]
+                    * logical_values[bin_edges]
                     * signed_energy_scale
                     < -2
                 )
                 relative_coupler_strength[iemb, bin_edges[violators]] = (
-                    -1.99999 / nominal_values[bin_edges[violators]] / signed_energy_scale
+                    -1.99999 / logical_values[bin_edges[violators]] / signed_energy_scale
                 )
 
-        Q = nominal_values * relative_coupler_strength * signed_energy_scale
+        Q = logical_values * relative_coupler_strength * signed_energy_scale
         Q_max = np.max(Q)
         Q_min = np.min(Q)
         if Q_max > 1 or Q_min < -2:
@@ -780,31 +798,31 @@ class Experiment:
         signed_energy_scale = self.param["signed_energy_scale"]
         bqm = dimod.BQM(vartype="SPIN")
         if not hasattr(self.inst, "embedding_list"):
-            nominal_bqm = sampler_call.nominal_bqms[0]
+            logical_bqm = sampler_call.logical_bqms[0]
 
             for v in range(self.inst.num_spins):
                 # Make sure variables appear in the correct order when dealing with software solvers
                 bqm.add_variable(v)
-                if v in nominal_bqm.variables:
-                    bqm.add_linear(v, nominal_bqm.linear[v])
+                if v in logical_bqm.variables:
+                    bqm.add_linear(v, logical_bqm.linear[v])
 
             for u, v in self.inst.edge_list:
-                bqm.add_quadratic(u, v, nominal_bqm.quadratic[u, v] * signed_energy_scale)
+                bqm.add_quadratic(u, v, logical_bqm.quadratic[u, v] * signed_energy_scale)
 
             return bqm
 
         relative_coupler_strength = sampler_call.shimdata["relative_coupler_strength"]
         for iemb, emb in enumerate(self.inst.embedding_list):
-            nominal_bqm = sampler_call.nominal_bqms[iemb].copy()
+            logical_bqm = sampler_call.logical_bqms[iemb].copy()
 
             for v in range(self.inst.num_spins):
                 # Don't touch degree-zero spins.  Relevant to partial yield.
-                if nominal_bqm.degree(v) > 0:
-                    bqm.add_linear(emb[v], nominal_bqm.linear[v])
+                if logical_bqm.degree(v) > 0:
+                    bqm.add_linear(emb[v], logical_bqm.linear[v])
 
             for iedge, edge in enumerate(self.inst.edge_list):
                 bias = (
-                    nominal_bqm.quadratic[*edge]
+                    logical_bqm.quadratic[*edge]
                     * relative_coupler_strength[iemb, iedge]
                     * signed_energy_scale
                 )

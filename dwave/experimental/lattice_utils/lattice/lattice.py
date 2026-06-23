@@ -17,6 +17,7 @@ from pathlib import Path
 from collections.abc import Generator, Hashable
 from abc import ABC, abstractmethod
 import warnings
+from typing import Any
 
 import dimod
 from minorminer.utils.parallel_embeddings import find_multiple_embeddings
@@ -61,9 +62,13 @@ class Lattice(ABC):
         orbit_type: str = "singleton",
         qubit_orbits: NDArray | None = None,
         coupler_orbits: NDArray | None = None,
+        reference_energy_sampler: dimod.Sampler | None = None,
+        reference_energy_sampler_kwargs: dict[str, Any] | None = None,
     ):
         self.dimensions = dimensions
         self.data_root = Path(data_root)
+        self.reference_energy_sampler = reference_energy_sampler
+        self.reference_energy_sampler_kwargs = reference_energy_sampler_kwargs
 
         self.periodic = periodic if periodic is not None else tuple(False for _ in dimensions)
         if len(self.periodic) != len(self.dimensions):
@@ -110,7 +115,7 @@ class Lattice(ABC):
         if exclude_qubits is None:
             exclude_qubits = []
 
-        graph_bqm = dimod.to_networkx_graph(self.make_nominal_bqm())
+        graph_bqm = dimod.to_networkx_graph(self.make_bqm())
         graph_sampler = sampler.to_networkx_graph()
         graph_sampler.remove_nodes_from(exclude_qubits)
 
@@ -119,7 +124,7 @@ class Lattice(ABC):
                 self._load_embeddings(sampler)
                 return
             except FileNotFoundError:
-                warnings.warn("No embedding file found.")
+                warnings.warn("No cached embedding file found, computing new embeddings.")
 
         embedding_dicts = find_multiple_embeddings(
             graph_bqm,
@@ -128,18 +133,21 @@ class Lattice(ABC):
             embedder_kwargs={'timeout': timeout},
         )
         if not embedding_dicts:
-            raise ValueError("No embeddings found")
+            raise ValueError(
+                f"No embeddings found for {type(self).__name__}"
+                f"(dimensions={self.dimensions}) on "
+                f"{type(sampler).__name__}"
+                f" (target graph: {graph_sampler.number_of_nodes()} nodes, "
+                f"{graph_sampler.number_of_edges()} edges; timeout={timeout}s). "
+                f"Try increasing timeout, reducing dimensions, or relaxing exclude_qubits."
+            )
 
         embeddings = np.stack([list(emb.values()) for emb in embedding_dicts])
         if len(embeddings) >= min_number_of_embeddings and np.prod(embeddings.shape):
             self._save_embeddings(sampler, embeddings)
 
-    def make_nominal_bqm(self) -> dimod.BQM:
-        """Construct a default nominal BQM coupling strength values set to +1.
-
-        Args:
-            **kwargs: additional keyword arguments forwarded to subclass implementations.
-                Subclasses may use these to modify the construction of the nominal BQM.
+    def make_bqm(self) -> dimod.BQM:
+        """Construct a default with BQM coupling strength values set to +1.
 
         Returns:
             A binary quadratic model representing the lattice with uniform
@@ -195,7 +203,7 @@ class Lattice(ABC):
                 self._load_orbits()
             except FileNotFoundError:
                 # calculating orbits
-                bqm = self.make_nominal_bqm()
+                bqm = self.make_bqm()
                 self.qubit_orbits, self.coupler_orbits = get_orbits(bqm, self.edge_list)
                 self._save_orbits()
 
@@ -221,6 +229,34 @@ class Lattice(ABC):
                 f'Unknown orbit type {self.orbit_type}. '
                 'Must be "global", "standard", "singleton", or "explicit".'
             )
+
+    def make_networkx_graph(self) -> nx.Graph:
+        """Construct a NetworkX graph representation of the lattice.
+
+        Returns:
+            A NetworkX graph where nodes correspond to spins and edges correspond to couplers.
+        """
+        graph = nx.Graph()
+        for v in range(self.num_spins):
+            graph.add_node(v)
+        for u, v in self.edge_list:
+            graph.add_edge(u, v)
+
+        return graph
+
+    def optimize(self, bqm: dimod.BQM) -> tuple[float, NDArray, str]:
+        """Return the lowest energy sample by optimizing the BQM using the reference sampler.
+
+        Returns:
+            A tuple containing the best energy found, the corresponding sample as a
+            NumPy array, and a string indicating the optimization method used.
+        """
+        return optimize(
+            lattice=self,
+            bqm=bqm,
+            sampler=self.reference_energy_sampler,
+            sampler_kwargs=self.reference_energy_sampler_kwargs,
+        )
 
     def _get_path(
         self,
@@ -291,16 +327,3 @@ class Lattice(ABC):
     def _get_size_pathstring(self) -> str:
         """Construct a size-specific pathstring including dimensions and periodicity."""
         return "size" + "x".join(f"{dim}{'p'*p}" for dim, p in zip(self.dimensions, self.periodic))
-
-    def _make_networkx_graph(self) -> nx.Graph:
-        """Construct a NetworkX graph reprensetation of the lattice."""
-        graph = nx.Graph()
-        for v in range(self.num_spins):
-            graph.add_node(v)
-        for u, v in self.edge_list:
-            graph.add_edge(u, v)
-
-        return graph
-
-    def _optimize(self, bqm: dimod.BQM, **kwargs) -> tuple[float, NDArray, str]:
-        return optimize(lattice=self, bqm=bqm, **kwargs)

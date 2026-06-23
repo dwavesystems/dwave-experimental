@@ -1,0 +1,8 @@
+---
+features:
+  - |
+    Add ``dwave.experimental.lattice_utils`` submodule with utilities for
+    constructing lattice graphs (``Chain``, ``Triangular``,
+    ``DimerizedTriangular``, ``EmbeddedLattice``), evaluating physics
+    observables on sample sets, and running shimmed Ising experiments on
+    QPU samplers.
