@@ -23,7 +23,7 @@ from dwave.system import DWaveSampler
 __all__ = ['SOLVER_FILTER', 'get_solver_name', 'get_parameters']
 
 
-SOLVER_FILTER = dict(name__regex=r'Advantage2_system4.*|Advantage2_research2.*|Advantage2_prototype2.*|Advantage2_research1.*') 
+SOLVER_FILTER = dict(name__regex=r'Advantage2_system4_x_internal.*|Advantage2_research2.*|Advantage2_prototype2.*|Advantage2_research1.*') 
 """Filter for an available solver that supports advanced annealing features.
 
 Feature-based solver selection returns the first available solver that supports
