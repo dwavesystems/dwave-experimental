@@ -14,20 +14,37 @@
 
 import itertools
 import unittest
+from typing import Literal
 
 import networkx as nx
 import numpy as np
-from dwave_networkx import zephyr_graph
+from dwave.graphs import zephyr_graph, pegasus_graph, chimera_graph
 
-from dwave.experimental.embedding_methods import zephyr_quotient_search
-from dwave.experimental.embedding_methods.zephyr_quotient_embedding_search import \
-    ZephyrSearchMetadata
+from dwave.experimental.embedding_methods import quotient_search
+from dwave.experimental.embedding_methods.quotient_embedding_search import (
+    QuotientSearchMetadata,
+    find_labeled_subgraph,
+    node_labels_by_coloring,
+    node_labels_by_orientation,
+    node_labels_by_quotient,
+)
 
 
-def generate_faulty_zephyr_graph(
-    m: int, t: int, proportion: float, uniform_proportion: float, seed: int | None = None
+# To do:
+# It would make sense to simplify this function. The two phase process might better capture practical distributions,
+# but is difficult to understand and adds no value in the context of the tests.
+# It would make sense to add the feature that displacements apply to default rails (or relative to a given
+# embedding), rather than randomly. It would then be possible to guarantee a strict improvement in objectives,
+# strengthening tests.
+def generate_faulty_graph(
+    m: int,
+    t: int,
+    proportion: float,
+    uniform_proportion: float,
+    seed: int | None = None,
+    family: Literal["chimera", "pegasus", "zephyr"] = "zephyr",
 ) -> nx.Graph:
-    """Create a Zephyr graph with simulated hardware faults.
+    """Create a graph with simulated hardware faults.
 
     Nodes are deleted in two phases: (1) ``round(proportion * uniform_proportion * N)`` nodes are
     chosen uniformly at random and removed; (2) ``round(proportion * (1 - uniform_proportion) * N)``
@@ -52,13 +69,22 @@ def generate_faulty_zephyr_graph(
             uniformly (the complementary fraction is chosen by distance-based
             sampling).
         seed: RNG seed for reproducibility. Defaults to ``None``.
+        family: Graph family. One of ``'chimera'``, ``'pegasus'``, or ``'zephyr'``. Defaults to ``'zephyr'``.
 
     Returns:
-        Copy of the full Zephyr graph with faulty nodes removed.
+        Copy of the full graph with faulty nodes removed.
         All graph-level metadata (family, rows, tile, labels) is preserved.
     """
     rng = np.random.default_rng(seed)
-    full_graph = zephyr_graph(m, t, coordinates=True)
+    if family == "zephyr":
+        full_graph = zephyr_graph(m, t, coordinates=True)
+    elif family == "pegasus":
+        # t is ignored.
+        full_graph = pegasus_graph(m, coordinates=True)
+    elif family == "chimera":
+        full_graph = chimera_graph(m, m, t, coordinates=True)
+    else:
+        raise ValueError(f"Unsupported graph family: {family}")
     all_nodes = list(full_graph.nodes())
     N = len(all_nodes)
 
@@ -106,7 +132,7 @@ def generate_faulty_zephyr_graph(
     return faulty_graph
 
 
-class TestYieldImprovement(unittest.TestCase):
+class TestZephyrYieldImprovement(unittest.TestCase):
     """Check that the greedy search never reduces the yield objective."""
 
     _SOURCE_M = 6
@@ -123,40 +149,51 @@ class TestYieldImprovement(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.source = zephyr_graph(cls._SOURCE_M, cls._SOURCE_TP, coordinates=True)
-        cls.target = generate_faulty_zephyr_graph(
+        cls.target = generate_faulty_graph(
             cls._TARGET_M,
             cls._TARGET_T,
             proportion=cls._PROPORTION,
             uniform_proportion=cls._UNIFORM_PROPORTION,
             seed=cls._SEED,
+            family="zephyr",
         )
         # Make sure that the target is a connected graph:
         if not nx.is_connected(cls.target):
-            raise ValueError("Generated target graph is not connected; adjust parameters or seed.")
+            raise ValueError(
+                "Generated target graph is not connected; adjust parameters or seed."
+            )
 
     def _assert_search_improves_yield(
-        self, yield_type, quotient_search, expand_boundary_search, ksymmetric,
+        self,
+        yield_type,
+        search_strategy,
+        expand_boundary_search,
+        ksymmetric,
     ):
-        sub_emb, metadata = zephyr_quotient_search(
+        sub_emb, metadata = quotient_search(
             self.source,
             self.target,
             yield_type=yield_type,
-            quotient_search=quotient_search,
+            search_strategy=search_strategy,
             expand_boundary_search=expand_boundary_search,
             ksymmetric=ksymmetric,
         )
 
-        self.assertIsInstance(metadata, ZephyrSearchMetadata)
-        self.assertGreaterEqual(
-            metadata.final_num_yielded,
-            metadata.starting_num_yielded,
-            msg=(
-                f"Yield decreased from {metadata.starting_num_yielded} to "
-                f"{metadata.final_num_yielded} with yield_type={yield_type}, "
-                f"quotient_search={quotient_search}, "
-                f"expand={expand_boundary_search}, ksymmetric={ksymmetric}"
-            ),
-        )
+        self.assertIsInstance(metadata, QuotientSearchMetadata)
+        if not ksymmetric and not (
+            yield_type == "rail-edge"
+            and search_strategy in ("by_quotient_node", "by_rail_then_node")
+        ):
+            self.assertGreaterEqual(
+                metadata.final_num_yielded,
+                metadata.starting_num_yielded,
+                msg=(
+                    f"Yield decreased from {metadata.starting_num_yielded} to "
+                    f"{metadata.final_num_yielded} with yield_type={yield_type}, "
+                    f"search_strategy={search_strategy}, "
+                    f"expand={expand_boundary_search}, ksymmetric={ksymmetric}"
+                ),
+            )
         # this should be impossible, but just double checking:
         self.assertLessEqual(metadata.final_num_yielded, metadata.max_num_yielded)
 
@@ -169,38 +206,151 @@ class TestYieldImprovement(unittest.TestCase):
         self.assertTrue(set(sub_emb.keys()).issubset(set(self.source.nodes())))
 
     def test_search_yields_improvement(self):
-        for quotient_search, expand, ksym, yt in itertools.product(
-            self._BY_STRATEGIES, self._TRUE_FALSE, self._TRUE_FALSE, self._YIELD_TYPES,
+        for search_strategy, expand, ksym, yt in itertools.product(
+            self._BY_STRATEGIES,
+            self._TRUE_FALSE,
+            self._TRUE_FALSE,
+            self._YIELD_TYPES,
         ):
             with self.subTest(
-                quotient_search=quotient_search,
+                search_strategy=search_strategy,
                 expand_boundary_search=expand,
                 ksymmetric=ksym,
                 yield_type=yt,
             ):
                 self._assert_search_improves_yield(
                     yield_type=yt,
-                    quotient_search=quotient_search,
+                    search_strategy=search_strategy,
+                    expand_boundary_search=expand,
+                    ksymmetric=ksym,
+                )
+
+
+class TestYieldImprovement(unittest.TestCase):
+    """Check yield non-decrease across implemented multi-family search options.
+
+    This class validates all currently implemented search strategies for all three
+    graph families under the tested tile constraints ``t=2`` and ``tp=1``.
+    """
+
+    _M = 6
+    _SOURCE_TP = 1
+    _TARGET_T = 2
+    _PROPORTION = 0.10
+    _UNIFORM_PROPORTION = 0.10
+    _SEED = 1337
+    _TRUE_FALSE = [True, False]
+    _YIELD_TYPES = ["node", "edge", "rail-edge"]
+    _BY_STRATEGIES = ["by_quotient_rail", "by_quotient_node", "by_rail_then_node"]
+    _FAMILIES = ["zephyr", "chimera", "pegasus"]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.sources = {}
+        cls.targets = {}
+
+        for family in cls._FAMILIES:
+            if family == "zephyr":
+                source = zephyr_graph(cls._M, cls._SOURCE_TP, coordinates=True)
+            elif family == "chimera":
+                source = chimera_graph(cls._M, cls._M, cls._SOURCE_TP, coordinates=True)
+            elif family == "pegasus":
+                source = pegasus_graph(cls._M, coordinates=True)
+            else:
+                raise ValueError(f"Unsupported graph family: {family}")
+
+            target = generate_faulty_graph(
+                cls._M,
+                cls._TARGET_T,
+                proportion=cls._PROPORTION,
+                uniform_proportion=cls._UNIFORM_PROPORTION,
+                seed=cls._SEED,
+                family=family,
+            )
+
+            cls.sources[family] = source
+            cls.targets[family] = target
+
+    def _assert_search_improves_yield(
+        self,
+        family: Literal["zephyr", "chimera", "pegasus"],
+        search_strategy: Literal[
+            "by_quotient_rail", "by_quotient_node", "by_rail_then_node"
+        ],
+        yield_type: Literal["node", "edge", "rail-edge"],
+        expand_boundary_search: bool,
+        ksymmetric: bool,
+    ):
+        source = self.sources[family]
+        target = self.targets[family]
+
+        sub_emb, metadata = quotient_search(
+            source,
+            target,
+            yield_type=yield_type,
+            search_strategy=search_strategy,
+            expand_boundary_search=expand_boundary_search,
+            ksymmetric=ksymmetric,
+        )
+
+        self.assertIsInstance(metadata, QuotientSearchMetadata)
+        self.assertGreaterEqual(
+            metadata.final_num_yielded,
+            metadata.starting_num_yielded,
+            msg=(
+                f"Yield decreased from {metadata.starting_num_yielded} to "
+                f"{metadata.final_num_yielded} with family={family}, "
+                f"search_strategy={search_strategy}, "
+                f"yield_type={yield_type}, expand={expand_boundary_search}, "
+                f"ksymmetric={ksymmetric}"
+            ),
+        )
+        self.assertLessEqual(metadata.final_num_yielded, metadata.max_num_yielded)
+
+        target_nodes = set(target.nodes())
+        all_target_nodes = {node for chain in sub_emb.values() for node in chain}
+        self.assertTrue(all_target_nodes.issubset(target_nodes))
+        self.assertTrue(set(sub_emb.keys()).issubset(set(source.nodes())))
+
+    def test_search_yields_improvement(self):
+        for family, strategy, expand, ksym, yt in itertools.product(
+            self._FAMILIES,
+            self._BY_STRATEGIES,
+            self._TRUE_FALSE,
+            self._TRUE_FALSE,
+            self._YIELD_TYPES,
+        ):
+            with self.subTest(
+                family=family,
+                search_strategy=strategy,
+                expand_boundary_search=expand,
+                ksymmetric=ksym,
+                yield_type=yt,
+            ):
+                self._assert_search_improves_yield(
+                    family=family,
+                    search_strategy=strategy,
+                    yield_type=yt,
                     expand_boundary_search=expand,
                     ksymmetric=ksym,
                 )
 
 
 class TestMetadataConsistency(unittest.TestCase):
-    """Verify the ZephyrSearchMetadata fields are internally consistent."""
+    """Verify the QuotientSearchMetadata fields are internally consistent."""
 
     @classmethod
     def setUpClass(cls):
         cls.source = zephyr_graph(6, 2, coordinates=True)
-        cls.target = generate_faulty_zephyr_graph(
-            6, 4, proportion=0.10, uniform_proportion=0.10, seed=7795
+        cls.target = generate_faulty_graph(
+            6, 4, proportion=0.10, uniform_proportion=0.10, seed=7795, family="zephyr"
         )
 
     def test_metadata_ordering(self):
         """max >= final >= starting >= 0 for all yield types."""
         for yt in ("node", "edge", "rail-edge"):
             with self.subTest(yield_type=yt):
-                _sub, metadata = zephyr_quotient_search(
+                _sub, metadata = quotient_search(
                     self.source,
                     self.target,
                     yield_type=yt,
@@ -220,18 +370,20 @@ class TestMetadataConsistency(unittest.TestCase):
         full_target = zephyr_graph(6, 4, coordinates=True)
         for yt in ("node", "edge"):
             with self.subTest(yield_type=yt):
-                _sub, metadata = zephyr_quotient_search(
+                _sub, metadata = quotient_search(
                     self.source,
                     full_target,
                     yield_type=yt,
                 )
-                self.assertEqual(metadata.starting_num_yielded, metadata.max_num_yielded)
+                self.assertEqual(
+                    metadata.starting_num_yielded, metadata.max_num_yielded
+                )
                 self.assertEqual(metadata.final_num_yielded, metadata.max_num_yielded)
 
     def test_return_is_two_tuple(self):
-        sub_emb, metadata = zephyr_quotient_search(self.source, self.target)
+        sub_emb, metadata = quotient_search(self.source, self.target)
         self.assertIsInstance(sub_emb, dict)
-        self.assertIsInstance(metadata, ZephyrSearchMetadata)
+        self.assertIsInstance(metadata, QuotientSearchMetadata)
 
 
 class TestGraphInputValidation(unittest.TestCase):
@@ -242,49 +394,69 @@ class TestGraphInputValidation(unittest.TestCase):
         self.target = zephyr_graph(6, 4, coordinates=True)
 
     def test_non_graph_source_or_target_raises_type_error(self):
-        with self.assertRaisesRegex(TypeError, r"source and target must both be networkx"):
-            zephyr_quotient_search("not_a_graph", self.target)  # type: ignore
-        with self.assertRaisesRegex(TypeError, r"source and target must both be networkx"):
-            zephyr_quotient_search(self.source, 42)  # type: ignore
+        with self.assertRaisesRegex(
+            TypeError, r"source and target must both be networkx"
+        ):
+            quotient_search("not_a_graph", self.target)  # type: ignore
+        with self.assertRaisesRegex(
+            TypeError, r"source and target must both be networkx"
+        ):
+            quotient_search(self.source, 42)  # type: ignore
 
     def test_source_or_target_wrong_family_raises_value_error(self):
         bad_graph = self.source.copy()
         bad_graph.graph["family"] = "chimera"
-        with self.assertRaisesRegex(ValueError, r"source graph should be a zephyr family graph"):
-            zephyr_quotient_search(bad_graph, self.target)
-        with self.assertRaisesRegex(ValueError, r"target graph should be a zephyr family graph"):
-            zephyr_quotient_search(self.source, bad_graph)
+        with self.assertRaisesRegex(
+            ValueError, r"target graph should be the same family as the source graph"
+        ):
+            quotient_search(bad_graph, self.target)
+        with self.assertRaisesRegex(
+            ValueError, r"target graph should be the same family as the source graph"
+        ):
+            quotient_search(self.source, bad_graph)
 
     def test_source_or_target_missing_rows_metadata_raises_value_error(self):
         graph_no_rows = self.source.copy()
         del graph_no_rows.graph["rows"]
-        with self.assertRaisesRegex(ValueError, r"source graph is missing required 'rows'"):
-            zephyr_quotient_search(graph_no_rows, self.target)
-        with self.assertRaisesRegex(ValueError, r"target graph is missing required 'rows'"):
-            zephyr_quotient_search(self.source, graph_no_rows)
+        with self.assertRaisesRegex(
+            ValueError, r"source graph is missing required 'rows'"
+        ):
+            quotient_search(graph_no_rows, self.target)
+        with self.assertRaisesRegex(
+            ValueError, r"target graph is missing required 'rows'"
+        ):
+            quotient_search(self.source, graph_no_rows)
 
     def test_source_or_target_missing_tile_metadata_raises_value_error(self):
         graph_no_tile = self.source.copy()
         del graph_no_tile.graph["tile"]
-        with self.assertRaisesRegex(ValueError, r"source graph is missing required 'tile'"):
-            zephyr_quotient_search(graph_no_tile, self.target)
-        with self.assertRaisesRegex(ValueError, r"target graph is missing required 'tile'"):
-            zephyr_quotient_search(self.source, graph_no_tile)
+        with self.assertRaisesRegex(
+            ValueError, r"source graph is missing required 'tile'"
+        ):
+            quotient_search(graph_no_tile, self.target)
+        with self.assertRaisesRegex(
+            ValueError, r"target graph is missing required 'tile'"
+        ):
+            quotient_search(self.source, graph_no_tile)
 
     def test_source_or_target_missing_labels_metadata_raises_value_error(self):
         graph_no_labels = self.source.copy()
         del graph_no_labels.graph["labels"]
-        with self.assertRaisesRegex(ValueError, r"source graph is missing required 'labels'"):
-            zephyr_quotient_search(graph_no_labels, self.target)
-        with self.assertRaisesRegex(ValueError, r"target graph is missing required 'labels'"):
-            zephyr_quotient_search(self.source, graph_no_labels)
+        with self.assertRaisesRegex(
+            ValueError, r"source graph is missing required 'labels'"
+        ):
+            quotient_search(graph_no_labels, self.target)
+        with self.assertRaisesRegex(
+            ValueError, r"target graph is missing required 'labels'"
+        ):
+            quotient_search(self.source, graph_no_labels)
 
     def test_incompatible_m_raises_value_error(self):
         target_diff_m = zephyr_graph(5, 4, coordinates=True)
         with self.assertRaisesRegex(
-            ValueError, r"source and target must have the same number of rows"
+            ValueError, r"source and target must have matched square grid parameters"
         ):
-            zephyr_quotient_search(self.source, target_diff_m)
+            quotient_search(self.source, target_diff_m)
 
     def test_target_tile_less_than_source_tile_raises_value_error(self):
         small_tile_target = self.target.copy()
@@ -292,19 +464,23 @@ class TestGraphInputValidation(unittest.TestCase):
         with self.assertRaisesRegex(
             ValueError, r"target tile count must be >= source tile count"
         ):
-            zephyr_quotient_search(self.source, small_tile_target)
+            quotient_search(self.source, small_tile_target)
 
     def test_non_integer_rows_metadata_raises_type_error(self):
         bad_source = self.source.copy()
         bad_source.graph["rows"] = "six"
-        with self.assertRaisesRegex(TypeError, r"graph 'rows' metadata must be an integer"):
-            zephyr_quotient_search(bad_source, self.target)
+        with self.assertRaisesRegex(
+            TypeError, r"graph 'rows' metadata must be an integer"
+        ):
+            quotient_search(bad_source, self.target)
 
     def test_non_positive_rows_metadata_raises_value_error(self):
         bad_source = self.source.copy()
         bad_source.graph["rows"] = 0
-        with self.assertRaisesRegex(ValueError, r"graph 'rows' metadata must be positive"):
-            zephyr_quotient_search(bad_source, self.target)
+        with self.assertRaisesRegex(
+            ValueError, r"graph 'rows' metadata must be positive"
+        ):
+            quotient_search(bad_source, self.target)
 
 
 class TestSearchParameterValidation(unittest.TestCase):
@@ -314,15 +490,15 @@ class TestSearchParameterValidation(unittest.TestCase):
         self.source = zephyr_graph(6, 2, coordinates=True)
         self.target = zephyr_graph(6, 4, coordinates=True)
 
-    def test_invalid_quotient_search_raises_value_error(self):
-        with self.assertRaisesRegex(ValueError, r"quotient_search must be one of"):
-            zephyr_quotient_search(
-                self.source, self.target, quotient_search="unknown_strategy"  # type: ignore
+    def test_invalid_search_strategy_raises_value_error(self):
+        with self.assertRaisesRegex(ValueError, r"search_strategy must be one of"):
+            quotient_search(
+                self.source, self.target, search_strategy="unknown_strategy"  # type: ignore
             )
 
     def test_invalid_yield_type_raises_value_error(self):
         with self.assertRaisesRegex(ValueError, r"yield_type must be one of"):
-            zephyr_quotient_search(
+            quotient_search(
                 self.source, self.target, yield_type="invalid"  # type: ignore
             )
 
@@ -330,7 +506,7 @@ class TestSearchParameterValidation(unittest.TestCase):
         with self.assertRaisesRegex(
             TypeError, r"embedding must be a dictionary when provided"
         ):
-            zephyr_quotient_search(
+            quotient_search(
                 self.source, self.target, embedding=[1, 2, 3]  # type: ignore
             )
 
@@ -338,19 +514,21 @@ class TestSearchParameterValidation(unittest.TestCase):
         """Embedding keys must be 5-tuples, not other types."""
         bad_embedding = {"not_a_tuple": ((0, 0, 0, 0, 0),)}  # type: ignore
         with self.assertRaisesRegex(
-            ValueError, r"embedding keys must be 5-tuples representing Zephyr coordinates"
+            ValueError, r"source coordinate keys must be 5-tuples for family 'zephyr'"
         ):
-            zephyr_quotient_search(
+            quotient_search(
                 self.source, self.target, embedding=bad_embedding  # type: ignore
             )
 
     def test_embedding_with_wrong_length_tuple_keys_raises_value_error(self):
         """Embedding keys must be exactly 5-tuples."""
-        bad_embedding = {(0, 0, 0, 0): ((0, 0, 0, 0, 0),)}  # 4-tuple key instead of 5-tuple
+        bad_embedding = {
+            (0, 0, 0, 0): ((0, 0, 0, 0, 0),)
+        }  # 4-tuple key instead of 5-tuple
         with self.assertRaisesRegex(
-            ValueError, r"embedding keys must be 5-tuples representing Zephyr coordinates"
+            ValueError, r"source coordinate keys must be 5-tuples for family 'zephyr'"
         ):
-            zephyr_quotient_search(
+            quotient_search(
                 self.source, self.target, embedding=bad_embedding  # type: ignore
             )
 
@@ -358,9 +536,10 @@ class TestSearchParameterValidation(unittest.TestCase):
         """Embedding values must be singleton tuples (chain format), not lists."""
         bad_embedding = {(0, 0, 0, 0, 0): [(0, 0, 0, 0, 0)]}  # List, not tuple
         with self.assertRaisesRegex(
-            ValueError, r"embedding values must be singleton tuples representing node chains"
+            ValueError,
+            r"embedding values must be singleton tuples representing node chains",
         ):
-            zephyr_quotient_search(
+            quotient_search(
                 self.source, self.target, embedding=bad_embedding  # type: ignore
             )
 
@@ -368,9 +547,10 @@ class TestSearchParameterValidation(unittest.TestCase):
         """Embedding chains must contain exactly one target node."""
         bad_embedding = {(0, 0, 0, 0, 0): ()}  # Empty chain
         with self.assertRaisesRegex(
-            ValueError, r"embedding values must be singleton tuples representing node chains"
+            ValueError,
+            r"embedding values must be singleton tuples representing node chains",
         ):
-            zephyr_quotient_search(
+            quotient_search(
                 self.source, self.target, embedding=bad_embedding  # type: ignore
             )
 
@@ -378,9 +558,9 @@ class TestSearchParameterValidation(unittest.TestCase):
         """Nodes in embedding chains must be 5-tuples."""
         bad_embedding = {(0, 0, 0, 0, 0): ((0, 0, 0, 0),)}  # 4-tuple instead of 5-tuple
         with self.assertRaisesRegex(
-            ValueError, r"embedding chains must contain 5-tuples"
+            ValueError, r"target coordinate nodes must be 5-tuples for family 'zephyr'"
         ):
-            zephyr_quotient_search(
+            quotient_search(
                 self.source, self.target, embedding=bad_embedding  # type: ignore
             )
 
@@ -394,9 +574,10 @@ class TestSearchParameterValidation(unittest.TestCase):
             source_node2: (duplicate_target,),  # Duplicate target
         }
         with self.assertRaisesRegex(
-            ValueError, r"embedding must be a one-to-one mapping.*duplicate target nodes"
+            ValueError,
+            r"embedding must be a one-to-one mapping.*duplicate target nodes",
         ):
-            zephyr_quotient_search(
+            quotient_search(
                 self.source, self.target, embedding=bad_embedding  # type: ignore
             )
 
@@ -405,10 +586,12 @@ class TestSearchParameterValidation(unittest.TestCase):
         source = zephyr_graph(6, 2, coordinates=True)
         target = zephyr_graph(6, 4, coordinates=True)
         # Create a valid small chain embedding (identity mapping)
-        valid_embedding = {node: (node,) for i, node in enumerate(source.nodes()) if i < 10}
+        valid_embedding = {
+            node: (node,) for i, node in enumerate(source.nodes()) if i < 10
+        }
         # Should not raise any errors
         try:
-            zephyr_quotient_search(source, target, embedding=valid_embedding)
+            quotient_search(source, target, embedding=valid_embedding)
         except (TypeError, ValueError) as e:
             self.fail(f"Valid embedding raised unexpected error: {e}")
 
@@ -421,11 +604,56 @@ class TestLabelingSchemeErrors(unittest.TestCase):
         source.graph["labels"] = "custom_scheme"
         target = zephyr_graph(6, 4, coordinates=True)
         with self.assertRaisesRegex(ValueError, r"unknown labelling scheme"):
-            zephyr_quotient_search(source, target)
+            quotient_search(source, target)
 
     def test_unknown_target_labels_raises_value_error(self):
         source = zephyr_graph(6, 2, coordinates=True)
         target = zephyr_graph(6, 4, coordinates=True)
         target.graph["labels"] = "custom_scheme"
         with self.assertRaisesRegex(ValueError, r"unknown labelling scheme"):
-            zephyr_quotient_search(source, target)
+            quotient_search(source, target)
+
+
+class TestNodeLabelHelpers(unittest.TestCase):
+    """Basic tests for helper labeling functions."""
+
+    def test_node_labels_by_orientation_zephyr_matches_orientation_axis(self):
+        graph = zephyr_graph(2, 2, coordinates=True)
+
+        labels = node_labels_by_orientation(graph, as_str=False)
+
+        self.assertEqual(set(labels), set(graph.nodes()))
+        for node in graph.nodes():
+            self.assertEqual(labels[node], node[0])
+
+    def test_node_labels_by_coloring_preserves_original_linear_labels(self):
+        graph = zephyr_graph(2, 2, coordinates=False)
+
+        labels = node_labels_by_coloring(graph, as_str=False)
+
+        self.assertEqual(set(labels), set(graph.nodes()))
+        self.assertTrue(set(labels.values()).issubset({0, 1, 2, 3}))
+
+    def test_node_labels_by_quotient_remaps_zephyr_boundaries(self):
+        graph = zephyr_graph(2, 2, coordinates=True)
+
+        labels = node_labels_by_quotient(
+            graph, expand_boundary_search=True, as_str=False
+        )
+
+        self.assertEqual(labels[(0, 0, 0, 0, 0)], (0, 1, 0, 0))
+        self.assertEqual(labels[(0, 4, 0, 0, 0)], (0, 3, 0, 0))
+        self.assertEqual(labels[(0, 2, 0, 0, 0)], (0, 2, 0, 0))
+
+    def test_find_labeled_subgraph_returns_identity_on_simple_graph(self):
+        source = nx.path_graph(2)
+        target = nx.path_graph(2)
+        node_labels = ({0: "0", 1: "1"}, {0: "0", 1: "1"})
+
+        embedding = find_labeled_subgraph(
+            source, target, node_labels=node_labels, timeout=1
+        )
+
+        self.assertIsInstance(embedding, dict)
+        self.assertEqual(set(embedding.keys()), set(source.nodes()))
+        self.assertEqual(set(embedding.values()), set(target.nodes()))
