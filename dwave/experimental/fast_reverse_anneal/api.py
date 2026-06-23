@@ -53,7 +53,7 @@ def get_solver_name() -> str:
         >>> from dwave.experimental.fast_reverse_anneal import get_solver_name
         ...
         >>> print(get_solver_name())                # doctest: +SKIP
-        Advantage2_research1
+        Advantage2_research2
     """
     with Client.from_config() as client:
         solver = client.get_solver(**SOLVER_FILTER)
