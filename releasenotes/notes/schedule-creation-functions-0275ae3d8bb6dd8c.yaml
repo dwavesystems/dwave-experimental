@@ -6,3 +6,7 @@ upgrade:
   - |
     MCA Larmour precession examples upgraded to use the new default schedules
     with/without overshoot.
+fixes:
+  - |
+    Update examples, tests and utils to accommodate modified get_properties
+    return format.
