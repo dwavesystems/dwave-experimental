@@ -297,7 +297,7 @@ def standardize_schedule_endpoints(
 
 
 def verify_schedules(
-    exp_feature_info: list[LineFeatureInfo],
+    exp_feature_info: list[dict, list[LineFeatureInfo]],
     x_anneal_schedules: AnnealSchedules | None = None,
     x_polarizing_schedule: AnnealSchedule | None = None,
     check_rounding: bool = True,
@@ -312,8 +312,10 @@ def verify_schedules(
     It does not exhaustively check all requirements. See Documentation.
 
     Args:
-        exp_feature_info: List of dicts containing experimental feature
-            information for each line, as returned by `get_properties`.
+        exp_feature_info: Two-element list ``[polarizing_line_info, annealing_line_info]``,
+            as returned by :func:`~dwave.experimental.multicolor_anneal.api.get_properties`.
+            The first element is a dictionary describing the polarizing line; the second
+            element is a list of per-annealing-line dictionaries.
         x_anneal_schedules: List of anneal schedules, as might
             returned by :func:`make_tds_x_anneal_schedules`.
         x_polarizing_schedule: Anneal schedule, as might be returned by
@@ -327,11 +329,17 @@ def verify_schedules(
         ScheduleError: If schedules are malformed or incompatible with
             sequencing, endpoints, or minimum time-step constraints.
     """
+    if exp_feature_info is None or len(exp_feature_info) != 2:
+        raise ValueError(
+            "exp_feature_info must be a two-element list "
+            "[polarizing_line_info, annealing_line_info], as returned by get_properties."
+        )
 
     if x_anneal_schedules:
+        exp_feature_line_info = exp_feature_info[1]
         min_time_steps = {
-            line: exp_feature_info[line]["minAnnealingTimeStep"]
-            for line in range(len(exp_feature_info))
+            line: exp_feature_line_info[line]["minAnnealingTimeStep"]
+            for line in range(len(exp_feature_line_info))
         }
         for line in range(len(min_time_steps)):
 
@@ -410,12 +418,12 @@ def verify_schedules(
                     )
 
 
-def parse_exp_feature_info(
-    exp_feature_info: list[LineFeatureInfo],
+def parse_exp_feature_line_info(
+    exp_feature_line_info: list[LineFeatureInfo],
     use_common_bounds: bool,
     symmetrize_c_bounds: bool,
     sigfigs: int = 3,
-    standard_01_c_range: bool = False
+    standard_01_c_range: bool = False,
 ) -> tuple[
     dict[int, float],
     dict[int, float],
@@ -436,8 +444,9 @@ def parse_exp_feature_info(
     - optionally forces both C and C-overshoot ranges to ``[0, 1]``.
 
     Args:
-        exp_feature_info: Per-line experimental feature dictionaries, typically
-            as returned by ``get_properties``.
+        exp_feature_line_info: List of per-annealing-line experimental feature
+            dictionaries. Typically the second element of the structure returned
+            by :func:`~dwave.experimental.multicolor_anneal.api.get_properties`.
         use_common_bounds: When True, replace per-line bounds with values that
             are jointly valid across all lines. This applies to time
             steps as well as c-ranges. False allows faster quench rates for
@@ -450,7 +459,7 @@ def parse_exp_feature_info(
         standard_01_c_range: When True, C and C-overshoot ranges are set to
             ``[0, 1]`` for all lines. In this mode, ``use_common_bounds`` and
             ``symmetrize_c_bounds`` are ignored for C ranges.
-    
+
     Returns:
         A 6-tuple containing:
 
@@ -470,42 +479,52 @@ def parse_exp_feature_info(
             exists across lines.
     """
 
-    num_lines = len(exp_feature_info)
+    num_lines = len(exp_feature_line_info)
 
     min_time_steps = {
-        line: efi["minAnnealingTimeStep"] for line, efi in enumerate(exp_feature_info)
+        line: efi["minAnnealingTimeStep"]
+        for line, efi in enumerate(exp_feature_line_info)
     }
     holdOvershootFors = {
         line: efi.get("holdOvershootFor", 0)
-        for line, efi in enumerate(exp_feature_info)
+        for line, efi in enumerate(exp_feature_line_info)
     }
     if use_common_bounds:
         min_time_step = min(min_time_steps.values())
         min_time_steps = {line: min_time_step for line in range(num_lines)}
         holdOvershootFor = max(holdOvershootFors.values())
         holdOvershootFors = {line: holdOvershootFor for line in range(num_lines)}
-    
+
     if standard_01_c_range:
         maxCs = maxCOvershoots = {line: 1.0 for line in range(num_lines)}
         minCs = minCOvershoots = {line: 0.0 for line in range(num_lines)}
     else:
         maxCs = {
             line: _round_sigfigs(efi["maxC"], sigfigs=sigfigs, mode="down")
-            for line, efi in enumerate(exp_feature_info)
+            for line, efi in enumerate(exp_feature_line_info)
         }
         minCs = {
             line: _round_sigfigs(efi["minC"], sigfigs=sigfigs, mode="up")
-            for line, efi in enumerate(exp_feature_info)
+            for line, efi in enumerate(exp_feature_line_info)
         }
         maxCOvershoots = {
             line: _round_sigfigs(efi["maxCOvershoot"], sigfigs=sigfigs, mode="down")
-            for line, efi in enumerate(exp_feature_info)
+            for line, efi in enumerate(exp_feature_line_info)
         }
         minCOvershoots = {
             line: _round_sigfigs(efi["minCOvershoot"], sigfigs=sigfigs, mode="up")
-            for line, efi in enumerate(exp_feature_info)
+            for line, efi in enumerate(exp_feature_line_info)
         }
-        invalid_lines = [line for line in range(num_lines) if not (minCOvershoots[line] <= minCs[line] < maxCs[line] <= maxCOvershoots[line])]
+        invalid_lines = [
+            line
+            for line in range(num_lines)
+            if not (
+                minCOvershoots[line]
+                <= minCs[line]
+                < maxCs[line]
+                <= maxCOvershoots[line]
+            )
+        ]
         if invalid_lines:
             raise ValueError(
                 f"minCOvershoot, minC, maxC and  maxCOvershoot are not ordered on line(s) {invalid_lines}."
@@ -543,8 +562,6 @@ def parse_exp_feature_info(
         minCs = {line: -c for line, c in maxCs.items()}
         minCOvershoots = {line: -c for line, c in maxCOvershoots.items()}
 
-
-
     return (
         maxCs,
         minCs,
@@ -554,8 +571,9 @@ def parse_exp_feature_info(
         holdOvershootFors,
     )
 
+
 def make_tds_x_anneal_schedules(
-    exp_feature_info: list[LineFeatureInfo],
+    exp_feature_line_info: list[LineFeatureInfo],
     target_lines: Iterable[int],
     target_c: float,
     detector_lines: Iterable[int],
@@ -596,8 +614,9 @@ def make_tds_x_anneal_schedules(
     the returned anneal schedules.
 
     Args:
-        exp_feature_info: List of dicts containing experimental feature
-            information for each line, as returned by `get_properties`.
+        exp_feature_line_info: List of per-annealing-line experimental feature
+            dictionaries. Typically the second element of the structure returned
+            by :func:`~dwave.experimental.multicolor_anneal.api.get_properties`.
         target_lines: Iterable of target line indices.
         target_c: Schedule value at which the target is held.
         detector_lines: Iterable of detector line indices.
@@ -629,7 +648,7 @@ def make_tds_x_anneal_schedules(
             Defaults to False. False allows faster quench rates for high
             performance applications, but delays need to be considered more
             carefully between lines and QPUs.
-        use_standard_01_c_range: Whether to ignore exp_feature_info C bounds and
+        use_standard_01_c_range: Whether to ignore exp_feature_line_info C bounds and
             use C and C-overshoot ranges ``[0, 1]`` for all lines.
         use_overshoot: Whether to use overshoot transitions for source and
             detector quenches.
@@ -652,7 +671,7 @@ def make_tds_x_anneal_schedules(
         depolarized_preparation_interval = depolarized_preparation_interval0
     if not detector_quench_time:
         detector_quench_time = quench_time0
-    num_lines = len(exp_feature_info)
+    num_lines = len(exp_feature_line_info)
     all_lines = set(range(num_lines))
     source_lines = set(source_lines)
     detector_lines = set(detector_lines)
@@ -672,13 +691,13 @@ def make_tds_x_anneal_schedules(
         minCOvershoots,
         min_time_steps,
         holdOvershootFors,
-    ) = parse_exp_feature_info(
-        exp_feature_info,
+    ) = parse_exp_feature_line_info(
+        exp_feature_line_info,
         use_common_bounds=use_common_bounds,
         symmetrize_c_bounds=symmetrize_c_bounds,
         standard_01_c_range=use_standard_01_c_range,
     )
-    
+
     times = []
     if len(source_lines) > 0:
         if polarized_preparation_interval is None:
@@ -879,7 +898,7 @@ def make_tds_x_polarizing_schedule(
 
 
 def make_tds_x_schedules(
-    exp_feature_info: list[LineFeatureInfo],
+    exp_feature_info: list[dict, list[LineFeatureInfo]],
     target_lines: Iterable[int],
     target_c: float,
     detector_lines: Iterable[int],
@@ -900,8 +919,10 @@ def make_tds_x_schedules(
     verification into a single call.
 
     Args:
-        exp_feature_info: List of dicts containing experimental feature
-            information for each line, as returned by `get_properties`.
+        exp_feature_info: Two-element list ``[polarizing_line_info, annealing_line_info]``,
+            as returned by :func:`~dwave.experimental.multicolor_anneal.api.get_properties`.
+            The first element is a dictionary describing the polarizing line; the second
+            element is a list of per-annealing-line dictionaries.
         target_lines: Iterable of target line indices.
         target_c: Schedule value at which the target is held.
         detector_lines: Iterable of detector line indices.
@@ -949,7 +970,7 @@ def make_tds_x_schedules(
         depolarization_time_scale=depolarization_time_scale,
     )
     x_anneal_schedules = make_tds_x_anneal_schedules(
-        exp_feature_info=exp_feature_info,
+        exp_feature_line_info=exp_feature_info[1],
         target_lines=target_lines,
         depolarized_preparation_interval=depolarized_preparation_interval,
         detector_lines=detector_lines,

@@ -31,22 +31,30 @@ from dwave_networkx import zephyr_coordinates
 
 class PropertiesCheckMixin:
 
-    properties = [
-        'annealingLine', 'minAnnealingTimeStep', 'minPolarizingTimeStep',
-        'depolarizationAnnealScheduleRequiredDelay', 'holdOvershootFor',
+    polarizing_line_properties = ['minPolarizingTimeStep',
+        'depolarizationAnnealScheduleRequiredDelay']
+
+    annealing_line_properties = [
+        'annealingLine', 'minAnnealingTimeStep', 'holdOvershootFor',
         'minCOvershoot', 'maxCOvershoot', 'maxC', 'minC',
         'scheduleDelayStep', 'qubits'
     ]
 
-    def validate_annealing_lines_properties(self, data):
+    def validate_exp_feature_info(self, data):
         self.assertIsInstance(data, list)
-        self.assertGreater(len(data), 0)
-        n_lines = len(data)
+        self.assertEqual(len(data), 2)
+        polarizing_line_info, annealing_line_info = data
+        self.assertIsInstance(polarizing_line_info, dict)
+        for p in self.polarizing_line_properties:
+            self.assertIn(p, polarizing_line_info)
+        self.assertIsInstance(annealing_line_info, list)
+        self.assertGreater(len(annealing_line_info), 0)
+        n_lines = len(annealing_line_info)
         for i in range(n_lines):
-            for p in self.properties:
-                self.assertIn(p, data[i])
-            self.assertEqual(data[i]['annealingLine'], i)
-            self.assertGreater(len(data[i]['qubits']), 0)
+            for p in self.annealing_line_properties:
+                self.assertIn(p, annealing_line_info[i])
+            self.assertEqual(annealing_line_info[i]['annealingLine'], i)
+            self.assertGreater(len(annealing_line_info[i]['qubits']), 0)
 
 
 class MCA(unittest.TestCase, PropertiesCheckMixin):
@@ -58,9 +66,10 @@ class MCA(unittest.TestCase, PropertiesCheckMixin):
     def test_sampler_properties(self):
         n_lines = 6
         n_qubits = 100
-        info = [{'annealingLine': i,
+        polarizing_line_info = {'minPolarizingTimeStep': 0.02,
+                                'depolarizationAnnealScheduleRequiredDelay': 2.0}
+        annealing_line_info = [{'annealingLine': i,
                  'minAnnealingTimeStep': 0.01,
-                 'minPolarizingTimeStep': 0.02,
                  'depolarizationAnnealScheduleRequiredDelay': 2.0,
                  'holdOvershootFor': 0.02,
                  'minCOvershoot': -7.0,
@@ -69,19 +78,22 @@ class MCA(unittest.TestCase, PropertiesCheckMixin):
                  'minC': -2.0,
                  'scheduleDelayStep': 1e-06,
                  'qubits': list(range(i*100, (i+1)*100))} for i in range(n_lines)]
+        info = [polarizing_line_info, annealing_line_info]
 
         with unittest.mock.MagicMock() as sampler:
             sampler.solver.edges = [(0,1)]
             sampler.solver.sample_qubo.return_value.result.return_value = \
                 dict(x_get_multicolor_annealing_exp_feature_info=info)
 
-            lines = get_properties(sampler)
+            exp_feature_info = get_properties(sampler)
 
+            self.assertEqual(len(exp_feature_info), 2)
+            lines = exp_feature_info[1]
             self.assertEqual(len(lines), n_lines)
             self.assertTrue(all(lines[i]['annealingLine'] == i for i in range(n_lines)))
             self.assertTrue(all(len(lines[i]['qubits']) == n_qubits for i in range(n_lines)))
 
-            self.validate_annealing_lines_properties(lines)
+            self.validate_exp_feature_info(exp_feature_info)
 
         
     @unittest.mock.patch('dwave.experimental.fast_reverse_anneal.api.Client')
@@ -116,15 +128,15 @@ class LiveSmokeTests(unittest.TestCase, PropertiesCheckMixin):
         get_solver_name.cache_clear()
 
     def test_get_parameters_from_sampler(self):
-        lines = get_properties(self.sampler)
-        self.validate_annealing_lines_properties(lines)
+        exp_feature_info = get_properties(self.sampler)
+        self.validate_exp_feature_info(exp_feature_info)
 
     def test_get_parameters_from_name(self):
-        lines = get_properties(get_solver_name())
-        self.validate_annealing_lines_properties(lines)
+        exp_feature_info = get_properties(get_solver_name())
+        self.validate_exp_feature_info(exp_feature_info)
 
     def test_6_line_accuracy(self):
-        annealing_lines = get_properties(self.sampler)
+        annealing_lines = get_properties(self.sampler)[1]
         topology_type = self.sampler.properties["topology"]["type"]
         if len(annealing_lines) == 6 and topology_type == "zephyr":
             shape = self.sampler.properties["topology"]["shape"]
@@ -192,11 +204,11 @@ class UtilsTestWithoutClient(unittest.TestCase):
         maxCOvershoot = 8.0
         depolarization_time_scale = 3.0  # Choose as a machine number to avoid precision issues.
 
-        exp_feature_info = [
+        polarizing_line_info = {'minPolarizingTimeStep': 0.02,
+                                'depolarizationAnnealScheduleRequiredDelay': 2.0}
+        annealing_line_info = [
             {'annealingLine': i,
              'minAnnealingTimeStep': 0.01,
-             'minPolarizingTimeStep': 0.02,
-             'depolarizationAnnealScheduleRequiredDelay': 2.0,
              'holdOvershootFor': 0.02,
              'minCOvershoot': minCOvershoot,
              'maxCOvershoot': maxCOvershoot,
@@ -204,6 +216,7 @@ class UtilsTestWithoutClient(unittest.TestCase):
              'minC': -2.0,
              'scheduleDelayStep': 1e-06,
              'qubits': list(range(i*100, (i+1)*100))} for i in range(n_lines)]
+        exp_feature_info = [polarizing_line_info, annealing_line_info]
 
         all_lines = list(range(n_lines))
         random.shuffle(all_lines)
