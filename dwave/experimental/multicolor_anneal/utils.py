@@ -1064,5 +1064,4 @@ def make_tds_x_schedule_delays(
             target_c=target_c,
             decimal_places=decimal_places,
         )
-        print(C1, C2, target_c, quench_time, x_schedule_delays[line], line)
     return x_schedule_delays

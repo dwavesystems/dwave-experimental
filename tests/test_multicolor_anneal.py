@@ -12,9 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import io
 import random
 import unittest
 import unittest.mock
+from contextlib import redirect_stdout
 
 import networkx as nx
 
@@ -24,7 +26,8 @@ from dwave.experimental.multicolor_anneal import (
     get_properties, get_solver_name, SOLVER_FILTER,
     qubit_to_Advantage2_annealing_line, make_tds_graph,
     make_tds_intervals, make_tds_x_polarizing_schedule,
-    make_tds_x_schedules, standardize_schedule_endpoints,
+    make_tds_x_schedule_delays, make_tds_x_schedules,
+    standardize_schedule_endpoints,
 )
 from dwave_networkx import zephyr_coordinates
 
@@ -353,3 +356,61 @@ class UtilsTestWithoutClient(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             standardize_schedule_endpoints(x_anneal, post_pwl_delay=-1.0)
+
+    def test_make_tds_x_schedule_delays(self):
+        # Line 0 (detector-like): largest jump is -1 -> 1 over 1.0us.
+        # Line 1 (source-like): largest jump is 1 -> -1 over 1.0us.
+        # Line 2 (unused/target-like): smooth ramp, not in quenched_lines.
+        x_anneal_schedules = [
+            [[0.0, 0.0], [1.0, -1.0], [2.0, 1.0], [3.0, 1.0]],
+            [[0.0, 0.0], [1.0, 1.0], [2.0, -1.0], [3.0, -1.0]],
+            [[0.0, 0.0], [3.0, 0.5]],
+        ]
+        quenched_lines = [0, 1]
+
+        # target_c=0 sits at the midpoint of the linear quench, so the
+        # expected delay is -0.5 us for both quenched lines.
+        delays = make_tds_x_schedule_delays(
+            x_anneal_schedules=x_anneal_schedules,
+            quenched_lines=quenched_lines,
+            target_c=0.0,
+        )
+
+        self.assertEqual(len(delays), len(x_anneal_schedules))
+        self.assertAlmostEqual(delays[0], -0.5)
+        self.assertAlmostEqual(delays[1], -0.5)
+        # Non-quenched lines remain at the default value (0.0).
+        self.assertEqual(delays[2], 0.0)
+
+        # target_c=0.5 sits 3/4 of the way through the quench from -1 to 1.
+        delays = make_tds_x_schedule_delays(
+            x_anneal_schedules=x_anneal_schedules,
+            quenched_lines=quenched_lines,
+            target_c=0.5,
+        )
+        self.assertAlmostEqual(delays[0], -0.75)
+        # For line 1 (1 -> -1), target_c=0.5 is reached 1/4 of the way.
+        self.assertAlmostEqual(delays[1], -0.25)
+
+        # Decimal places rounding is applied to the returned delays.
+        delays = make_tds_x_schedule_delays(
+            x_anneal_schedules=x_anneal_schedules,
+            quenched_lines=quenched_lines,
+            target_c=1.0 / 3.0,
+            decimal_places=2,
+        )
+        self.assertEqual(delays[0], round(delays[0], 2))
+        self.assertEqual(delays[1], round(delays[1], 2))
+
+        # Initial x_schedule_delays are preserved for non-quenched lines and
+        # overwritten for quenched lines.
+        initial = [9.0, 9.0, 9.0]
+        delays = make_tds_x_schedule_delays(
+            x_anneal_schedules=x_anneal_schedules,
+            quenched_lines=quenched_lines,
+            target_c=0.0,
+            x_schedule_delays=initial,
+            )
+        self.assertAlmostEqual(delays[0], -0.5)
+        self.assertAlmostEqual(delays[1], -0.5)
+        self.assertEqual(delays[2], 9.0)
