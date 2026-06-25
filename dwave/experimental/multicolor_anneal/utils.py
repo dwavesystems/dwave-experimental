@@ -14,6 +14,7 @@
 
 from copy import deepcopy
 import math
+import numpy as np
 from typing import Iterable, Literal
 
 import networkx as nx
@@ -29,6 +30,7 @@ __all__ = [
     "make_tds_x_anneal_schedules",
     "make_tds_x_polarizing_schedule",
     "make_tds_x_schedules",
+    "make_tds_x_schedule_delays",
     "standardize_schedule_endpoints",
 ]
 
@@ -385,6 +387,8 @@ def verify_schedules(
 
     if x_polarizing_schedule:
         min_time_step = exp_feature_info[0]["minPolarizingTimeStep"]
+        # NotYetImplemented: a check that annealing_schedules do not change in this interval:
+        depolarization_delay = exp_feature_info[0]['depolarizationAnnealScheduleRequiredDelay']
         if len(x_polarizing_schedule) < 2 or any(
             len(s) != 2 for s in x_polarizing_schedule
         ):
@@ -416,7 +420,6 @@ def verify_schedules(
                     raise ScheduleError(
                         f"Polarizing schedule time {seq_time} is not an almost multiple of minPolarizingTimeStep={min_time_step}."
                     )
-
 
 def parse_exp_feature_line_info(
     exp_feature_line_info: list[LineFeatureInfo],
@@ -1001,40 +1004,65 @@ def make_tds_x_schedules(
 
     return x_anneal_schedules, x_polarizing_schedule
 
+def _target_c_time(
+    C1: float = 0.0,
+    C2: float = 1.0,
+    quench_time: float = 1.0,
+    target_c: float = 0.0,
+    decimal_places: int | None = None,
+):
+    """Assume a linear quench, an idealization of the fast wfms"""
+    result = (target_c - C1) / (C2 - C1) * quench_time
+    if decimal_places is not None:
+        result = round(result, decimal_places)
+    return result
 
-if __name__ == "__main__":
-    from dwave.system import DWaveSampler
-    from dwave.experimental.multicolor_anneal.api import get_properties
 
-    print("Module code added temporarily for testing purposes.")
-    print("To be moved in part to tests and examples.")
+def make_tds_x_schedule_delays(
+    x_anneal_schedules,
+    quenched_lines,
+    target_c,
+    x_schedule_delays: None | np.ndarray | list = None,
+    decimal_places: int | None = None
+):
+    """Update delays so that target_c is achieved at time 0.
 
-    qpu = DWaveSampler(solver="Advantage2_system1_x_internal")
-    exp_feature_info = get_properties(qpu)
-    x_anneal_schedules, x_polarizing_schedule = make_tds_x_schedules(
-        exp_feature_info=exp_feature_info,
-        target_lines=(0,),
-        target_c=0.37,
-        detector_lines=(1,),
-        source_lines=(2,),
-    )
-    # Adapt polarizing schedule
-    import matplotlib.pyplot as plt
+    Normalized anneal offsets quench from a min
+    to a max value for a detector, and vice versa for a source.
+    Delays are adjusted so that sources and targets quench
+    through target_c at equal time under the piece-wise-linear
+    schedule. Since the piecewise linear schedule is subject to
+    filtering and non-idealities, the predicted delays may require
+    adjustment particularly in the context of schedules exploiting
+    overshoot ranges.
 
-    plt.figure()
-    for line, schedule in enumerate(x_anneal_schedules):
-        plt.plot(
-            [x for x, _ in schedule], [y for _, y in schedule], label=f"Line {line}"
+    Args:
+        x_anneal_schedules: The list of anneal schedules, one per line.
+        quenched_lines: Tuple or set of detector (or source) line indices.
+        target_c: Normalized control bias target value.
+        x_schedule_delays: Optional initial schedule delays. If None, initialized to zeros.
+
+    Returns:
+        Updated schedule delays array adjusted for target_c.
+    """
+    if x_schedule_delays is None:
+        x_schedule_delays = [0.0] * len(x_anneal_schedules)
+    for line in quenched_lines:
+        cvals = [c for _, c in x_anneal_schedules[line]]
+        idx = np.argmax(
+            np.abs(np.diff(cvals))
+        )  # Index for start of quench. assumed unique.
+        C1 = x_anneal_schedules[line][idx][1]
+        C2 = x_anneal_schedules[line][idx + 1][1]
+        quench_time = (
+            x_anneal_schedules[line][idx + 1][0] - x_anneal_schedules[line][idx][0]
         )
-    plt.plot(
-        [x for x, _ in x_polarizing_schedule],
-        [y for _, y in x_polarizing_schedule],
-        label="Polarizing bias",
-        linestyle="dashed",
-        color="black",
-    )
-    plt.xlabel("Time (microseconds)")
-    plt.ylabel("Schedule value")
-    plt.title("Example Anneal Schedules")
-    plt.legend()
-    plt.show()
+        x_schedule_delays[line] = -_target_c_time(
+            C1=C1,
+            C2=C2,
+            quench_time=quench_time,
+            target_c=target_c,
+            decimal_places=decimal_places,
+        )
+        print(C1, C2, target_c, quench_time, x_schedule_delays[line], line)
+    return x_schedule_delays

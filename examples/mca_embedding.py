@@ -90,7 +90,7 @@ def main(
     # when available, use feature-based search to default the solver.
     if use_client:
         qpu = DWaveSampler(solver=solver)
-        annealing_lines = get_properties(qpu)
+        annealing_lines = get_properties(qpu)[1]
         line_assignments = {
             n: al_idx for al_idx, al in enumerate(annealing_lines) for n in al["qubits"]
         }
