@@ -12,11 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import io
 import random
 import unittest
 import unittest.mock
-from contextlib import redirect_stdout
 
 import networkx as nx
 
