@@ -906,12 +906,15 @@ def make_tds_x_polarizing_schedule(
 
     Examples:
         Build a polarizing schedule using a depolarization interval.
-
+        >>> from dwave.system import DWaveSampler
         >>> from dwave.experimental.multicolor_anneal import (
-        ...     make_tds_intervals,
+        ...     get_properties, make_tds_intervals,
         ...     make_tds_x_polarizing_schedule,
         ... )
-        >>> delay = 2.0
+        >>> exp_feature_info = get_properties(DWaveSampler())   # doctest: +SKIP
+        >>> delay = exp_feature_info[0][
+        ...     'depolarizationAnnealScheduleRequiredDelay'
+        ... ]            # doctest: +SKIP
         >>> _, depolarization_interval, _, _ = make_tds_intervals(
         ...     depolarization_time_scale=delay,
         ... )            # doctest: +SKIP
