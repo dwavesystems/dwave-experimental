@@ -15,12 +15,11 @@
 from copy import deepcopy
 import math
 import numpy as np
-from typing import Iterable, Literal
+from typing import Iterable, Literal, Sequence
 
 import networkx as nx
 
 from dwave_networkx import zephyr_coordinates
-
 
 __all__ = [
     "ScheduleError",
@@ -37,7 +36,7 @@ __all__ = [
 Interval = tuple[float, float]
 LineFeatureInfo = dict[str, float]
 AnnealSchedule = list[list[float]]
-AnnealSchedules = list[AnnealSchedule]
+XAnnealSchedules = list[AnnealSchedule]
 
 
 class ScheduleError(ValueError):
@@ -181,7 +180,7 @@ def make_tds_graph(
 
 def make_tds_intervals(
     post_preparation_delay: float = 20.0,
-    depolarization_time_scale: float = 2.0,
+    buffering_time_scale: float = 2.0,
     *,
     depolarizing_time_scale: None | float = None,
     anneal_preparation_time_scale: None | float = None,
@@ -202,14 +201,14 @@ def make_tds_intervals(
             after line preparation before quenching. This is lower bounded
             by 0 but typically some longer time scale of order 10.0 us is
             recommended.
-        depolarization_time_scale: Time before and after the depolarizing
+        buffering_time_scale: Time before and after the depolarizing
             interval in which changes to the anneal schedule are prevented.
             This is lower bounded by the
             depolarizationAnnealScheduleRequiredDelay annealing-line property.
         depolarizing_time_scale: Step size for the polarizing schedule.
             It is lower bounded by minPolarizingTimeStep, but typically a
             larger value of order microseconds is desirable for robust
-            preparation. Defaults to ``depolarization_time_scale`` when not
+            preparation. Defaults to ``buffering_time_scale`` when not
             set.
         anneal_preparation_time_scale: Step size for preparation of anneal
             schedules in polarized and depolarized regimes. If None, defaults
@@ -224,15 +223,15 @@ def make_tds_intervals(
         and ``quench_time``.
     """
     if depolarizing_time_scale is None:
-        depolarizing_time_scale = depolarization_time_scale
+        depolarizing_time_scale = buffering_time_scale
 
     if anneal_preparation_time_scale is None:
         anneal_preparation_time_scale = depolarizing_time_scale
 
     polarized_preparation_interval = (0.0, anneal_preparation_time_scale)
-    tp = polarized_preparation_interval[-1] + depolarization_time_scale
+    tp = polarized_preparation_interval[-1] + buffering_time_scale
     depolarization_interval = (tp, tp + depolarizing_time_scale)
-    ts = depolarization_interval[-1] + depolarization_time_scale
+    ts = depolarization_interval[-1] + buffering_time_scale
     depolarized_preparation_interval = (
         ts,
         ts + anneal_preparation_time_scale,
@@ -248,12 +247,12 @@ def make_tds_intervals(
 
 
 def standardize_schedule_endpoints(
-    x_anneal_schedules: AnnealSchedules,
+    x_anneal_schedules: XAnnealSchedules,
     x_polarizing_schedule: AnnealSchedule | None = None,
     *,
     post_pwl_delay: float = 0.0,
     decimals: int = 0,
-) -> tuple[AnnealSchedules, AnnealSchedule]:
+) -> tuple[XAnnealSchedules, AnnealSchedule]:
     """Adapt anneal schedules to account for a delayed measurement.
 
     All schedule lengths (max time) are reset to accommodate the largest
@@ -269,7 +268,7 @@ def standardize_schedule_endpoints(
             Inclusion of a delay on the order of microseconds prevents line
             desynchronization, filtering and other non-idealities from
             interfering with waveform completion.
-        decimals: decimals to which the end point is rounded up. By default
+        decimals: Decimals to which the end point is rounded up. By default
             to the nearest microsecond.
 
     Returns:
@@ -300,11 +299,11 @@ def standardize_schedule_endpoints(
 
 def verify_schedules(
     exp_feature_info: list[dict, list[LineFeatureInfo]],
-    x_anneal_schedules: AnnealSchedules | None = None,
+    x_anneal_schedules: XAnnealSchedules | None = None,
     x_polarizing_schedule: AnnealSchedule | None = None,
     check_rounding: bool = True,
     term_time: float | None = None,
-):
+) -> None:
     """Verify that schedules are compatible with sequencing and min time steps.
 
     This routine checks that the schedules are compatible with sequencing
@@ -331,7 +330,7 @@ def verify_schedules(
         ScheduleError: If schedules are malformed or incompatible with
             sequencing, endpoints, or minimum time-step constraints.
     """
-    if exp_feature_info is None or len(exp_feature_info) != 2:
+    if len(exp_feature_info) != 2:
         raise ValueError(
             "exp_feature_info must be a two-element list "
             "[polarizing_line_info, annealing_line_info], as returned by get_properties."
@@ -343,10 +342,9 @@ def verify_schedules(
             line: exp_feature_line_info[line]["minAnnealingTimeStep"]
             for line in range(len(exp_feature_line_info))
         }
-        for line in range(len(min_time_steps)):
-
+        for line, min_time_step in min_time_steps.items():
             seq_times = [
-                t + min_time_steps[line] * idx
+                t + min_time_step * idx
                 for idx, (t, _) in enumerate(x_anneal_schedules[line])
             ]
             if len(x_anneal_schedules[line]) < 2 or any(
@@ -388,7 +386,9 @@ def verify_schedules(
     if x_polarizing_schedule:
         min_time_step = exp_feature_info[0]["minPolarizingTimeStep"]
         # NotYetImplemented: a check that annealing_schedules do not change in this interval:
-        depolarization_delay = exp_feature_info[0]['depolarizationAnnealScheduleRequiredDelay']
+        depolarization_delay = exp_feature_info[0][
+            "depolarizationAnnealScheduleRequiredDelay"
+        ]
         if len(x_polarizing_schedule) < 2 or any(
             len(s) != 2 for s in x_polarizing_schedule
         ):
@@ -420,6 +420,7 @@ def verify_schedules(
                     raise ScheduleError(
                         f"Polarizing schedule time {seq_time} is not an almost multiple of minPolarizingTimeStep={min_time_step}."
                     )
+
 
 def parse_exp_feature_line_info(
     exp_feature_line_info: list[LineFeatureInfo],
@@ -591,7 +592,7 @@ def make_tds_x_anneal_schedules(
     use_standard_01_c_range: bool = False,
     use_overshoot: bool = True,
     post_pwl_delay: float = 1.0,
-) -> AnnealSchedules:
+) -> XAnnealSchedules:
     """Set annealing schedules for target-detector-source experiments.
 
     Lines are designated as source, detector, target or neutral (unused).
@@ -603,7 +604,7 @@ def make_tds_x_anneal_schedules(
     control bias to ``maxC`` or ``minC`` as appropriate.
     The polarizing schedule is assumed to be turned off with a safe
     separation before ``depolarized_preparation_interval``.
-    Target line qubits are then quasistatically prepared to ``target_c``.
+    Target line qubits are then quasistatically prepared to `target_c`.
     Source line qubits are then quenched to decouple them from the target.
     Detector line qubits are then quenched to measure the target.
 
@@ -657,8 +658,10 @@ def make_tds_x_anneal_schedules(
             detector quenches.
         post_pwl_delay: Additional delay, in microseconds, used to extend the
             terminal values of all schedules to a common endpoint.
+
     Returns:
         A piecewise linear schedule for all lines.
+
     Raises:
         ValueError: If any of the input parameters are invalid or incompatible.
     """
@@ -863,7 +866,7 @@ def make_tds_x_anneal_schedules(
 
 
 def make_tds_x_polarizing_schedule(
-    depolarization_interval: Interval = None,
+    depolarization_interval: Interval | None = None,
     sign_polarization: Literal[-1, 1, 0] = 1,
 ) -> AnnealSchedule:
     """Set polarizing schedules suitable for target detector source experiments.
@@ -878,7 +881,7 @@ def make_tds_x_polarizing_schedule(
             :func:`make_tds_intervals` with default arguments.
         sign_polarization: Sign of the initial polarization, +1 or -1. If 0
             then no polarizing signal is applied, but the interval-wise
-            pattern of PWL construction doesn't change.
+            pattern of PWL construction doesnt change.
 
     Returns:
         A piecewise-linear polarizing schedule beginning at time 0 with
@@ -914,7 +917,7 @@ def make_tds_x_schedules(
     symmetrize_c_bounds: bool = False,
     use_overshoot: bool = True,
     sign_polarization: Literal[-1, 1] = 1,
-) -> tuple[AnnealSchedules, AnnealSchedule]:
+) -> tuple[XAnnealSchedules, AnnealSchedule]:
     """Build synchronized anneal and polarizing schedules for TDS experiments.
 
     This helper composes interval construction, anneal schedule generation,
@@ -970,7 +973,7 @@ def make_tds_x_schedules(
         detector_quench_time,
     ) = make_tds_intervals(
         post_preparation_delay=post_preparation_delay,
-        depolarization_time_scale=depolarization_time_scale,
+        buffering_time_scale=depolarization_time_scale,
     )
     x_anneal_schedules = make_tds_x_anneal_schedules(
         exp_feature_line_info=exp_feature_info[1],
@@ -1004,6 +1007,7 @@ def make_tds_x_schedules(
 
     return x_anneal_schedules, x_polarizing_schedule
 
+
 def _target_c_time(
     C1: float = 0.0,
     C2: float = 1.0,
@@ -1019,18 +1023,18 @@ def _target_c_time(
 
 
 def make_tds_x_schedule_delays(
-    x_anneal_schedules,
-    quenched_lines,
-    target_c,
-    x_schedule_delays: None | np.ndarray | list = None,
-    decimal_places: int | None = None
-):
-    """Update delays so that target_c is achieved at time 0.
+    x_anneal_schedules: XAnnealSchedules,
+    quenched_lines: Iterable[int],
+    target_c: float,
+    x_schedule_delays: Sequence[float] | None = None,
+    decimal_places: int | None = None,
+) -> Sequence:
+    """Update delays so that `target_c` is achieved at time 0.
 
     Normalized anneal offsets quench from a min
     to a max value for a detector, and vice versa for a source.
     Delays are adjusted so that sources and targets quench
-    through target_c at equal time under the piece-wise-linear
+    through `target_c` at equal time under the piece-wise-linear
     schedule. Since the piecewise linear schedule is subject to
     filtering and non-idealities, the predicted delays may require
     adjustment particularly in the context of schedules exploiting
