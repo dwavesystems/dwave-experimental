@@ -664,6 +664,22 @@ def make_tds_x_anneal_schedules(
 
     Raises:
         ValueError: If any of the input parameters are invalid or incompatible.
+
+    Examples:
+        Construct anneal schedules from solver-derived line properties for a
+        single target, detector, and source line:
+
+        >>> from dwave.system import DWaveSampler
+        >>> import dwave.experimental.multicolor_anneal as mca
+        >>> exp_feature_info = mca.get_properties(DWaveSampler())        # doctest: +SKIP
+        >>> annealing_line_info = exp_feature_info[1]                    # doctest: +SKIP
+        >>> x_anneal_schedules = mca.make_tds_x_anneal_schedules(
+        ...     exp_feature_line_info=annealing_line_info,
+        ...     target_lines={0},
+        ...     target_c=0.5,
+        ...     detector_lines={1},
+        ...     source_lines={2},
+        ... )            # doctest: +SKIP
     """
     (
         polarized_preparation_interval0,
@@ -887,6 +903,21 @@ def make_tds_x_polarizing_schedule(
         A piecewise-linear polarizing schedule beginning at time 0 with
         given polarization, and evolving to polarization 0
         over the depolarization interval.
+
+    Examples:
+        Build a polarizing schedule using a depolarization interval.
+
+        >>> from dwave.experimental.multicolor_anneal import (
+        ...     make_tds_intervals,
+        ...     make_tds_x_polarizing_schedule,
+        ... )
+        >>> delay = 2.0
+        >>> _, depolarization_interval, _, _ = make_tds_intervals(
+        ...     depolarization_time_scale=delay,
+        ... )            # doctest: +SKIP
+        >>> x_polarizing_schedule = make_tds_x_polarizing_schedule(
+        ...     depolarization_interval=depolarization_interval,
+        ... )            # doctest: +SKIP
     """
     if depolarization_interval is None:
         _, depolarization_interval, _, _ = make_tds_intervals()
@@ -1048,6 +1079,27 @@ def make_tds_x_schedule_delays(
 
     Returns:
         Updated schedule delays array adjusted for target_c.
+
+    Examples:
+        Compute per-line delays from anneal schedules synthesized for a
+        solver, aligning detector and source quenches to ``target_c``:
+
+        >>> from dwave.system import DWaveSampler
+        >>> import dwave.experimental.multicolor_anneal as mca
+        >>> exp_feature_info = mca.get_properties(DWaveSampler())   # doctest: +SKIP
+        >>> target_lines, detector_lines, source_lines = {0}, {1}, {2}
+        >>> x_anneal_schedules, _ = mca.make_tds_x_schedules(
+        ...     exp_feature_info=exp_feature_info,
+        ...     target_lines=target_lines,
+        ...     target_c=0.5,
+        ...     detector_lines=detector_lines,
+        ...     source_lines=source_lines,
+        ... )            # doctest: +SKIP
+        >>> x_schedule_delays = mca.make_tds_x_schedule_delays(
+        ...     x_anneal_schedules=x_anneal_schedules,
+        ...     quenched_lines=detector_lines | source_lines,
+        ...     target_c=0.5,
+        ... )            # doctest: +SKIP
     """
     if x_schedule_delays is None:
         x_schedule_delays = [0.0] * len(x_anneal_schedules)

@@ -1133,10 +1133,6 @@ def main(
         plt.xlabel("Detector delay, ns")
         plt.legend()
         plt.grid()
-        if save_figures:
-            _save_open_figures("figures/", cache_str)
-        print("Close figures to proceed to next (experimental) stages.")
-        plt.show()
         for colormap_type in ["divergent", "default"]:
             imshow_data(
                 mean_Z_detector=mean_Z_detector,
