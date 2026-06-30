@@ -1,0 +1,7 @@
+---
+upgrade:
+  - |
+    Add fast-reverse-anneal schedule data for Advantage2_research2.
+other:
+  - |
+    Update ``SOLVER_FILTER`` regex to default to Advantage2_research2.

@@ -23,7 +23,7 @@ from dwave.system import DWaveSampler
 __all__ = ['SOLVER_FILTER', 'get_solver_name', 'get_parameters']
 
 
-SOLVER_FILTER = dict(name__regex=r'Advantage2_prototype2.*|Advantage2_research1.*')
+SOLVER_FILTER = dict(name__regex=r'Advantage2_system4_x_internal.*|Advantage2_research2.*|Advantage2_prototype2.*|Advantage2_research1.*') 
 """Filter for an available solver that supports advanced annealing features.
 
 Feature-based solver selection returns the first available solver that supports
@@ -53,7 +53,7 @@ def get_solver_name() -> str:
         >>> from dwave.experimental.fast_reverse_anneal import get_solver_name
         ...
         >>> print(get_solver_name())                # doctest: +SKIP
-        Advantage2_research1
+        Advantage2_research2
     """
     with Client.from_config() as client:
         solver = client.get_solver(**SOLVER_FILTER)
