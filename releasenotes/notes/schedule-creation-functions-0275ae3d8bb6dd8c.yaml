@@ -1,0 +1,12 @@
+---
+features:
+  - |
+    Add x_polarizing_schedule, x_anneal_schedules and x_schedule_delays creation functions for target-detector-source experiments.
+upgrade:
+  - |
+    MCA Larmour precession examples upgraded to use the new default schedules
+    with/without overshoot.
+fixes:
+  - |
+    Update examples, tests and utils to accommodate modified get_properties
+    return format.
