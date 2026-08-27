@@ -23,7 +23,7 @@ related purpose.
 This module also specifies the generators for defect free Chimera, Pegasus
 and Zephyr graphs either in a format suitable for sampling by sequential
 application of the generators, or in the form of strongest sets. This might
-be later moved to dwave_networkx to sit alongside other code related to
+be later moved to dwave.graphs to sit alongside other code related to
 processor-graph theoretic properties.
 """
 
@@ -36,7 +36,7 @@ import dimod
 import numpy as np
 
 from dimod import ComposedSampler
-from dwave_networkx import pegasus_graph, pegasus_coordinates
+from dwave.graphs import pegasus_graph, pegasus_coordinates
 from dwave.experimental.automorphism import (
     schreier_rep,
     sample_automorphisms as sample_automorphisms_u_vector,

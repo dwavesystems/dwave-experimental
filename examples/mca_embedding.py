@@ -31,7 +31,7 @@ from dwave.experimental.multicolor_anneal import (
     qubit_to_Advantage2_annealing_line,
     make_tds_graph,
 )
-from dwave_networkx import (
+from dwave.graphs import (
     draw_zephyr,
     draw_parallel_embeddings,
 )

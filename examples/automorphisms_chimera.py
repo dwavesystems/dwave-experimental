@@ -20,7 +20,7 @@ vertex orbits.
 from typing import Optional
 import argparse
 
-import dwave_networkx as dnx
+import dwave.graphs as dnx
 
 from dwave.experimental.automorphism import schreier_rep, array_to_cycle
 

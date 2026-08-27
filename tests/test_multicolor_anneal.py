@@ -23,7 +23,7 @@ from dwave.experimental.multicolor_anneal import (
     get_properties, get_solver_name, SOLVER_FILTER,
     qubit_to_Advantage2_annealing_line, make_tds_graph,
 )
-from dwave_networkx import zephyr_coordinates
+from dwave.graphs import zephyr_coordinates
 
 
 class PropertiesCheckMixin:

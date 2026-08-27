@@ -15,7 +15,7 @@
 import random
 import unittest
 
-import dwave_networkx as dnx
+import dwave.graphs as dnx
 import networkx as nx
 import numpy as np
 

@@ -1,0 +1,650 @@
+# Copyright 2026 D-Wave
+#
+#    Licensed under the Apache License, Version 2.0 (the "License");
+#    you may not use this file except in compliance with the License.
+#    You may obtain a copy of the License at
+#
+#        http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS,
+#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#    See the License for the specific language governing permissions and
+#    limitations under the License.
+
+import itertools
+import unittest
+from typing import Literal
+from unittest.mock import patch
+
+import networkx as nx
+import numpy as np
+from dwave.graphs import (
+    zephyr_graph,
+    pegasus_graph,
+    chimera_graph,
+)
+
+from dwave.experimental.embedding_methods import greedy_quotient_sublattice_mapping
+from dwave.experimental.embedding_methods.quotient_embedding_search import (
+    QuotientSearchMetadata,
+    _node_search,
+    _normalize_coordinate,
+    _rail_nodes,
+    _rail_search,
+)
+
+
+# Potential enhancement:
+# It would make sense to simplify this function. The two phase process might
+# better capture practical distributions, but is difficult to understand and
+# adds no value in the context of the tests.
+# It would make sense to add the feature that displacements apply to default
+# rails (or relative to a given embedding), rather than randomly. It would
+# then be possible to guarantee a strict improvement in objectives,
+# strengthening tests.
+def generate_faulty_graph(
+    m: int,
+    t: int,
+    proportion: float,
+    uniform_proportion: float,
+    seed: int | None = None,
+    family: Literal["chimera", "pegasus", "zephyr"] = "zephyr",
+) -> nx.Graph:
+    """Create a graph with simulated hardware faults.
+
+    Nodes are deleted in two phases: (1) ``round(proportion * uniform_proportion *
+    N)`` nodes are chosen uniformly at random and removed; (2)
+    ``round(proportion * (1 - uniform_proportion) * N)`` additional nodes are
+    removed iteratively, one node at a time.
+
+    During phase (2), for each candidate node ``v`` we compute
+    ``r(v) = sum(dist(v, d) for d in D)``, where ``D`` is the current set of
+    deleted nodes and ``dist`` is shortest-path distance in the original
+    (unfaulted) graph. The next deleted node is sampled with probability
+    proportional to ``1 / r(v)``. After each deletion, distances are updated by
+    adding shortest-path contributions from the newly deleted node, so
+    probabilities are re-evaluated at every iteration. This makes nodes near
+    multiple already deleted nodes more likely to fail than nodes near fewer
+    deleted nodes.
+
+    Nodes that are unreachable from at least one deleted node have zero weight
+    and are not selected. The two phases remove approximately ``proportion`` of
+    all nodes.
+
+    Args:
+        m: Zephyr row count.
+        t: Zephyr tile count.
+        proportion: Total fraction of nodes to remove, in ``(0, 1)``.
+        uniform_proportion: Fraction of removed nodes that are chosen
+            uniformly (the complementary fraction is chosen by distance-based
+            sampling).
+        seed: RNG seed for reproducibility. Defaults to ``None``.
+        family: Graph family. One of ``'chimera'``, ``'pegasus'``, or
+            ``'zephyr'``. Defaults to ``'zephyr'``.
+
+    Returns:
+        Copy of the full graph with faulty nodes removed.
+        All graph-level metadata (family, rows, tile, labels) is preserved.
+    """
+    rng = np.random.default_rng(seed)
+    if family == "zephyr":
+        full_graph = zephyr_graph(m, t, coordinates=True)
+    elif family == "pegasus":
+        # t is ignored.
+        full_graph = pegasus_graph(m, coordinates=True)
+    elif family == "chimera":
+        full_graph = chimera_graph(m, m, t, coordinates=True)
+    else:
+        raise ValueError(f"Unsupported graph family: {family}")
+    all_nodes = list(full_graph.nodes())
+    N = len(all_nodes)
+
+    # Phase 1: uniform random deletion
+    n_uniform = round(proportion * uniform_proportion * N)
+    uniform_indices = rng.choice(N, size=n_uniform, replace=False)
+    deleted_nodes = {all_nodes[i] for i in uniform_indices}
+
+    # Phase 2: iterative distance-based deletion with dynamic updates
+    n_distance = round(proportion * (1 - uniform_proportion) * N)
+    deleted_distance = set()
+
+    if n_distance > 0 and deleted_nodes:
+        # cumulative_dist[v] stores sum(dist(v, d) for d in current deleted set D)
+        cumulative_dist = {node: 0.0 for node in all_nodes}
+        for deleted_node in deleted_nodes:
+            distances = nx.single_source_shortest_path_length(full_graph, deleted_node)
+            for node, dist in distances.items():
+                cumulative_dist[node] += dist
+
+        for _ in range(n_distance):
+            current_deleted = deleted_nodes | deleted_distance
+            remaining = [node for node in all_nodes if node not in current_deleted]
+            if not remaining:
+                break
+
+            weights = np.array(
+                [
+                    (1.0 / cumulative_dist[node]) if cumulative_dist[node] > 0 else 0.0
+                    for node in remaining
+                ]
+            )
+            total_weight = float(weights.sum())
+            probs = weights / total_weight
+            chosen_index = rng.choice(len(remaining), size=1, p=probs)[0]
+            chosen_node = remaining[chosen_index]
+            deleted_distance.add(chosen_node)
+
+            distances = nx.single_source_shortest_path_length(full_graph, chosen_node)
+            for node, dist in distances.items():
+                cumulative_dist[node] += dist
+
+    faulty_graph = full_graph.copy()
+    faulty_graph.remove_nodes_from(deleted_nodes | deleted_distance)
+    return faulty_graph
+
+
+class TestYieldImprovement(unittest.TestCase):
+    """Check yield non-decrease across implemented multi-family search options.
+
+    This class validates all currently implemented search strategies for all three
+    graph families under the tested tile constraints ``t=2`` and ``tp=1``.
+    """
+
+    _M = 6
+    _SOURCE_TP = 1
+    _TARGET_T = 2
+    _PROPORTION = 0.10
+    _UNIFORM_PROPORTION = 0.10
+    _SEED = 1337
+    _TRUE_FALSE = [True, False]
+    _YIELD_TYPES = ["node", "edge", "rail-edge"]
+    _BY_STRATEGIES = ["by_quotient_rail", "by_quotient_node", "by_rail_then_node"]
+    _FAMILIES = ["zephyr", "chimera", "pegasus"]
+
+    @classmethod
+    def setUpClass(cls):
+        cls.sources = {}
+        cls.targets = {}
+
+        for family in cls._FAMILIES:
+            if family == "zephyr":
+                source = zephyr_graph(cls._M, cls._SOURCE_TP, coordinates=True)
+            elif family == "chimera":
+                source = chimera_graph(cls._M, cls._M, cls._SOURCE_TP, coordinates=True)
+            elif family == "pegasus":
+                source = pegasus_graph(cls._M, coordinates=True)
+            else:
+                raise ValueError(f"Unsupported graph family: {family}")
+
+            target = generate_faulty_graph(
+                cls._M,
+                cls._TARGET_T,
+                proportion=cls._PROPORTION,
+                uniform_proportion=cls._UNIFORM_PROPORTION,
+                seed=cls._SEED,
+                family=family,
+            )
+
+            cls.sources[family] = source
+            cls.targets[family] = target
+
+    def _assert_search_improves_yield(
+        self,
+        family: Literal["zephyr", "chimera", "pegasus"],
+        search_strategy: Literal[
+            "by_quotient_rail", "by_quotient_node", "by_rail_then_node"
+        ],
+        yield_type: Literal["node", "edge", "rail-edge"],
+        expand_boundary_search: bool,
+        ksymmetric: bool,
+    ):
+        source = self.sources[family]
+        target = self.targets[family]
+
+        sub_emb, metadata = greedy_quotient_sublattice_mapping(
+            source,
+            target,
+            yield_type=yield_type,
+            search_strategy=search_strategy,
+            expand_boundary_search=expand_boundary_search,
+            ksymmetric=ksymmetric,
+        )
+
+        self.assertIsInstance(metadata, QuotientSearchMetadata)
+        self.assertGreaterEqual(
+            metadata.final_num_yielded,
+            metadata.starting_num_yielded,
+            msg=(
+                f"Yield decreased from {metadata.starting_num_yielded} to "
+                f"{metadata.final_num_yielded} with family={family}, "
+                f"search_strategy={search_strategy}, "
+                f"yield_type={yield_type}, expand={expand_boundary_search}, "
+                f"ksymmetric={ksymmetric}"
+            ),
+        )
+        self.assertLessEqual(metadata.final_num_yielded, metadata.max_num_yielded)
+
+        target_nodes = set(target.nodes())
+        all_target_nodes = {node for chain in sub_emb.values() for node in chain}
+        self.assertTrue(all_target_nodes.issubset(target_nodes))
+        self.assertTrue(set(sub_emb.keys()).issubset(set(source.nodes())))
+
+    def test_search_yields_improvement(self):
+        for family, strategy, expand, ksym, yt in itertools.product(
+            self._FAMILIES,
+            self._BY_STRATEGIES,
+            self._TRUE_FALSE,
+            self._TRUE_FALSE,
+            self._YIELD_TYPES,
+        ):
+            with self.subTest(
+                family=family,
+                search_strategy=strategy,
+                expand_boundary_search=expand,
+                ksymmetric=ksym,
+                yield_type=yt,
+            ):
+                self._assert_search_improves_yield(
+                    family=family,
+                    search_strategy=strategy,
+                    yield_type=yt,
+                    expand_boundary_search=expand,
+                    ksymmetric=ksym,
+                )
+
+
+class TestMetadataConsistency(unittest.TestCase):
+    """Verify the QuotientSearchMetadata fields are internally consistent."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.source = zephyr_graph(6, 2, coordinates=True)
+        cls.target = generate_faulty_graph(
+            6, 4, proportion=0.10, uniform_proportion=0.10, seed=7795, family="zephyr"
+        )
+
+    def test_metadata_ordering(self):
+        """max >= final >= starting >= 0 for all yield types."""
+        for yt in ("node", "edge", "rail-edge"):
+            with self.subTest(yield_type=yt):
+                _sub, metadata = greedy_quotient_sublattice_mapping(
+                    self.source,
+                    self.target,
+                    yield_type=yt,
+                )
+                self.assertGreaterEqual(metadata.max_num_yielded, 0)
+                self.assertGreaterEqual(metadata.starting_num_yielded, 0)
+                self.assertGreaterEqual(metadata.final_num_yielded, 0)
+                self.assertGreaterEqual(
+                    metadata.max_num_yielded, metadata.final_num_yielded
+                )
+                self.assertGreaterEqual(
+                    metadata.final_num_yielded, metadata.starting_num_yielded
+                )
+
+    def test_full_target_gives_full_yield(self):
+        """A perfect target should achieve full yield immediately (starting ==
+        final == max)."""
+        full_target = zephyr_graph(6, 4, coordinates=True)
+        for yt in ("node", "edge"):
+            with self.subTest(yield_type=yt):
+                _sub, metadata = greedy_quotient_sublattice_mapping(
+                    self.source,
+                    full_target,
+                    yield_type=yt,
+                )
+                self.assertEqual(
+                    metadata.starting_num_yielded, metadata.max_num_yielded
+                )
+                self.assertEqual(metadata.final_num_yielded, metadata.max_num_yielded)
+
+    def test_return_is_two_tuple(self):
+        sub_emb, metadata = greedy_quotient_sublattice_mapping(self.source, self.target)
+        self.assertIsInstance(sub_emb, dict)
+        self.assertIsInstance(metadata, QuotientSearchMetadata)
+
+
+class TestGraphInputValidation(unittest.TestCase):
+    """Tests for TypeError / ValueError raised by _validate_graph_inputs."""
+
+    def setUp(self):
+        self.source = zephyr_graph(6, 2, coordinates=True)
+        self.target = zephyr_graph(6, 4, coordinates=True)
+
+    def test_non_graph_source_or_target_raises_type_error(self):
+        with self.assertRaisesRegex(
+            TypeError, r"source must be a networkx.Graph instance"
+        ):
+            greedy_quotient_sublattice_mapping(
+                "not_a_graph", self.target  # type: ignore
+            )
+        with self.assertRaisesRegex(
+            TypeError, r"target must be a networkx.Graph instance"
+        ):
+            greedy_quotient_sublattice_mapping(self.source, 42)  # type: ignore
+
+    def test_source_or_target_wrong_family_raises_value_error(self):
+        bad_graph = self.source.copy()
+        bad_graph.graph["family"] = "chimera"
+        with self.assertRaisesRegex(
+            ValueError, r"target graph should be the same family as the source graph"
+        ):
+            greedy_quotient_sublattice_mapping(bad_graph, self.target)
+        with self.assertRaisesRegex(
+            ValueError, r"target graph should be the same family as the source graph"
+        ):
+            greedy_quotient_sublattice_mapping(self.source, bad_graph)
+
+    def test_source_or_target_missing_rows_metadata_raises_value_error(self):
+        graph_no_rows = self.source.copy()
+        del graph_no_rows.graph["rows"]
+        with self.assertRaisesRegex(
+            ValueError, r"source graph is missing required 'rows'"
+        ):
+            greedy_quotient_sublattice_mapping(graph_no_rows, self.target)
+        with self.assertRaisesRegex(
+            ValueError, r"target graph is missing required 'rows'"
+        ):
+            greedy_quotient_sublattice_mapping(self.source, graph_no_rows)
+
+    def test_source_or_target_missing_tile_metadata_raises_value_error(self):
+        graph_no_tile = self.source.copy()
+        del graph_no_tile.graph["tile"]
+        with self.assertRaisesRegex(
+            ValueError, r"source graph is missing required 'tile'"
+        ):
+            greedy_quotient_sublattice_mapping(graph_no_tile, self.target)
+        with self.assertRaisesRegex(
+            ValueError, r"target graph is missing required 'tile'"
+        ):
+            greedy_quotient_sublattice_mapping(self.source, graph_no_tile)
+
+    def test_source_or_target_missing_labels_metadata_raises_value_error(self):
+        graph_no_labels = self.source.copy()
+        del graph_no_labels.graph["labels"]
+        with self.assertRaisesRegex(
+            ValueError, r"source graph is missing required 'labels'"
+        ):
+            greedy_quotient_sublattice_mapping(graph_no_labels, self.target)
+        with self.assertRaisesRegex(
+            ValueError, r"target graph is missing required 'labels'"
+        ):
+            greedy_quotient_sublattice_mapping(self.source, graph_no_labels)
+
+    def test_incompatible_m_raises_value_error(self):
+        target_diff_m = zephyr_graph(5, 4, coordinates=True)
+        with self.assertRaisesRegex(
+            ValueError, r"source and target must have matched square grid parameters"
+        ):
+            greedy_quotient_sublattice_mapping(self.source, target_diff_m)
+
+    def test_target_tile_less_than_source_tile_raises_value_error(self):
+        small_tile_target = self.target.copy()
+        small_tile_target.graph["tile"] = 1  # less than source tp=2
+        with self.assertRaisesRegex(
+            ValueError, r"target tile count must be >= source tile count"
+        ):
+            greedy_quotient_sublattice_mapping(self.source, small_tile_target)
+
+    def test_non_integer_rows_metadata_raises_type_error(self):
+        bad_source = self.source.copy()
+        bad_source.graph["rows"] = "six"
+        with self.assertRaisesRegex(
+            TypeError, r"graph 'rows' metadata must be an integer"
+        ):
+            greedy_quotient_sublattice_mapping(bad_source, self.target)
+
+    def test_non_positive_rows_metadata_raises_value_error(self):
+        bad_source = self.source.copy()
+        bad_source.graph["rows"] = 0
+        with self.assertRaisesRegex(
+            ValueError, r"graph 'rows' metadata must be positive"
+        ):
+            greedy_quotient_sublattice_mapping(bad_source, self.target)
+
+    def test_unsupported_source_family_raises_value_error(self):
+        bad_source = self.source.copy()
+        bad_source.graph["family"] = "unsupported_family"
+        bad_target = self.target.copy()
+        bad_target.graph["family"] = "unsupported_family"
+        with self.assertRaisesRegex(
+            ValueError, r"source graph should be a supported family graph"
+        ):
+            greedy_quotient_sublattice_mapping(bad_source, bad_target)
+
+
+class TestSearchParameterValidation(unittest.TestCase):
+    """Tests for TypeError / ValueError raised by _validate_search_parameters."""
+
+    def setUp(self):
+        self.source = zephyr_graph(6, 2, coordinates=True)
+        self.target = zephyr_graph(6, 4, coordinates=True)
+
+    def test_invalid_search_strategy_raises_value_error(self):
+        with self.assertRaisesRegex(ValueError, r"search_strategy must be one of"):
+            greedy_quotient_sublattice_mapping(
+                self.source,
+                self.target,
+                search_strategy="unknown_strategy",  # type: ignore
+            )
+
+    def test_invalid_yield_type_raises_value_error(self):
+        with self.assertRaisesRegex(ValueError, r"yield_type must be one of"):
+            greedy_quotient_sublattice_mapping(
+                self.source, self.target, yield_type="invalid"  # type: ignore
+            )
+
+    def test_non_dict_embedding_raises_type_error(self):
+        with self.assertRaisesRegex(
+            TypeError, r"embedding must be a dictionary when provided"
+        ):
+            greedy_quotient_sublattice_mapping(
+                self.source, self.target, embedding=[1, 2, 3]  # type: ignore
+            )
+
+    def test_embedding_with_non_tuple_keys_raises_value_error(self):
+        """Embedding keys must be 5-tuples, not other types."""
+        bad_embedding = {"not_a_tuple": ((0, 0, 0, 0, 0),)}  # type: ignore
+        with self.assertRaisesRegex(
+            ValueError, r"source coordinate keys must be 5-tuples for family 'zephyr'"
+        ):
+            greedy_quotient_sublattice_mapping(
+                self.source, self.target, embedding=bad_embedding  # type: ignore
+            )
+
+    def test_embedding_with_wrong_length_tuple_keys_raises_value_error(self):
+        """Embedding keys must be exactly 5-tuples."""
+        bad_embedding = {
+            (0, 0, 0, 0): ((0, 0, 0, 0, 0),)
+        }  # 4-tuple key instead of 5-tuple
+        with self.assertRaisesRegex(
+            ValueError, r"source coordinate keys must be 5-tuples for family 'zephyr'"
+        ):
+            greedy_quotient_sublattice_mapping(
+                self.source, self.target, embedding=bad_embedding  # type: ignore
+            )
+
+    def test_embedding_with_non_tuple_values_raises_value_error(self):
+        """Embedding values must be singleton tuples (chain format), not lists."""
+        bad_embedding = {(0, 0, 0, 0, 0): [(0, 0, 0, 0, 0)]}  # List, not tuple
+        with self.assertRaisesRegex(
+            ValueError,
+            r"embedding values must be singleton tuples representing node chains",
+        ):
+            greedy_quotient_sublattice_mapping(
+                self.source, self.target, embedding=bad_embedding  # type: ignore
+            )
+
+    def test_embedding_with_empty_chain_raises_value_error(self):
+        """Embedding chains must contain exactly one target node."""
+        bad_embedding = {(0, 0, 0, 0, 0): ()}  # Empty chain
+        with self.assertRaisesRegex(
+            ValueError,
+            r"embedding values must be singleton tuples representing node chains",
+        ):
+            greedy_quotient_sublattice_mapping(
+                self.source, self.target, embedding=bad_embedding  # type: ignore
+            )
+
+    def test_embedding_with_non_5tuple_in_chain_raises_value_error(self):
+        """Nodes in embedding chains must be 5-tuples."""
+        bad_embedding = {(0, 0, 0, 0, 0): ((0, 0, 0, 0),)}  # 4-tuple instead of 5-tuple
+        with self.assertRaisesRegex(
+            ValueError, r"target coordinate nodes must be 5-tuples for family 'zephyr'"
+        ):
+            greedy_quotient_sublattice_mapping(
+                self.source, self.target, embedding=bad_embedding  # type: ignore
+            )
+
+    def test_embedding_with_duplicate_target_nodes_raises_value_error(self):
+        """Embedding must be one-to-one: no duplicate target nodes across chains."""
+        source_node1 = (0, 0, 0, 0, 0)
+        source_node2 = (0, 0, 1, 0, 0)
+        duplicate_target = (1, 1, 1, 1, 1)
+        bad_embedding = {
+            source_node1: (duplicate_target,),
+            source_node2: (duplicate_target,),  # Duplicate target
+        }
+        with self.assertRaisesRegex(
+            ValueError,
+            r"embedding must be a one-to-one mapping.*duplicate target nodes",
+        ):
+            greedy_quotient_sublattice_mapping(
+                self.source, self.target, embedding=bad_embedding  # type: ignore
+            )
+
+    def test_valid_chain_embedding_is_accepted(self):
+        """Valid chain embedding with proper format should be accepted."""
+        source = zephyr_graph(6, 2, coordinates=True)
+        target = zephyr_graph(6, 4, coordinates=True)
+        # Create a valid small chain embedding (identity mapping)
+        valid_embedding = {
+            node: (node,) for i, node in enumerate(source.nodes()) if i < 10
+        }
+        # Should not raise any errors
+        try:
+            greedy_quotient_sublattice_mapping(
+                source, target, embedding=valid_embedding
+            )
+        except (TypeError, ValueError) as e:
+            self.fail(f"Valid embedding raised unexpected error: {e}")
+
+
+class TestLabelingSchemeErrors(unittest.TestCase):
+    """Tests for ValueError raised by _ensure_coordinate_source /
+    _ensure_coordinate_target."""
+
+    def test_unknown_source_labels_raises_value_error(self):
+        source = zephyr_graph(6, 2, coordinates=True)
+        source.graph["labels"] = "custom_scheme"
+        target = zephyr_graph(6, 4, coordinates=True)
+        with self.assertRaisesRegex(ValueError, r"unknown labeling scheme"):
+            greedy_quotient_sublattice_mapping(source, target)
+
+    def test_unknown_target_labels_raises_value_error(self):
+        source = zephyr_graph(6, 2, coordinates=True)
+        target = zephyr_graph(6, 4, coordinates=True)
+        target.graph["labels"] = "custom_scheme"
+        with self.assertRaisesRegex(ValueError, r"unknown labeling scheme"):
+            greedy_quotient_sublattice_mapping(source, target)
+
+
+class TestNormalizeCoordinate(unittest.TestCase):
+    """Tests for ValueError raised directly by _normalize_coordinate."""
+
+    def test_unknown_graph_family_raises_value_error(self):
+        graph = zephyr_graph(3, 2, coordinates=True)
+        with self.assertRaisesRegex(ValueError, r"Unknown graph family"):
+            _normalize_coordinate(
+                graph, m=3, t=2, graph_family="unsupported_family"  # type: ignore
+            )
+
+    def test_pegasus_odd_k_singleton_raises_value_error(self):
+        """A t=1 Pegasus source graph must only contain even-k (single-rail) nodes."""
+        odd_k_only = nx.Graph()
+        odd_k_only.add_node((0, 0, 1, 0))  # odd k index
+        odd_k_only.graph.update(family="pegasus", rows=3, tile=1, labels="coordinate")
+        with self.assertRaisesRegex(
+            ValueError, r"only contains nodes with even k indices"
+        ):
+            _normalize_coordinate(odd_k_only, m=3, t=1)
+
+
+class TestNodeSearchDirect(unittest.TestCase):
+    """Tests for ValueError raised directly by _node_search."""
+
+    def test_mismatched_family_raises_value_error(self):
+        source = zephyr_graph(3, 2, coordinates=True)
+        target = chimera_graph(3, t=4, coordinates=True)
+        with self.assertRaisesRegex(
+            ValueError, r"source and target families should be matched"
+        ):
+            _node_search(source, target, embedding={})
+
+    def test_mismatched_grid_parameters_raises_value_error(self):
+        source = zephyr_graph(3, 2, coordinates=True)
+        target = zephyr_graph(4, 2, coordinates=True)
+        with self.assertRaisesRegex(
+            ValueError, r"source and target must have matched square grid parameters"
+        ):
+            _node_search(source, target, embedding={})
+
+    def test_unknown_family_without_boundary_expansion_raises_value_error(self):
+        source = chimera_graph(3, t=2, coordinates=True)
+        target = chimera_graph(3, t=4, coordinates=True)
+        source.graph["family"] = target.graph["family"] = "unsupported_family"
+        with self.assertRaisesRegex(ValueError, r"Unknown family"):
+            _node_search(source, target, embedding={}, expand_boundary_search=False)
+
+
+class TestRailHelpersDirect(unittest.TestCase):
+    """Tests for ValueError raised directly by _rail_nodes and _rail_search."""
+
+    def test_rail_nodes_unknown_family_raises_value_error(self):
+        with self.assertRaisesRegex(ValueError, r"Unknown rails for"):
+            _rail_nodes(3, "unsupported_family")  # type: ignore
+
+    def test_rail_search_unknown_family_raises_value_error(self):
+        source = chimera_graph(3, t=2, coordinates=True)
+        target = chimera_graph(3, t=4, coordinates=True)
+        source.graph["family"] = target.graph["family"] = "unsupported_family"
+        with self.assertRaisesRegex(ValueError, r"unknown graph family"):
+            _rail_search(source, target, embedding={})
+
+    def test_rail_search_duplicate_target_raises_value_error(self):
+        source = zephyr_graph(2, 2, coordinates=True)
+        target = zephyr_graph(2, 4, coordinates=True)
+        nodes = list(source.nodes())
+        # Seed the embedding with a pre-existing duplicate target assignment.
+        embedding = {n: n for n in nodes}
+        embedding[nodes[0]] = embedding[nodes[1]]
+        with self.assertRaisesRegex(
+            ValueError, r"Duplicate target coordinates detected in embedding"
+        ):
+            _rail_search(source, target, embedding)
+
+
+class TestObjectiveRegressionGuard(unittest.TestCase):
+    """Tests for the ValueError raised when greedy search reduces the objective
+    value."""
+
+    def test_rail_search_regression_raises_value_error(self):
+        source = zephyr_graph(3, 2, coordinates=True)
+        target = zephyr_graph(3, 4, coordinates=True)
+        # Provide a starting embedding with nonzero yield, then force the greedy
+        # rail search to discard it entirely so the objective value drops.
+        starting_embedding = {
+            node: (node,) for i, node in enumerate(source.nodes()) if i < 20
+        }
+        with patch(
+            "dwave.experimental.embedding_methods.quotient_embedding_search."
+            "_rail_search",
+            return_value={},
+        ):
+            with self.assertRaisesRegex(
+                ValueError, r"Greedy quotient search reduced the objective value"
+            ):
+                greedy_quotient_sublattice_mapping(
+                    source, target, embedding=starting_embedding
+                )

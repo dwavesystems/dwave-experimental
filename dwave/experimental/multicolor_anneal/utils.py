@@ -14,7 +14,7 @@
 
 import networkx as nx
 
-from dwave_networkx import zephyr_coordinates
+from dwave.graphs import zephyr_coordinates
 
 __all__ = ["qubit_to_Advantage2_annealing_line", "make_tds_graph"]
 
@@ -30,7 +30,7 @@ def qubit_to_Advantage2_annealing_line(
     Based on the Zephyr coordinate system (u,w,k,j,z), a qubit
     can be uniquely assigned a color. u denotes qubit orientation
     j and z control aligned-displacement on the processor. See also
-    dwave_networkx.zephyr_graph and dwave_networkx.zephyr_coordinates
+    dwave.graphs.zephyr_graph and dwave.graphs.zephyr_coordinates
 
     Args:
         n: qubit label, as an integer, or a Zephyr coordinate as a 5-tuple

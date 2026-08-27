@@ -5,3 +5,4 @@ matplotlib==3.10.5      # first to support 3.14
 minorminer==0.2.21      # Requires recent find_subgraph upgrades
 # dev requirements
 reno==4.1.0
+dwave-graphs==1.0.0

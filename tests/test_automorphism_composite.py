@@ -19,7 +19,7 @@ import numpy as np
 import networkx as nx
 
 from dwave.system.testing import MockDWaveSampler
-from dwave_networkx import chimera_graph, pegasus_graph, zephyr_graph
+from dwave.graphs import chimera_graph, pegasus_graph, zephyr_graph
 
 from dwave.experimental.automorphism import *
 
