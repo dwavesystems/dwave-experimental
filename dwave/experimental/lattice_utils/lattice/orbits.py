@@ -20,7 +20,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
 
-from dwave.experimental.automorphism import schreier_rep
+from dwave.graphs.algorithms.automorphism import schreier_rep
 
 __all__ = [
     'reindex',
