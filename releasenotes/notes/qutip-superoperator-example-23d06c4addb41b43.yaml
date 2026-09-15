@@ -1,0 +1,5 @@
+---
+features:
+  - |
+    A new superoperator based example simulation using qutip to qualitatively
+    demonstrate arbitrary angle detection.
