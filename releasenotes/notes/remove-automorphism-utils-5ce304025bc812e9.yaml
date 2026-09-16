@@ -1,0 +1,6 @@
+---
+upgrade:
+  - |
+    The automorphism utility functions in ``dwave.experimental.automorphism``
+    have been removed. Use the equivalent functions in
+    ``dwave.graphs.algorithms.automorphism`` instead.

@@ -14,8 +14,8 @@
 
 """
 This module contains an automorphism composite that can make use of
-either the Schreier-Sims representation of the automorphism_generation.py
-module, or a (generator, degree) format where the generator is a dictionary.
+either the Schreier-Sims representation from the automorphism module in
+dwave-graphs, or a (generator, degree) format where the generator is a dictionary.
 This generator should later be moved to dwave.preprocessing.composites to
 work alongside SpinReversalTransformComposite - since it serves a closely
 related purpose.
@@ -36,7 +36,7 @@ import dimod
 import numpy as np
 
 from dimod import ComposedSampler
-from dwave.experimental.automorphism import (
+from dwave.graphs.algorithms.automorphism import (
     schreier_rep,
     sample_automorphisms as sample_automorphisms_u_vector,
 )
@@ -58,7 +58,7 @@ def listtuple_to_arrays(
     """Unwrap (generator, degree) pairs into an array format.
 
     Note, the array format is accepted by the
-    :meth:`~dwave.experimental.automorphism.automorphism_generatation.sample_automorphisms`.
+    :func:`~dwave.graphs.algorithms.automorphism.sample_automorphisms`.
     It is more general than the generator pair format, so an
     inverse mapping is not possible in general.
 
@@ -70,7 +70,7 @@ def listtuple_to_arrays(
 
     Output:
         A list of lists of numpy arrays, suitable for use by
-        :meth:`~dwave.experimental.automorphism.automorphism_generatation.sample_automorphisms`.
+        :func:`~dwave.graphs.algorithms.automorphism.sample_automorphisms`
     """
 
     node_set = set(node_to_idx)
@@ -406,7 +406,7 @@ def sample_automorphisms_listtuple(
     be ordered to allow for similar fair sampling. See the respective generator methods
     of this module.
     For more general cases it is recommended to fairly sample by the Schreier-Sims
-    method of automorphism_generation.py module.
+    method of the automorphism.py module in dwave-graphs.
 
     Generators are specified as dictionaries (1:1 mappings), with some known
     degree e.g. {2: 4, 4: 2}, degree 2
@@ -492,18 +492,18 @@ class AutomorphismComposite(ComposedSampler):
         seed: As passed to :func:`numpy.random.default_rng`.
 
         generators_listtuple: A set of permutations compatible with the child
-            strcture. A list where each element is a tuple of generator (dict)
+            structure. A list where each element is a tuple of generator (dict)
             and integer cycle length. This allows for uniform sampling of some
-            graphs. If generators_listtuple is None (by default) a schreir_context
+            graphs. If generators_listtuple is None (by default) a schreier_context
             is used.
 
-        generators_u_vector: A dwave.experimental.SchreirContext object. This allows
-            fair sampling of any graph. The SchreirContext for an arbitrary
-            graph can be created using dwave.experimental. If a schreir_context
-            is None, and generators_listtuple is None, then the schreir_context
-            compatible with the child sampler structure is created by default.
-            If both a generators_listtuple, and a schreir_context are provided,
-            the generators_listtuple is ignored.
+        generators_u_vector: A dwave.graphs.algorithms.automorphism.SchreierContext
+            object. This allows fair sampling of any graph. The SchreierContext
+            for an arbitrary graph can be created using ``schreier_rep``. If a
+            schreier_context is None, and generators_listtuple is None, then the
+            schreier_context compatible with the child sampler structure is created
+            by default. If both a generators_listtuple, and a schreier_context are
+            provided, the generators_listtuple is ignored.
 
         G: A `nx.Graph` from which automorphisms are to be inferred when neither
             generators_listtuple or generators_u_vector are provided. If G is

@@ -21,9 +21,6 @@ Automorphism
 .. automodule:: dwave.experimental.automorphism.automorphism_composite
     :members:
 
-.. automodule:: dwave.experimental.automorphism.automorphism_generation
-    :members:
-
 Fast Reverse Annealing
 ======================
 
