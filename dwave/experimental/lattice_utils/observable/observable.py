@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, TypeAlias, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 import dimod
 import numpy as np

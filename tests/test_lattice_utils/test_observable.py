@@ -199,5 +199,33 @@ class TestTriangularOP(unittest.TestCase):
             np.testing.assert_array_almost_equal(np.abs(result), np.zeros(5), decimal=10)
 
 
+class TestEdwardsAndersonOverlap(unittest.TestCase):
+    def test_pairwise_moments_exclude_self_pairs(self):
+        samples = np.array(
+            [
+                [1, 1, 1, 1],
+                [1, 1, 1, -1],
+                [-1, -1, -1, -1],
+            ]
+        )
+        sample_set = dimod.SampleSet.from_samples(samples, vartype=dimod.SPIN, energy=0)
+
+        # The three distinct-pair overlaps are 1/2, -1, and -1/2.
+        result = observable.EdwardsAndersonOverlap().evaluate(None, None, sample_set)
+        np.testing.assert_allclose(result, (2 / 3, 1 / 2, 3 / 8))
+
+    def test_requires_two_samples_and_at_least_one_spin(self):
+        overlap = observable.EdwardsAndersonOverlap()
+        single = dimod.SampleSet.from_samples([[1, -1]], vartype=dimod.SPIN, energy=0)
+        with self.assertRaisesRegex(ValueError, "at least two samples"):
+            overlap.evaluate(None, None, single)
+
+        no_spins = dimod.SampleSet.from_samples(
+            np.empty((2, 0), dtype=int), vartype=dimod.SPIN, energy=0
+        )
+        with self.assertRaisesRegex(ValueError, "at least one spin"):
+            overlap.evaluate(None, None, no_spins)
+
+
 if __name__ == "__main__":
     unittest.main()

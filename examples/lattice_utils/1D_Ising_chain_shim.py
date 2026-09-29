@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from dwave.system import DWaveSampler
 
-from dwave.experimental.lattice_utils import lattice, experiment
+from dwave.experimental.lattice_utils import experiment, lattice
 
 # Set up the parameters
 
