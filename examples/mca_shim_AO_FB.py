@@ -74,6 +74,14 @@ if __name__ == "__main__":
         default=None,  # Default: all lines that are neither detector nor source lines
     )
     parser.add_argument(
+        "--unused-lines",
+        dest="unused_lines",
+        type=int,
+        nargs="+",
+        help="Unused lines (one or more integer indices).",
+        default=(),  # Default: no unused lines
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         help="Random seed for embedding generation.",
@@ -133,8 +141,8 @@ if __name__ == "__main__":
         type=int,
         help="Length of the loop model (even and >=4), defaulting to 16. "
         "T-D-S systems compatible with coupled parallel unfrustrated loops are embedded. "
-        "Specifying a value less than 3 results in a Larmour precession demonstration for independent T-D-S systems without a "
-        "loop constraint, the final loop experiment stage will be skipped, this allows more T-D-S embeddings.",
+        "Specifying a value 1 results in a Larmour precession demonstration for independent "
+        "T-D-S systems with no final loop experiment stage, this allows more T-D-S embeddings.",
         default=16,
     )
     parser.add_argument(
@@ -238,7 +246,7 @@ if __name__ == "__main__":
         type=float,
         default=None,
         help="Defaults to T2/4, but with data collected at delays 4x more finely "
-        "spaced to better resolve pi/2 pulse propagation and synchronization limitations."
+        "spaced to better resolve pi/2 pulse propagation and synchronization limitations.",
     )
 
     args = parser.parse_args()
@@ -252,6 +260,7 @@ if __name__ == "__main__":
         detector_lines=args.detector_lines,
         source_lines=args.source_lines,
         target_lines=args.target_lines,
+        unused_lines=args.unused_lines,
         target_A=args.target_A,
         schedule_fn=args.schedule_fn,
         t_decoupled=args.t_decoupled,

@@ -24,7 +24,9 @@ def run_flux_biases(ctx):
 
     stage_idx += 1
     print()
-    print(f"Stage {stage_idx}: Compensate for static qubit body cross talks (with flux_biases).")
+    print(
+        f"Stage {stage_idx}: Compensate for static qubit body cross talks (with flux_biases)."
+    )
     print(f"Use the (CLI-configurable) {td_shim_type} method for flux_biases.")
 
     fn_cache = f"cache/FB_{cache_str}.npy"
@@ -87,7 +89,6 @@ def run_flux_biases(ctx):
     _apply_tight_layout()
     plt.show()
     sampling_params["x_polarizing_schedule"] = x_polarizing_schedule
-
 
     ctx.stage_idx = stage_idx
     ctx.flux_biases = flux_biases

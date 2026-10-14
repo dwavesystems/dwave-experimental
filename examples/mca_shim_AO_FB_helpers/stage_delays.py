@@ -247,9 +247,7 @@ def run_refine_delays(ctx):
         f"dt/dc ~ {dt_dc}us we can correct a measured delay in one step."
     )
     mags_t0 = [
-        run_parallel_experiment(
-            sampler, bqm, sampling_params, detector_lines
-        ).ravel()
+        run_parallel_experiment(sampler, bqm, sampling_params, detector_lines).ravel()
     ]
     if len(source_lines) == 1:
         t_decoupled[source_lines[0]] = 0.0
@@ -264,9 +262,7 @@ def run_refine_delays(ctx):
         # Residual part, not captured by line-wise correction.
 
     mags_t0.append(
-        run_parallel_experiment(
-            sampler, bqm, sampling_params, detector_lines
-        ).ravel()
+        run_parallel_experiment(sampler, bqm, sampling_params, detector_lines).ravel()
     )
     relative_offset = np.mean(list(t_decoupled_by_qubit.values()))
     for emb in embs:
@@ -278,9 +274,7 @@ def run_refine_delays(ctx):
                 -(t_decoupled_by_qubit[det_q] - relative_offset) / dt_dc
             )
     mags_t0.append(
-        run_parallel_experiment(
-            sampler, bqm, sampling_params, detector_lines
-        ).ravel()
+        run_parallel_experiment(sampler, bqm, sampling_params, detector_lines).ravel()
     )
     plt.figure("Mags with/without synchronization")
     num_points = len(mags_t0[0])
@@ -307,16 +301,12 @@ def run_refine_delays(ctx):
     # is expected to be small.
     # Column i of each mags_t0 array corresponds to embs[i]; group by the
     # (source line, detector line) pair so dt_dc is reestimated per combination.
-    emb_src_lines = np.array(
-        [line_assignments[emb[("source", 0)][0]] for emb in embs]
-    )
+    emb_src_lines = np.array([line_assignments[emb[("source", 0)][0]] for emb in embs])
     emb_det_lines = np.array(
         [line_assignments[emb[("detector", 0)][0]] for emb in embs]
     )
     dt_dc_new = {}
-    for src, det in sorted(
-        set(zip(emb_src_lines.tolist(), emb_det_lines.tolist()))
-    ):
+    for src, det in sorted(set(zip(emb_src_lines.tolist(), emb_det_lines.tolist()))):
         mask = (emb_src_lines == src) & (emb_det_lines == det)
         m_base = mags_t0[1][mask]
         dt_dc_new[(src, det)] = (
@@ -334,11 +324,10 @@ def run_refine_delays(ctx):
         sampling_params["anneal_offsets"][det_q] *= dt_dc / dt_dc_bulk
     print("Revised estimation of dt/dc ", dt_dc_bulk, " used value ", dt_dc)
     print("The final anneal_offsets are adjusted to this new estimate.")
-    #print(
+    # print(
     #    "Broken down by (source line, detector line) - note that data defaults may be too sparse for variation to be considered significant: ",
     #    dt_dc_new,
-    #)  # Not significant at defaults.
-
+    # )  # Not significant at defaults.
 
     ctx.stage_idx = stage_idx
     ctx.t_decoupled = t_decoupled

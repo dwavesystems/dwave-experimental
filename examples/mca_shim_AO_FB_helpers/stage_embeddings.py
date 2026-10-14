@@ -41,9 +41,10 @@ def run_embeddings(ctx):
         elif line in target_lines:
             return "target"
         else:
-            return "unknown"
+            return "unused"
 
     Tnode_to_tds = {n: _target_assignments(n) for n in qpu.nodelist}
+
     target_graph = nx.Graph()
     target_graph.add_node(0)
     # Embeddings are reprocessed, to be treated as independent.

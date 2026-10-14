@@ -26,6 +26,7 @@ def main(
     detector_lines: Iterable[int] | None = None,
     source_lines: Iterable[int] | None = None,
     target_lines: Iterable[int] | None = None,
+    unused_lines: Iterable[int] = (),
     seed: int | None = None,
     max_num_embeddings: int | None = None,
     target_c: float | None = None,
@@ -93,7 +94,12 @@ def main(
             An iterable of integer indices of the source lines.
         target_lines:
             An iterable of integer indices of the target lines. When None,
-            defaults to all lines that are neither detector nor source lines.
+            defaults to all lines that are neither detector, source, nor
+            unused lines.
+        unused_lines:
+            An iterable of integer indices of lines that are unused in the
+            experiment. These are excluded when target_lines defaults to all
+            remaining lines.
         seed:
             Random seed used for embedding generation.
         max_num_embeddings:
@@ -208,9 +214,11 @@ def main(
             for a stage that requires new sampling.
     """
 
-    if loop_length < 3:
+    if loop_length == 1:
         # Sentinel for "no loop constraint": use independent T-D-S systems.
         loop_length = None
+    elif not (loop_length > 2):
+        raise ValueError("loop_length should be 1 or atleast 3")
 
     if fit_window is None:
         fit_window = T2
@@ -249,6 +257,7 @@ def main(
         detector_lines=detector_lines,
         source_lines=source_lines,
         target_lines=target_lines,
+        unused_lines=unused_lines,
         seed=seed,
         max_num_embeddings=max_num_embeddings,
         target_c=target_c,
@@ -299,7 +308,5 @@ def main(
     _apply_tight_layout()
     plt.show()
     if ctx.loop_length:
-        print(
-            "Close figures to proceed to next stage: pi/2-pulse propagation."
-        )
+        print("Close figures to proceed to next stage: pi/2-pulse propagation.")
         stage_loop.run_loop(ctx)

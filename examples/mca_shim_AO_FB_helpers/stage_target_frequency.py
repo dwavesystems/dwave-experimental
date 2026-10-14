@@ -48,7 +48,9 @@ def run_anneal_offsets(ctx):
     if show_artificial_timeseries:
         print(print_once)
         print_once = "Artificial data (already described) now applied to real data"
-        print(f"Stage {stage_idx+1}: Target frequency refinement via target anneal_offsets")
+        print(
+            f"Stage {stage_idx+1}: Target frequency refinement via target anneal_offsets"
+        )
         print("(artificial data comparison point).")
         print(
             "In figures, ideal error-free high density data is shown as dashed lines, with (coarsely) sampled "
@@ -193,9 +195,7 @@ def run_anneal_offsets(ctx):
 
     # Plot data #
     timeseries_fig, (ax_first_iter_timeseries, ax_second_iter_timeseries) = (
-        plt.subplots(
-            1, 2, figsize=(12, 5), num="Timeseries", constrained_layout=True
-        )
+        plt.subplots(1, 2, figsize=(12, 5), num="Timeseries", constrained_layout=True)
     )
     timeseries_fig.suptitle(
         "Time series for several qubits using distinct target lines"
@@ -287,7 +287,6 @@ def run_anneal_offsets(ctx):
         print("Close figures to proceed to next stages.")
         _apply_tight_layout()
         plt.show()
-
 
     ctx.stage_idx = stage_idx
     ctx.mean_Z_detector = mean_Z_detector

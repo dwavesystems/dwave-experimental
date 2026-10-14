@@ -39,10 +39,11 @@ def run_loop(ctx):
         "A pi/2 pulse is applied to the (loop_length//2 indexed) qubit. "
         "targets are then measured in the (same) computational basis subject to delay. "
     )
-    print("Delays are chosen by default over a 2-times smaller window with 2-times higher "
-          "density relative to the grids used for the target-frequency stage, the initial "
-          "time is offset smaller to demonstrate the stage with a single-qubit (per loop) "
-          "coupled to the polarized source."
+    print(
+        "Delays are chosen by default over a 2-times smaller window with 2-times higher "
+        "density relative to the grids used for the target-frequency stage, the initial "
+        "time is offset smaller to demonstrate the stage with a single-qubit (per loop) "
+        "coupled to the polarized source."
     )
     print(
         "We anticipate excitation propagation around the loop subject to interference. "
@@ -62,7 +63,9 @@ def run_loop(ctx):
         | {
             e: Jts
             for e in S_experiment.edges()
-            if any((Snode_to_tds[v] == "source" and v[1] == loop_length // 2) for v in e)
+            if any(
+                (Snode_to_tds[v] == "source" and v[1] == loop_length // 2) for v in e
+            )
         }
         | {
             e: Jtt

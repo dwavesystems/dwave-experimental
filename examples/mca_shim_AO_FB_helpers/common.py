@@ -62,18 +62,50 @@ from dwave.experimental.shimming import shim_tds_flux_biases
 # the third-party modules/functions those bodies reference).
 __all__ = [
     # third-party modules and helpers used by stage bodies
-    "defaultdict", "hashlib", "json", "os", "re", "pickle", "pd", "plt",
-    "SymLogNorm", "nx", "np", "tqdm", "dimod", "Variable", "DWaveSampler",
-    "MockDWaveSampler", "ParallelEmbeddingComposite", "find_multiple_embeddings",
-    "get_properties", "make_tds_graph", "make_tds_x_schedules", "SOLVER_FILTER",
+    "defaultdict",
+    "hashlib",
+    "json",
+    "os",
+    "re",
+    "pickle",
+    "pd",
+    "plt",
+    "SymLogNorm",
+    "nx",
+    "np",
+    "tqdm",
+    "dimod",
+    "Variable",
+    "DWaveSampler",
+    "MockDWaveSampler",
+    "ParallelEmbeddingComposite",
+    "find_multiple_embeddings",
+    "get_properties",
+    "make_tds_graph",
+    "make_tds_x_schedules",
+    "SOLVER_FILTER",
     "shim_tds_flux_biases",
     # module helpers
-    "_figure_path", "_apply_tight_layout", "_save_open_figures",
-    "_calc_anneal_offsets", "make_yC", "make_yE", "make_y", "dyC_dt0", "dyC_dA",
-    "artificial_data", "run_parallel_experiment", "plot_shim",
-    "_plot_tds_schedules", "imshow_data", "_get_experiment_id",
-    "_plot_time_series", "estimate_decoupling_timescale", "_to_independent_tds",
-    "compute_delay_grid", "MCAContext",
+    "_figure_path",
+    "_apply_tight_layout",
+    "_save_open_figures",
+    "_calc_anneal_offsets",
+    "make_yC",
+    "make_yE",
+    "make_y",
+    "dyC_dt0",
+    "dyC_dA",
+    "artificial_data",
+    "run_parallel_experiment",
+    "plot_shim",
+    "_plot_tds_schedules",
+    "imshow_data",
+    "_get_experiment_id",
+    "_plot_time_series",
+    "estimate_decoupling_timescale",
+    "_to_independent_tds",
+    "compute_delay_grid",
+    "MCAContext",
 ]
 
 
@@ -1090,21 +1122,35 @@ def estimate_decoupling_timescale(
 
 
 def _to_independent_tds(embs):
-    """Convert embeddings to independent T-D-S systems. Assume the label scheme returned by :code:`tds_graph`"""
+    """Convert coupled embeddings to decoupled embeddings.
+
+    Assume the label scheme returned by :code:`tds_graph`:
+        i: target qubit
+        ("source", i): source qubit i
+        ("detector", i): detector qubit i
+
+    If a source/detector or target is absent for some i, the
+    embedding value is assigned to None.
+    """
+    max_i = max(k if isinstance(k, int) else k[1] for emb in embs for k in emb)
     independent_tds = []
     for emb in embs:
         independent_tds += [
             {
-                0: emb[i],
-                ("source", 0): emb[("source", i)],
-                ("detector", 0): emb[("detector", i)],
+                0: emb[i] if i in emb else None,
+                ("source", 0): emb[("source", i)] if ("source", i) in emb else None,
+                ("detector", 0): (
+                    emb[("detector", i)] if ("detector", i) in emb else None
+                ),
             }
-            for i in range(len(emb) // 3)
+            for i in range(max_i + 1)
         ]
     return independent_tds
 
 
-def compute_delay_grid(ctx, delay_range:float, rel_sampling_rate:float=2, rel_start:float=1.0):
+def compute_delay_grid(
+    ctx, delay_range: float, rel_sampling_rate: float = 2, rel_start: float = 1.0
+):
     """Build the regularly spaced delay grid used by the sampling stages.
 
     Args:
@@ -1121,7 +1167,8 @@ def compute_delay_grid(ctx, delay_range:float, rel_sampling_rate:float=2, rel_st
     # Nyquist frequency in MHz, resolving up to 2*target_A.
     nyquist_frequency = target_A * 1000 * 2
     delay_min_fit = delay_min = (
-        rel_start * dt_dc  # For reasonable confidence source is fully decoupled (c < 0).
+        rel_start
+        * dt_dc  # For reasonable confidence source is fully decoupled (c < 0).
     )
     delay_max_fit = delay_max = delay_min + delay_range
     # Collecting regularly spaced data on [delay_min, delay_min + delay_range],
@@ -1156,25 +1203,90 @@ class MCAContext:
     #: parameters of :func:`mca_shim.runner.main`; the remainder are computed.
     _FIELDS = (
         # configuration (see runner.main for documentation)
-        "cache_str", "solver", "detector_lines", "source_lines", "target_lines",
-        "seed", "max_num_embeddings", "target_c", "target_A", "target_B", "dAdc",
-        "td_shim_type", "t_decoupled", "by_det_src_pair",
-        "num_anneal_offset_iterations", "schedule_fn", "num_reads",
-        "use_common_c_bounds", "use_overshoot", "save_figures", "T2", "Jtd", "Jts",
-        "Jtt", "loop_length", "preparation_orientation", "embedding_timeout",
-        "colormap_type", "dt_div_A_final", "refine_delays", "dt_dc",
-        "show_artificial_timeseries", "fit_window", "loop_delay_range",
+        "cache_str",
+        "solver",
+        "detector_lines",
+        "source_lines",
+        "target_lines",
+        "unused_lines",
+        "seed",
+        "max_num_embeddings",
+        "target_c",
+        "target_A",
+        "target_B",
+        "dAdc",
+        "td_shim_type",
+        "t_decoupled",
+        "by_det_src_pair",
+        "num_anneal_offset_iterations",
+        "schedule_fn",
+        "num_reads",
+        "use_common_c_bounds",
+        "use_overshoot",
+        "save_figures",
+        "T2",
+        "Jtd",
+        "Jts",
+        "Jtt",
+        "loop_length",
+        "preparation_orientation",
+        "embedding_timeout",
+        "colormap_type",
+        "dt_div_A_final",
+        "refine_delays",
+        "dt_dc",
+        "show_artificial_timeseries",
+        "fit_window",
+        "loop_delay_range",
         # runtime / computed state
-        "stage_idx", "qpu", "online", "exp_feature_info", "line_assignments",
-        "num_lines", "line_color", "x_anneal_schedules", "x_polarizing_schedule",
-        "x_schedule_delays", "anneal_offsets", "flux_biases", "sampling_params",
-        "target_Aminus", "target_Aplus", "T", "Tnode_to_tds", "S", "Snode_to_tds",
-        "S_experiment", "embs_experiment", "embs", "embs_by_line", "sum_by_line",
-        "cumsum_by_line", "line_exemplars", "n_embs", "sampler", "bqm",
-        "nyquist_frequency", "delay_min", "delay_max", "delay_min_fit",
-        "delay_max_fit", "delays", "dt", "mean_Z_detector", "first", "last", "ld",
-        "frequencies", "psd", "anneal_offsets_target", "ax_second_iter_timeseries",
-        "ax_second_iter_psd", "heatmap_after_axes", "t_decoupled_by_qubit", "t_mags",
+        "stage_idx",
+        "qpu",
+        "online",
+        "exp_feature_info",
+        "line_assignments",
+        "num_lines",
+        "line_color",
+        "x_anneal_schedules",
+        "x_polarizing_schedule",
+        "x_schedule_delays",
+        "anneal_offsets",
+        "flux_biases",
+        "sampling_params",
+        "target_Aminus",
+        "target_Aplus",
+        "T",
+        "Tnode_to_tds",
+        "S",
+        "Snode_to_tds",
+        "S_experiment",
+        "embs_experiment",
+        "embs",
+        "embs_by_line",
+        "sum_by_line",
+        "cumsum_by_line",
+        "line_exemplars",
+        "n_embs",
+        "sampler",
+        "bqm",
+        "nyquist_frequency",
+        "delay_min",
+        "delay_max",
+        "delay_min_fit",
+        "delay_max_fit",
+        "delays",
+        "dt",
+        "mean_Z_detector",
+        "first",
+        "last",
+        "ld",
+        "frequencies",
+        "psd",
+        "anneal_offsets_target",
+        "ax_second_iter_timeseries",
+        "ax_second_iter_psd",
+        "heatmap_after_axes",
+        "t_decoupled_by_qubit",
+        "t_mags",
     )
 
     def __init__(self, **config):
@@ -1184,4 +1296,3 @@ class MCAContext:
             if name not in self._FIELDS:
                 raise TypeError(f"Unexpected configuration field: {name!r}")
             setattr(self, name, value)
-

@@ -10,6 +10,7 @@ def run_waveforms(ctx):
     detector_lines = ctx.detector_lines
     source_lines = ctx.source_lines
     target_lines = ctx.target_lines
+    unused_lines = ctx.unused_lines
     target_c = ctx.target_c
     use_common_c_bounds = ctx.use_common_c_bounds
     use_overshoot = ctx.use_overshoot
@@ -75,8 +76,16 @@ def run_waveforms(ctx):
             # 12 line convention
             detector_lines = (0, num_lines // 4 + 1)
             source_lines = (num_lines // 2, (3 * num_lines) // 4 + 1)
+
     if target_lines is None:
-        target_lines = set(range(num_lines)) - set(detector_lines) - set(source_lines)
+        target_lines = (
+            set(range(num_lines))
+            - set(detector_lines)
+            - set(source_lines)
+            - set(unused_lines)
+        )
+    if len(target_lines) == 0:
+        raise ValueError("No target lines available.")
 
     cmap = plt.colormaps.get_cmap("plasma")
 
