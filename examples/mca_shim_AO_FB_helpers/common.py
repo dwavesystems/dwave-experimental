@@ -1,0 +1,1187 @@
+# Copyright 2025 D-Wave
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""
+An example to show coarse-grained calibration refinement for multi-color annealing.
+
+Calibration can be refined relative to the baseline since certain static or low
+frequency control errors are a function of the specific waveforms and programmed
+Hamiltonian.
+flux_biases, x_schedule_delays and anneal_offsets are refined sequentially by simple iterative methods
+that typically succeed to improve calibration on a plurality of qubits.
+
+This example builds many parallel target-detector-source (T-D-S) embeddings that
+are refined in parallel.
+Optionally, the embeddings can be made consistent with embedding of a loop,
+in which case the final plot demonstrates an interference pattern arising from
+pi/2-pulse initialization (up to limitations of decoherence and control error).
+"""
+
+import argparse
+from collections import defaultdict
+import hashlib
+import json
+import os
+import re
+from typing import Collection, Iterable, Literal, Sequence
+
+import pickle
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.colors import SymLogNorm
+import networkx as nx
+import numpy as np
+from tqdm import tqdm
+
+import dimod
+from dimod.typing import Variable
+from dwave.system import DWaveSampler
+from dwave.system.testing import MockDWaveSampler
+from dwave.system.composites import ParallelEmbeddingComposite
+from minorminer.utils.parallel_embeddings import find_multiple_embeddings
+from dwave.experimental.multicolor_anneal import (
+    get_properties,
+    make_tds_graph,
+    make_tds_x_schedules,
+    SOLVER_FILTER,
+)
+from dwave.experimental.shimming import shim_tds_flux_biases
+
+# Re-exported so ``from mca_shim.common import *`` makes every name used by the
+# verbatim stage bodies available (including the underscore-prefixed helpers and
+# the third-party modules/functions those bodies reference).
+__all__ = [
+    # third-party modules and helpers used by stage bodies
+    "defaultdict", "hashlib", "json", "os", "re", "pickle", "pd", "plt",
+    "SymLogNorm", "nx", "np", "tqdm", "dimod", "Variable", "DWaveSampler",
+    "MockDWaveSampler", "ParallelEmbeddingComposite", "find_multiple_embeddings",
+    "get_properties", "make_tds_graph", "make_tds_x_schedules", "SOLVER_FILTER",
+    "shim_tds_flux_biases",
+    # module helpers
+    "_figure_path", "_apply_tight_layout", "_save_open_figures",
+    "_calc_anneal_offsets", "make_yC", "make_yE", "make_y", "dyC_dt0", "dyC_dA",
+    "artificial_data", "run_parallel_experiment", "plot_shim",
+    "_plot_tds_schedules", "imshow_data", "_get_experiment_id",
+    "_plot_time_series", "estimate_decoupling_timescale", "_to_independent_tds",
+    "compute_delay_grid", "MCAContext",
+]
+
+
+def _figure_path(
+    figures_dir: str, figure_label: str, cache_str: str | None = None
+) -> str:
+    """Create a stable file path for a matplotlib figure label."""
+    safe_label = re.sub(r"[^0-9A-Za-z._-]+", "_", figure_label).strip("_")
+    suffix = f"_{cache_str}" if cache_str else ""
+    return os.path.join(figures_dir, f"{safe_label}{suffix}.png")
+
+
+def _apply_tight_layout() -> None:
+    """Apply tight_layout to all open figures so axis labels are not truncated."""
+    for fig_num in plt.get_fignums():
+        plt.figure(fig_num).tight_layout()
+
+
+def _save_open_figures(figures_dir: str, cache_str: str | None = None) -> None:
+    """Save currently open matplotlib figures to disk."""
+    os.makedirs(figures_dir, exist_ok=True)
+    _apply_tight_layout()
+    for fig_num in plt.get_fignums():
+        fig = plt.figure(fig_num)
+        figure_label = fig.get_label() or f"Figure_{fig_num}"
+        fig.savefig(_figure_path(figures_dir, figure_label, cache_str))
+
+
+def _calc_anneal_offsets(
+    frequencies: np.ndarray,
+    psd: np.ndarray,
+    target_A: float,
+    dAdc: float,
+    dAfit: float = 0.5,
+    fit_to_target_A: bool = True,
+) -> np.ndarray:
+    """Determine the anneal_offset necessary to synchronize frequency.
+
+    After fully decoupling from the source, the signal is expected to be
+    well described by a cosine subject to an exponentially decaying envelope,
+    controlled by the T2 coherence time.
+    The power spectral density is therefore a Lorentzian peaked at the
+    oscillating frequency. The peak can be efficiently estimated with small
+    bias as the expectation on a symmetric interval about the anticipated
+    frequency. This is a simple heuristic estimator, reasonably robust to
+    experimental non-idealities.
+
+    root(A(c)^2 + [B(c) delta h]^2) is expected to describe the frequency,
+    where delta h is non-zero owing to flux_biases. If flux biases are small
+    we can correct the frequency accounting for a only using
+    delta c = (A(c) - <A(c)>)/ [dA/dc], where dA/dc is known approximately
+    from the schedule.
+
+    Args:
+        frequencies: Frequencies at which power is provided (GHz).
+        psd: Power spectral density, the absolute discrete fourier transform
+            value squared at each frequency.
+        target_A: Expected/desired peak position (GHz).
+        dAdc: Approximate rate of change of A with c (anneal offset).
+        dAfit: Fractional range around target_A to use for estimation.
+        fit_to_target_A: If True, use target_A as the reference; if False, use the mean.
+
+    Returns:
+        Estimated anneal offsets per qubit/embedding in units of normalized c.
+    """
+
+    # NB a symmetric window only works for frequencies in the range,
+    # and some bias is introduced as a function of the window.
+    Amin = target_A * dAfit
+    Amax = target_A * (1 + dAfit)
+
+    Afilter = np.logical_and(frequencies < Amax, frequencies > Amin)
+    mean_A_est = np.sum(
+        psd[:, Afilter] * frequencies[Afilter][np.newaxis, :], axis=1
+    ) / np.sum(psd[:, Afilter], axis=1)
+    mu = np.mean(mean_A_est)
+    print(
+        f"A: target={target_A:.3g}, estimated_mean={np.mean(mean_A_est):.3g}, and standard deviation={np.std(mean_A_est):.3g}",
+    )
+    if fit_to_target_A:
+        mu = target_A
+    dcs = (mean_A_est - mu) / dAdc
+    return dcs
+
+
+def make_yC(
+    delays: np.ndarray,
+    A: float,
+    *,
+    T2: float = 0.0101,
+    phi_s: float = 0.0,
+    phi_d: float = 0.0,
+) -> np.ndarray:
+    """Make a noise-free model signal for computational basis preparation and detection.
+
+    Eq 6. from arXiv 2603.15534 at theta_d = theta_s = pi/2
+    Note that this model assumes decoupling from the source, and ideally
+    controlled flux biases (in particular note phi_q=0 on the target).
+    The source polarization is assumed to be instantaneously removed at delay t=0,
+    with measurement performed at delay t.
+
+    y(t) = cos(2* pi * A * t + phi_s - phi_d) exp(-t/T2)
+
+    Args:
+        delays: Measurement times (microseconds)
+        A: frequency
+        T2: exponential envelope time scale. Defaulted as
+            from T_phi = 12ns and T1 = 32ns, typical of Advantage2 research.
+        phi_s: Bloch sphere rotation (azimuthal angle) for the source.
+        phi_d: Bloch sphere rotation (azimuthal angle) for the detector.
+    Returns:
+        A model signal
+    """
+    return np.exp(-delays / T2) * np.cos(2 * np.pi * A * delays + phi_s - phi_d)
+
+
+def make_yE(
+    delays: np.ndarray, *, T1: float = 0.032, theta_s: float = np.pi / 2
+) -> np.ndarray:
+    """Make a noise-free model signal for energy basis preparation and detection.
+
+    Eq 6. from arXiv 2603.15534 at theta_d = 0, with theta_s = pi/2 by default.
+    Note that this model assumes decoupling from the source, and ideally
+    controlled flux biases (in particular note phi_q=0 on the target, and the
+    flux bias on the detector must be small compared to the polarizing signal).
+    The source polarization is assumed to be instantaneously removed.
+
+    y(t) = 1 - exp(-t / T1) * (1 - cos(theta_s))
+
+    Args:
+        delays: Measurement times (microseconds)
+        T1: Exponential envelope time scale (microseconds). Defaulted to a value
+            typical of Advantage2 research systems.
+        theta_s: Bloch sphere rotation (polar angle) for the source (default: pi/2).
+    Returns:
+        A model signal
+    """
+    return 1 - np.exp(-delays / T1) * (1 - np.cos(theta_s))
+
+
+def make_y(
+    delays: np.ndarray,
+    A: float,
+    *,
+    T1: float = 0.032,
+    T2: float = 0.0101,
+    theta_d: float = np.pi / 2,
+    theta_s: float = np.pi / 2,
+    phi_d: float = 0.0,
+    phi_s: float = 0.0,
+    t0: float = 0.0,
+) -> np.ndarray:
+    """Make a noise-free model signal for arbitrary basis preparation and detection.
+
+    The source polarization holds the detector state until decoupling at t0:
+    y(t) = sign(sin(theta_s)) for t <= t0 (held by the source polarization), and
+    y(t) = cos(theta_d) yE(t) + sin(theta_d) sin(theta_s) yC(t) for t > t0,
+
+    where yE and yC are the energy- and computational-basis terms of Eq. 6 of
+    arXiv:2603.15534 (see make_yE and make_yC).
+
+    Assume that the pinning magnetic field from the target ~|Ip(s_tar) Jtd| is large
+    compared to the fb_d whilst the source is coupled (the target is pinned), so that
+    the detector energetically prefers a state aligned with the target (thence the source)
+    during the coupled phase. The source decoupling is approximated as instantaneous.
+
+    Args:
+        delays: Measurement times (microseconds)
+        A: frequency
+        T1: assumed coherence time (microseconds)
+        T2: assumed coherence time (microseconds)
+        theta_d: detection basis angle
+        theta_s: source basis angle
+        phi_d: detection phase
+        phi_s: source phase
+        t0: Source decoupling time (default: 0.0)
+    Returns:
+        A model signal assuming ideal detection and instantaneous source decoupling.
+
+    """
+    preparation_orientation = np.sign(np.sin(theta_s))
+    rd = delays - t0
+    return preparation_orientation * (rd <= 0) + (rd > 0) * (
+        np.cos(theta_d) * make_yE(rd, T1=T1, theta_s=theta_s)
+        + np.sin(theta_d)
+        * np.sin(theta_s)
+        * make_yC(rd, A=A, T2=T2, phi_d=phi_d, phi_s=phi_s)
+    )
+
+
+def dyC_dt0(
+    delays: np.ndarray, A: float, T2: float = 0.0101, sign_Jts_fbs: int = 1
+) -> np.ndarray:
+    """Calculate derivative of signal model with respect to time delay.
+
+    Computes the derivative of the model signal produced by ``make_y`` with
+    respect to the time delay. For ``t > 0`` the underlying signal is
+    ``sign_Jts_fbs * exp(-t/T2) * cos(2*pi*A*t)``; for ``t < 0`` it is
+    constant so the derivative is zero.
+
+    Args:
+        delays: Time delays at which to evaluate the derivative (microseconds).
+        A: Frequency (GHz).
+        T2: Exponential envelope time scale (microseconds).
+        sign_Jts_fbs: Sign convention for the Josephson coupling term (default: 1).
+
+    Returns:
+        Array of derivatives evaluated at each delay.
+    """
+    y0 = np.clip(np.exp(-delays / T2), a_min=0, a_max=1)
+    dy0_dt0 = -y0 / T2 * (delays > 0)  # Only contributes when not clipped
+    y1 = np.cos(2 * np.pi * A * delays)
+    dy1_dt0 = -2 * np.pi * A * np.sin(2 * np.pi * A * delays)
+
+    return sign_Jts_fbs * (dy0_dt0 * y1 + y0 * dy1_dt0)
+
+
+def dyC_dA(
+    delays: np.ndarray, A: float, T2: float = 0.0101, sign_Jts_fbs: int = 1
+) -> np.ndarray:
+    """Calculate derivative of signal model with respect to frequency.
+
+    EFFECTIVELY OBSOLETE FUNCTION
+
+    Computes the derivative of the ``make_y`` signal
+    ``sign_Jts_fbs * exp(-t/T2) * cos(2*pi*A*t)`` (for ``t > 0``) with respect
+    to the frequency parameter ``A``.
+
+    Args:
+        delays: Time delays at which to evaluate the derivative (microseconds).
+        A: Frequency (GHz).
+        T2: Exponential envelope time scale (microseconds).
+        sign_Jts_fbs: Sign convention for the Josephson coupling term (default: 1).
+
+    Returns:
+        Array of frequency derivatives evaluated at each delay.
+    """
+    y0 = np.clip(np.exp(-delays / T2), a_min=0, a_max=1)
+    dy1_dA = -2 * np.pi * delays * np.sin(2 * np.pi * A * delays)
+
+    return sign_Jts_fbs * (y0 * dy1_dA)
+
+
+def artificial_data(
+    delays: np.ndarray,
+    A: float,
+    *,
+    T1: float = 0.032,
+    T2: float = 0.0101,
+    theta_d: float = np.pi / 2,
+    theta_s: float = np.pi / 2,
+    phi_d: float = 0.0,
+    phi_s: float = 0.0,
+    t0: float = 0.0,
+    num_independent_samples: float = float("Inf"),
+    prng: np.random.Generator | int | None = None,
+) -> np.ndarray:
+    """Create an artificial data set
+
+    y(t) = ideal signal produced by ``make_y``
+    with variance of (1 - y(t)^2) in the measured state. Given independent
+    and identically distributed samples we can model noise as normally
+    distributed. The signal is clipped so that the value is always physical
+    within the range [-1, 1] (only impacts small num_independent_samples).
+
+    Args:
+        delays: Time of measurement (microseconds).
+        A: Frequency (GHz).
+        T1: Assumed coherence time (microseconds).
+        T2: Exponential envelope time scale (microseconds).
+        theta_d: Detection basis angle (default: pi/2).
+        theta_s: Source basis angle (default: pi/2).
+        phi_d: Detection phase (default: 0.0).
+        phi_s: Source phase (default: 0.0).
+        t0: Reference time for the start of the measurement (default: 0.0).
+        num_independent_samples: Number of samples to model.
+        prng: Pseudo random number generator or seed.
+
+    Returns:
+        A model signal with sampling noise.
+    """
+
+    y = make_y(
+        delays,
+        A,
+        T1=T1,
+        T2=T2,
+        theta_d=theta_d,
+        theta_s=theta_s,
+        phi_d=phi_d,
+        phi_s=phi_s,
+        t0=t0,
+    )
+
+    if num_independent_samples != float("Inf"):
+        prng = np.random.default_rng(prng)
+        return np.clip(
+            y
+            + np.sqrt((1 - y**2) / num_independent_samples) * prng.normal(size=len(y)),
+            a_min=-1,
+            a_max=1,
+        )
+    else:
+        return y
+
+
+def run_parallel_experiment(
+    sampler: ParallelEmbeddingComposite,
+    bqm: dimod.BinaryQuadraticModel,
+    sampling_params: dict,
+    detector_lines: Iterable[int],
+    *,
+    delays: np.ndarray | list = (0.0,),
+    detected_vars: None | Sequence[Variable] = None,
+) -> np.ndarray:
+    """Collect detector magnetization for a set of independent embeddings
+
+    Runs a Target-Detector-Source quench experiment on many parallel
+    embeddings with the specified delays applied to detector lines.
+    Sample averaged magnetization are calculated on detected qubits in
+    each embedding and returned as a numpy array.
+
+    Args:
+        sampler: Parallel embedding composite sampler wrapping the QPU sampler.
+        bqm: Binary Quadratic Model.
+        sampling_params: Parameters passed to the QPU sampler.
+        delays: Detector x_schedule_delays (microseconds).
+        detector_lines: Iterable of detector line indices.
+        detected_vars: Iterable of bqm variables to keep for
+           detector magnetization calculation.
+
+    Raises:
+        ValueError if 'x_anneal_schedules' is not a key of
+        `sampling_params`
+
+    Returns:
+        Numpy array of detector magnetizations (delays x embeddings).
+    """
+    if "x_anneal_schedules" not in sampling_params:
+        raise ValueError("No multi-color anneal specified")
+
+    if detected_vars is None:
+        # Could check line assignment of qubits (should be consistent between
+        # embeddings)
+        detected_vars = [
+            v for v in bqm.variables if type(v) == tuple and v[0] == "detector"
+        ]
+
+    reset_delay = "x_schedule_delays" in sampling_params
+    x_schedule_delays = sampling_params.pop(
+        "x_schedule_delays", [0.0] * len(sampling_params["x_anneal_schedules"])
+    )
+    baseline_delays = x_schedule_delays.copy()
+    mean_Z_detector = []
+    for delay in tqdm(delays, disable=len(delays) == 1):
+        for line in detector_lines:
+            x_schedule_delays[line] = baseline_delays[line] + delay
+        # Return as a list of samplesets, instead of aggregated:
+        samplesets, _ = sampler.sample_multiple(
+            [bqm] * len(sampler.embeddings),
+            x_schedule_delays=x_schedule_delays,
+            **sampling_params,
+        )
+        # Extract detector magnetization from each sampleset
+        detector_samples = [
+            dimod.keep_variables(sampleset, detected_vars).record.sample
+            for sampleset in samplesets
+        ]
+        if len(detected_vars) == 1:
+            mean_Z_detector.append([np.mean(sample) for sample in detector_samples])
+        else:
+            mean_Z_detector.append(
+                [np.mean(sample, axis=0) for sample in detector_samples]
+            )
+    if reset_delay:
+        sampling_params["x_schedule_delays"] = baseline_delays
+    return np.array(mean_Z_detector)
+
+
+def plot_shim(
+    mag_history: dict,
+    flux_history: dict,
+    num_experiments: int = 1,
+    label: str = "",
+    max_qubit_labels: int = 10,
+    plt_show_block: None | bool = None,
+    line_assignments: dict[int, int] | None = None,
+) -> None:
+    """Plot the iterative flux-bias calibration refinement process.
+
+    Args:
+        mag_history: the magnetizations estimated throughout the iterative
+            process for every embedding. One per programming.
+        flux_history: the flux_biases assignments throughout the iterative
+            process for every embedding. One per flux iteration.
+        num_experiments: Number of programmings per flux iteration. Using 1
+            by default it should be noted that 2 magnetizations may be
+            measured per step in flux_biases.
+        label: a label for the plots, used in legends.
+        max_qubit_labels: maximum number of qubit labels to include in legend,
+            if larger, defaults to no labels. Ignored when ``line_assignments``
+            is provided.
+        plt_show_block: If not None (default), then execute
+            :code:`plt.show(block=plt_show_block)` to display the figure.
+        line_assignments: Optional mapping from qubit to annealing line index.
+            When provided, qubit traces are drawn one line at a time, each line
+            with a distinct color and a single legend entry. When None, every
+            qubit is drawn with the default color cycle (current behavior).
+    """
+    line_to_color: dict = {}
+    if line_assignments is None:
+        # All values share a length, so a single cast is safe.
+        line_to_color = {None: None}
+        line_groups = [(None, list(mag_history.keys()), list(flux_history.keys()))]
+    else:
+        lines_sorted = sorted(
+            {line_assignments[q] for q in set(mag_history) | set(flux_history)}
+        )
+        cmap = plt.colormaps.get_cmap("plasma")
+        denom = max(len(lines_sorted) - 1, 1)
+        line_to_color = {line: cmap(i / denom) for i, line in enumerate(lines_sorted)}
+        # Lengths can differ between lines (e.g. td_shim_type="sequential"), so
+        # each line is cast and reshaped independently.
+        line_groups = [
+            (
+                line,
+                [q for q in mag_history if line_assignments[q] == line],
+                [q for q in flux_history if line_assignments[q] == line],
+            )
+            for line in lines_sorted
+        ]
+
+    plt.figure("All_Qubit_Magnetization_by_calibration_refinement_iteration")
+    plt.title(r"Magnetization by iteration, $\langle Z\rangle_{detector}$")
+    bulk_data = []
+    for line, mag_keys, flux_keys in line_groups:
+        if not mag_keys:
+            continue
+        color = line_to_color[line]
+        mag_array = np.array([mag_history[q] for q in mag_keys])
+        mag_array = np.reshape(
+            mag_array,
+            (
+                mag_array.shape[0],
+                mag_array.shape[1] // num_experiments,
+                num_experiments,
+            ),
+        )
+        y0 = 0
+        for experiment_sign in range(num_experiments):
+            y = mag_array[:, :, experiment_sign].transpose()
+            if color is None:
+                if num_experiments > 1:
+                    plt.plot(y, label=f"Initial state all {-1 + 2*experiment_sign}")
+                else:
+                    plt.plot(y)
+            else:
+                traces = plt.plot(y, color=color)
+                if experiment_sign == 0 and traces:
+                    traces[0].set_label(f"{label} line {line}".strip())
+            y0 = y0 + y / num_experiments
+        if color is None and num_experiments > 1:
+            plt.plot(
+                np.mean(mag_array, axis=2).transpose(),
+                color="black",
+                label="Experiment average",
+            )
+        bulk_data.append((line, color, y0))
+
+    if line_assignments is None:
+        if num_experiments > 1:
+            plt.legend()
+            plt.xlabel("Calibration refinement iteration")
+        else:
+            plt.xlabel("Programming")
+            if len(mag_history) <= max_qubit_labels:
+                plt.legend(flux_history.keys(), title=f"{label} Qubit index")
+    else:
+        plt.xlabel("Calibration refinement iteration")
+        plt.legend(title=f"{label} Line".strip())
+    plt.ylabel("Magnetization")
+
+    plt.figure("Bulk_Magnetization_by_calibration_refinement_iteration")
+    for line, color, y0 in bulk_data:
+        n_qubits = y0.shape[1]
+        rms = np.sqrt(np.mean(y0**2, axis=1))
+        if n_qubits > 1:
+            # Jackknife standard error: recompute RMS leaving out one qubit at a time.
+            loo_ss = np.sum(y0**2, axis=1, keepdims=True) - y0**2
+            rms_loo = np.sqrt(loo_ss / (n_qubits - 1))
+            rms_se = np.sqrt(
+                (n_qubits - 1)
+                / n_qubits
+                * np.sum((rms_loo - rms_loo.mean(axis=1, keepdims=True)) ** 2, axis=1)
+            )
+        else:
+            rms_se = np.zeros_like(rms)
+        if color is None:
+            plt.errorbar(np.arange(len(rms)), rms, yerr=rms_se, capsize=3)
+        else:
+            plt.errorbar(
+                np.arange(len(rms)),
+                rms,
+                yerr=rms_se,
+                capsize=3,
+                color=color,
+                label=f"{label} line {line}".strip(),
+            )
+    if line_assignments is not None:
+        plt.legend(title=f"{label} Line".strip())
+    plt.xlabel("Calibration refinement iteration")
+    plt.ylabel("Root Mean Square Magnetization")
+
+    plt.figure("Flux_bias_by_calibration_refinement_iteration")
+    plt.title("All refined flux_biases")
+    for line, mag_keys, flux_keys in line_groups:
+        if not flux_keys:
+            continue
+        color = line_to_color[line]
+        flux_array = np.array([flux_history[q] for q in flux_keys])
+        if color is None:
+            plt.plot(flux_array.transpose())
+        else:
+            traces = plt.plot(flux_array.transpose(), color=color)
+            if traces:
+                traces[0].set_label(f"{label} line {line}".strip())
+    plt.xlabel("Calibration refinement iteration")
+    plt.ylabel("Flux bias ($\\Phi_0$)")
+    if line_assignments is not None:
+        plt.legend(title=f"{label} Line".strip())
+    elif len(mag_history) <= max_qubit_labels:
+        plt.legend(flux_history.keys(), title=f"{label} Qubit index")
+    _apply_tight_layout()
+    if plt_show_block is not None:
+        plt.show(block=plt_show_block)
+
+
+def _plot_tds_schedules(
+    x_polarizing_schedule: list[list[float]],
+    x_anneal_schedules: list[list[list[float]]],
+    plt_show_block: None | bool = None,
+) -> None:
+    """Plots the piecewise linear schedules used
+
+    Args:
+        x_polarizing_schedule: The polarization signal.
+        x_anneal_schedules: The list of anneal schedules, one per line.
+        plt_show_block: If not None (default), then execute
+            :code:`plt.show(block=plt_show_block)` to display the figure.
+    """
+    plt.figure("PWL multi-color annealing schedules")
+    plt.title("PWL schedules")
+    for line, schedule in enumerate(x_anneal_schedules):
+        plt.plot(
+            [x for x, _ in schedule], [y for _, y in schedule], label=f"Line {line}"
+        )
+    plt.plot(
+        [x for x, _ in x_polarizing_schedule],
+        [y for _, y in x_polarizing_schedule],
+        label="Polarizing schedule",
+        linestyle="dashed",
+        color="black",
+    )
+    plt.xlabel("Time (microseconds)")
+    plt.ylabel("Schedule value")
+    plt.legend()
+    _apply_tight_layout()
+    if plt_show_block is not None:
+        plt.show(block=plt_show_block)
+
+
+def imshow_data(
+    mean_Z_detector: np.ndarray,
+    delays: np.ndarray,
+    colormap_type: Literal["default", "divergent"] = "divergent",
+    linthresh: float = 1.0,
+    first: int = 0,
+    last: int | None = None,
+    context_str: str = "",
+    plt_show_block: None | bool = None,
+    ax=None,
+    vertical_lines: list[float] | None = None,
+) -> None:
+    """Display detector magnetization data as a heatmap.
+
+    Creates an image plot of detector magnetization values organized by delay times,
+    with optional divergent or default colormaps.
+
+    Args:
+        mean_Z_detector: 2D array of detector magnetizations (delays x embeddings).
+        delays: Array of time delay values (microseconds); ytick labels are
+            rendered in nanoseconds (values are multiplied by 1000).
+        colormap_type: Type of colormap to use ("default" or "divergent").
+        linthresh: Threshold for the symmetric logarithmic colormap
+            (only relevant if colormap_type is "divergent").
+        first: Index whose delay value is highlighted as an additional ytick
+            label. Does not restrict the plotted range.
+        last: Index one past the last delay value highlighted as an additional
+            ytick label. If None, uses ``mean_Z_detector.shape[0]``. Does not
+            restrict the plotted range.
+        context_str: Optional context string to append to figure title.
+        plt_show_block: If not None (default), then execute
+            :code:`plt.show(block=plt_show_block)` to display the figure.
+        ax: Optional matplotlib axes instance for plotting into an existing figure.
+        vertical_lines: lines at which to draw vertical lines
+    """
+    if colormap_type == "divergent":
+        fig_title = f"det_{context_str}"
+        norm, cmap = SymLogNorm(linthresh=linthresh, vmin=-1, vmax=1), "RdBu"
+    else:
+        fig_title = f"det_spacetime_{colormap_type}_{context_str}"
+        norm, cmap = None, None
+    if ax is None:
+        ax = plt.figure(fig_title).gca()
+        ax.set_title(f"Real-space magnetization {context_str}".strip())
+    # aspect="auto" lets axes fill their allotted cell so inter-subplot spacing survives resizing.
+    ax.imshow(mean_Z_detector, norm=norm, cmap=cmap, aspect="auto")
+    if last is None:
+        last = mean_Z_detector.shape[0]
+    yticks_dict = {
+        first: f"{1000 * delays[first]:.3g}",
+        last - 1: f"{1000 * delays[last-1]:.3g}",
+    }
+    yticks_dict.update(
+        {
+            0: f"{1000 * delays[0]:.3g}",
+            mean_Z_detector.shape[0] - 1: f"{1000 * delays[-1]:.3g}",
+        }
+    )
+    ax.set_yticks(
+        list(yticks_dict.keys()),
+        list(yticks_dict.values()),
+    )
+    ax.set_xlabel("Target-Detector-Source embedding")
+    ax.set_ylabel("Delay, nanoseconds")
+    if vertical_lines is not None:
+        # plt.vlines(x=line_x, ymin=-0.5, ymax=rows - 0.5, colors="black", linewidth=1.5)
+        for x in vertical_lines:
+            ax.axvline(x=x, color="black", linewidth=1.5)
+    _apply_tight_layout()
+    if plt_show_block is not None:
+        plt.show(block=plt_show_block)
+
+
+def _get_experiment_id(
+    args: argparse.Namespace, num_char: int = 8, verbose: bool = True
+) -> str:
+    """Generate a unique hash identifier for the current experiment parameters.
+
+    Creates a reproducible hash of the experiment arguments (excluding save_figures)
+    to enable consistent caching and figure naming.
+
+    Args:
+        args: Argument namespace containing experiment parameters.
+        num_char: Number of characters to use from the hash (default: 8).
+        verbose: If True, print experiment parameters and identifier.
+
+    Returns:
+        Hash string identifier for the experiment.
+    """
+    vars_args = vars(args).copy()
+    vars_args.pop(
+        "save_figures", None
+    )  # save_figures is not relevant to the experiment data, so we exclude it from the hash
+    if vars_args.get("solver_name", None) == SOLVER_FILTER:
+        vars_args["solver_name"] = "DefaultSolver"
+        print(
+            "NB: The default solver is used; the experiment identifier is computed "
+            "as if solver_name='DefaultSolver', so it does not distinguish between "
+            "different physical solvers resolved at runtime."
+        )
+    args_string = json.dumps(vars_args, sort_keys=True)
+    identifier = hashlib.sha256(args_string.encode("utf-8")).hexdigest()[:num_char]
+    if verbose:
+        print("Demo parameters:")
+        print(vars(args))
+        print(
+            "Demo identifier (labels cached data and saved figures, employ --use-cache for data reuse):",
+            identifier,
+        )
+    return identifier
+
+
+def _plot_time_series(
+    embs: list,
+    line_assignments: dict[int, int],
+    mean_Z_detector: np.ndarray,
+    delays: np.ndarray,
+    line_color: list | None = None,
+    plotted_emb_idxs: Collection[int] | None = None,
+    label_emb_idxs: Collection[int] | None = None,
+    xlabel: str = "Delay, nanoseconds",
+    ylabel: str = "Detector magnetizations",
+    plt_show_block: None | bool = None,
+    ax=None,
+) -> None:
+    """Plot time series data for selected embeddings with line-based coloring.
+
+    Creates a line plot of detector magnetization or other signals across delay times,
+    with each embedding colored by its assigned annealing line.
+
+    Args:
+        embs: List of embeddings, each containing qubit assignments.
+        line_assignments: Dict mapping qubits to annealing line indices.
+        mean_Z_detector: 2D array of data (delays x embeddings).
+        delays: Array of delay time values.
+        line_color: List of colors indexed by annealing line.
+        plotted_emb_idxs: Set of embedding indices to plot. If None, plots all.
+        label_emb_idxs: Set of embedding indices to label in legend. If None, uses plotted_emb_idxs.
+        xlabel: Label for the x-axis.
+        ylabel: Label for the y-axis.
+        plt_show_block: If not None (default), then execute
+            :code:`plt.show(block=plt_show_block)` to display the figure.
+        ax: Optional matplotlib axes instance for plotting into an existing figure.
+    """
+
+    if ax is None:
+        ax = plt.gca()
+
+    if plotted_emb_idxs is None:
+        plotted_emb_idxs = set(range(len(embs)))
+    if label_emb_idxs is None:
+        label_emb_idxs = plotted_emb_idxs
+
+    for emb_idx in plotted_emb_idxs:
+        q = embs[emb_idx][0][0]
+        line_idx = line_assignments[q]
+        if emb_idx in label_emb_idxs:
+            if len(label_emb_idxs) == len(plotted_emb_idxs):
+                label = f"tar-line {line_idx}(qubit {q})"
+            else:
+                label = f"tar-line {line_idx}"
+        else:
+            label = None
+        if line_color is not None:
+            color = line_color[line_idx]
+        else:
+            color = None
+        ax.plot(delays, mean_Z_detector[:, emb_idx], color=color, label=label)
+    ax.set_ylabel(ylabel)
+    ax.set_xlabel(xlabel)
+    ax.legend()
+    ax.grid()
+    if plt_show_block is not None:
+        plt.show(block=plt_show_block)
+
+
+def estimate_decoupling_timescale(
+    sampler: ParallelEmbeddingComposite,
+    bqm: dimod.BinaryQuadraticModel,
+    sampling_params: dict,
+    detector_lines: Iterable[int],
+    detected_vars: Sequence[Variable] = None,
+    preparation_orientation: float = 1.0,
+    t_guess: float = 0.0,
+    t_min: float | None = None,
+    t_max: float | None = None,
+    target_A: float = 2000,
+    T2: float = 0.0101,
+    threshold_cycle_av: float = 0.9,
+    phase_accuracy: float = 1.0,
+    verbose: bool = False,
+    by_det_src_pair: bool = True,
+    line_assignments: dict[int, int] | None = None,
+    source_lines: Iterable[int] | None = None,
+    interpolate_final_interval: bool = False,
+) -> tuple[dict[int, float], list, dict[int, float]]:
+    """Estimate bulk decoupling timescales
+
+    Source and detector waveforms typically overlap, in order that the detection
+    is not of a source-coupled system a delay is required.
+    When the source is coupled the magnetization plateaus, after decoupling the
+    magnetization follows a damped oscillation given pi/2-pulse initialization.
+    Departure from the plateau to zero is rapid and persistent in a proxy signal
+    with significantly reduced oscillation amplitude (provided target_A is not
+    too inaccurate) y_proxy(t) = y(t) + y(t + 1/(2*target_A)).
+
+    A bound on the decoupling timescale is first established to O(T2).
+    The interval is then searched by bisection to obtain a value that characterizes
+    decoupling in the bulk (mean) to accuracy O(1/target_A), variation between lines
+    and qubits on a given line can be of a comparable scale. Series for separated
+    lines or qubits can be evaluated by similar principles, and deviations reduced
+    by application of anneal offsets on detectors and sources.
+
+    Source-detectors are tightly synchronized by line in this demo as an initial stage.
+    It would be more natural to coarsely synchronize, align target frequencies,
+    and then refine the line-wise synchronization and finally use per-qubit
+    anneal_offsets approximating some c(t) on source and detectors. A linear
+    approximation assuming a common dc/dt and per-qubit-delays may be sufficient.
+
+    Args:
+        sampler: Parallel embedding composite sampler wrapping the QPU sampler.
+        bqm: Binary Quadratic Model defining the target-detector-source system.
+        sampling_params: Parameters passed to the QPU sampler.
+        detector_lines: Iterable of detector line indices.
+        detected_vars: Iterable of bqm variables to keep for detector
+            magnetization calculation (default: (("detector", 0),)).
+        preparation_orientation: Orientation of the preparation pulse (default: 1).
+        t_guess: Initial delay guess used to seed the search (microseconds, default: 0.0).
+        t_min: Known lower bound on the decoupling delay. If None, it is estimated.
+        t_max: Known upper bound on the decoupling delay. If None, it is estimated.
+        target_A: Target frequency for the decoupling sequence (MHz)
+        T2: Decoherence time (microseconds)
+        threshold_cycle_av: Threshold characterizing the decoupled regime (default: 0.9).
+            The half-cycle average (t and t+1/(2*target_A)) magnetization is only larger than
+            the threshold, in absolute value, in the source-coupled regime.
+        verbose: Whether to print progress information (default: True).
+        by_det_src_pair: When True (default), resolve a decoupling delay for each
+            detector line independently, reusing sampled data across lines to
+            the extent possible. When False, a single bulk delay is estimated
+            from the median over all detector lines and shared across them.
+        line_assignments: Mapping from qubit to line index. Required when
+            by_det_src_pair is True to group embeddings by their detector line.
+        source_lines: Iterable of source line indices, ordered so the first is
+            the reference source line. When more than one source line is present
+            (and by_det_src_pair is True), detector delays are resolved using only the
+            reference-source embeddings, and each additional source line returns a
+            decoupling delay relative to the reference source line.
+        phase_accuracy: The desired accuracy for the decoupling timescale estimate. If
+            only one source and detector line are present, an accuracy 1. is defaulted.
+            With multiple source or detector lines, a high accuracy is appropriate
+            to account for line-wise desynchronizations.
+
+    Returns:
+        A tuple containing:
+        - A dict of line index -> delay. Detector lines map to absolute decoupling
+          delays (resolved against the reference source line when several source
+          lines are present). With more than one source line, each source line also
+          maps to a delay relative to the reference source line (reference -> 0.0).
+          With by_det_src_pair=False a single bulk estimate is repeated for each detector line.
+          Each delay is refined past the bisection bracket by linearly interpolating
+          the half-cycle-averaged proxy to its threshold crossing.
+        - A list of (delay, mag) pairs representing the decoupling timescale search data.
+        - A dict of detected (detector) qubit -> decoupling time, estimated
+          per qubit by linearly interpolating the two sampled points (one either side)
+          nearest the half-cycle-averaged proxy threshold. Qubits without sampled points
+          bracketing the threshold are omitted.
+    """
+    detector_lines = list(detector_lines)
+    half_cycle = 1 / target_A / 2.0
+    data = []
+    cache = {}
+
+    def _measure(delay):
+        """Sample per-embedding detector magnetization, reusing cached delays."""
+        if delay not in cache:
+            mag = run_parallel_experiment(
+                sampler=sampler,
+                bqm=bqm,
+                sampling_params=sampling_params,
+                detector_lines=detector_lines,
+                delays=[delay],
+                detected_vars=detected_vars,
+            )
+            cache[delay] = mag[0, :]
+            data.append((delay, cache[delay]))
+        return cache[delay]
+
+    def _search(vec, t_guess, t_min, t_max):
+        """Bracket, then bisect, the decoupling delay for a magnetization selector."""
+        if verbose and (t_min is None or t_max is None):
+            print("Estimate bounds O(T1) on decoupling time scale (two programmings)")
+        while t_min is None or t_max is None:
+            v = vec(t_guess)
+            if np.median(v) * preparation_orientation < threshold_cycle_av:
+                t_max = t_guess
+                if interpolate_final_interval:
+                    # Cache the half-cycle companion so this delay can pair and
+                    # seed the per-line/per-qubit interpolating estimators.
+                    vec(t_guess - half_cycle)
+                t_guess -= T2
+            else:
+                v_half = vec(t_guess - half_cycle)
+                if (
+                    preparation_orientation / 2 * np.median(v + v_half)
+                    < threshold_cycle_av
+                ):
+                    t_max = t_guess - half_cycle
+                    t_guess -= T2
+                else:
+                    t_min = t_guess
+                    t_guess += T2
+        if verbose:
+            print(
+                f"Estimate decoupling timescale to accuracy better than {time_accuracy}/target_A, with ~log(T2*target_A) programmings"
+            )
+        while t_max - t_min > phase_accuracy / target_A:
+            t_guess = (t_min + t_max) / 2
+            v = vec(t_guess)
+            if np.median(v) * preparation_orientation < threshold_cycle_av:
+                t_max = t_guess
+                if interpolate_final_interval:
+                    # Cache the half-cycle companion so this delay can pair and
+                    # seed the per-line/per-qubit interpolating estimators.
+                    vec(t_guess - half_cycle)
+            else:
+                v_half = vec(t_guess - half_cycle)
+                if (
+                    preparation_orientation / 2 * np.median(v + v_half)
+                    < threshold_cycle_av
+                ):
+                    t_max = t_guess - half_cycle
+                else:
+                    t_min = t_guess
+
+        if interpolate_final_interval:
+            # Refine within the final bracket: linearly interpolate the smooth
+            # half-cycle-averaged proxy to the time where it crosses the threshold.
+
+            def _proxy(delay):
+                return (
+                    preparation_orientation
+                    / 2
+                    * np.median(vec(delay) + vec(delay - half_cycle))
+                )
+
+            s_min = _proxy(t_min)
+            s_max = _proxy(t_max)
+            if s_min == s_max:
+                return t_guess
+            frac = (s_min - threshold_cycle_av) / (s_min - s_max)
+            frac = min(max(frac, 0.0), 1.0)
+            return t_min + frac * (t_max - t_min)
+        else:
+            return t_guess
+
+    def _per_qubit_threshold_times():
+        """Per-qubit threshold crossing time from a linear fit of the two
+        sampled points (one either side) nearest the smooth half-cycle proxy
+        threshold. Keyed by each embedding's detected (detector) qubit."""
+        # Only delays with a half-cycle companion let the proxy be formed.
+        paired_delays = sorted(t for t in cache if (t - half_cycle) in cache)
+        threshold_times = {}
+        for i, emb in enumerate(sampler.embeddings):
+            qubit = emb[("detector", 0)][0]
+            points = [
+                (
+                    t,
+                    preparation_orientation
+                    / 2
+                    * (cache[t][i] + cache[t - half_cycle][i]),
+                )
+                for t in paired_delays
+            ]
+            above = [(t, p) for t, p in points if p >= threshold_cycle_av]
+            below = [(t, p) for t, p in points if p < threshold_cycle_av]
+            if not above or not below:
+                continue
+            # Nearest point to the threshold from each side brackets the crossing.
+            ta, pa = min(above, key=lambda tp: tp[1])
+            tb, pb = max(below, key=lambda tp: tp[1])
+            if pa == pb:
+                continue
+            threshold_times[qubit] = ta + (tb - ta) * (pa - threshold_cycle_av) / (
+                pa - pb
+            )
+        return threshold_times
+
+    if not by_det_src_pair:
+        # Non-default: a single bulk delay from the median over all detector lines.
+        t_bulk = _search(_measure, t_guess, t_min, t_max)
+        return (
+            {line: t_bulk for line in detector_lines},
+            data,
+            _per_qubit_threshold_times(),
+        )
+
+    if line_assignments is None:
+        raise ValueError("line_assignments is required when by_det_src_pair=True")
+    # Column i of each measurement corresponds to sampler.embeddings[i]; map
+    # each embedding to its detector and source line to resolve lines independently.
+    emb_detector_lines = np.array(
+        [line_assignments[emb[("detector", 0)][0]] for emb in sampler.embeddings]
+    )
+    emb_source_lines = np.array(
+        [line_assignments[emb[("source", 0)][0]] for emb in sampler.embeddings]
+    )
+    source_lines = None if source_lines is None else list(source_lines)
+    multi_source = source_lines is not None and len(source_lines) > 1
+    reference_source = source_lines[0] if source_lines else None
+    reference_detector = detector_lines[0]
+
+    def _resolve(mask, context):
+        if not mask.any():
+            raise ValueError(f"No embedding available for {context}")
+        if verbose:
+            print(f"Resolving decoupling delay for {context}")
+        return _search(lambda delay, m=mask: _measure(delay)[m], t_guess, t_min, t_max)
+
+    t_decoupled = {}
+    # Decoupling is relative to the source; resolve detector lines against the
+    # reference source line so returned detector delays share a source baseline.
+    for line in detector_lines:
+        mask = emb_detector_lines == line
+        if multi_source:
+            mask = mask & (emb_source_lines == reference_source)
+        t_decoupled[line] = _resolve(mask, f"detector line {line}")
+
+    if multi_source:
+        # Additional source lines return a delay relative to the reference source
+        # line, measured on the reference detector line.
+        t_reference = t_decoupled[reference_detector]
+        t_decoupled[reference_source] = 0.0
+        for source_line in source_lines[1:]:
+            mask = (emb_detector_lines == reference_detector) & (
+                emb_source_lines == source_line
+            )
+            t_decoupled[source_line] = t_reference - _resolve(
+                mask,
+                f"source line {source_line} on reference detector line {reference_detector}",
+            )
+
+    return t_decoupled, data, _per_qubit_threshold_times()
+
+
+def _to_independent_tds(embs):
+    """Convert embeddings to independent T-D-S systems. Assume the label scheme returned by :code:`tds_graph`"""
+    independent_tds = []
+    for emb in embs:
+        independent_tds += [
+            {
+                0: emb[i],
+                ("source", 0): emb[("source", i)],
+                ("detector", 0): emb[("detector", i)],
+            }
+            for i in range(len(emb) // 3)
+        ]
+    return independent_tds
+
+
+def compute_delay_grid(ctx, delay_range:float, rel_sampling_rate:float=2, rel_start:float=1.0):
+    """Build the regularly spaced delay grid used by the sampling stages.
+
+    Args:
+        ctx: Shared context providing ``target_A`` and ``dt_dc``.
+        delay_range: Width of the delay window past the decoupling time
+            (``fit_window`` for target-frequency fitting, ``loop_delay_range``
+            for the loop experiment).
+        rel_sampling_rate: Samples collected per Nyquist period (2 for the
+            target-frequency stage, 8 for the finer-grained loop stage).
+    """
+    target_A = ctx.target_A
+    dt_dc = ctx.dt_dc
+
+    # Nyquist frequency in MHz, resolving up to 2*target_A.
+    nyquist_frequency = target_A * 1000 * 2
+    delay_min_fit = delay_min = (
+        rel_start * dt_dc  # For reasonable confidence source is fully decoupled (c < 0).
+    )
+    delay_max_fit = delay_max = delay_min + delay_range
+    # Collecting regularly spaced data on [delay_min, delay_min + delay_range],
+    # post source decoupling, is not optimal for inference of calibration
+    # errors, but (IMO) allows intuitive estimators and data series.
+    delays = np.linspace(
+        delay_min,
+        delay_max,
+        round((delay_max - delay_min) * nyquist_frequency * rel_sampling_rate) + 1,
+    )
+
+    ctx.nyquist_frequency = nyquist_frequency
+    ctx.delay_min = delay_min
+    ctx.delay_max = delay_max
+    ctx.rel_start = rel_start
+    ctx.delay_min_fit = delay_min_fit
+    ctx.delay_max_fit = delay_max_fit
+    ctx.delays = delays
+    ctx.dt = delays[1] - delays[0]
+    return ctx
+
+
+class MCAContext:
+    """Mutable state shared between the calibration-refinement stages.
+
+    The stages (see the ``stage_*`` modules) read and write attributes on this
+    object, allowing the monolithic workflow to be split into small, individually
+    readable scripts while preserving the original sequential data flow.
+    """
+
+    #: Names of every attribute threaded between stages. Config values mirror the
+    #: parameters of :func:`mca_shim.runner.main`; the remainder are computed.
+    _FIELDS = (
+        # configuration (see runner.main for documentation)
+        "cache_str", "solver", "detector_lines", "source_lines", "target_lines",
+        "seed", "max_num_embeddings", "target_c", "target_A", "target_B", "dAdc",
+        "td_shim_type", "t_decoupled", "by_det_src_pair",
+        "num_anneal_offset_iterations", "schedule_fn", "num_reads",
+        "use_common_c_bounds", "use_overshoot", "save_figures", "T2", "Jtd", "Jts",
+        "Jtt", "loop_length", "preparation_orientation", "embedding_timeout",
+        "colormap_type", "dt_div_A_final", "refine_delays", "dt_dc",
+        "show_artificial_timeseries", "fit_window", "loop_delay_range",
+        # runtime / computed state
+        "stage_idx", "qpu", "online", "exp_feature_info", "line_assignments",
+        "num_lines", "line_color", "x_anneal_schedules", "x_polarizing_schedule",
+        "x_schedule_delays", "anneal_offsets", "flux_biases", "sampling_params",
+        "target_Aminus", "target_Aplus", "T", "Tnode_to_tds", "S", "Snode_to_tds",
+        "S_experiment", "embs_experiment", "embs", "embs_by_line", "sum_by_line",
+        "cumsum_by_line", "line_exemplars", "n_embs", "sampler", "bqm",
+        "nyquist_frequency", "delay_min", "delay_max", "delay_min_fit",
+        "delay_max_fit", "delays", "dt", "mean_Z_detector", "first", "last", "ld",
+        "frequencies", "psd", "anneal_offsets_target", "ax_second_iter_timeseries",
+        "ax_second_iter_psd", "heatmap_after_axes", "t_decoupled_by_qubit", "t_mags",
+    )
+
+    def __init__(self, **config):
+        for name in self._FIELDS:
+            setattr(self, name, None)
+        for name, value in config.items():
+            if name not in self._FIELDS:
+                raise TypeError(f"Unexpected configuration field: {name!r}")
+            setattr(self, name, value)
+
