@@ -7,7 +7,15 @@ x_schedule_delay refinements.
 from .common import *
 
 
-def run_schedule(ctx):
+def run_schedule(ctx, *, dtarget_c=0.01):
+    """Estimate target_A, target_c and dA/dc from the QPU schedule.
+
+    Args:
+        dtarget_c: Half-width (in normalized control bias c) of the symmetric
+            finite difference used to estimate ``dAdc`` from the schedule file,
+            i.e. ``dAdc = (A(target_c + dtarget_c) - A(target_c - dtarget_c)) /
+            (2 * dtarget_c)``. Ignored when ``dAdc`` is supplied.
+    """
     stage_idx = ctx.stage_idx
     schedule_fn = ctx.schedule_fn
     target_A = ctx.target_A
@@ -65,7 +73,6 @@ def run_schedule(ctx):
             1 - target_c, 1 - delta_vs_s["s"], delta_vs_s["B(s) (GHz)"]
         )
 
-        dtarget_c = 0.01
         target_Aminus = np.interp(
             1 - (target_c - dtarget_c), 1 - delta_vs_s["s"], delta_vs_s["A(s) (GHz)"]
         )
@@ -80,25 +87,25 @@ def run_schedule(ctx):
             label=f"c={target_c:.3g}",
         )
         plt.plot(
-            [0, target_c - 0.01],
+            [0, target_c - dtarget_c],
             [target_Aminus, target_Aminus],
             linestyle="dotted",
             color="black",
         )
         plt.plot(
-            [target_c - 0.01, target_c - 0.01],
+            [target_c - dtarget_c, target_c - dtarget_c],
             [0, target_Aminus],
             linestyle="dotted",
             color="black",
         )
         plt.plot(
-            [0, target_c + 0.01],
+            [0, target_c + dtarget_c],
             [target_Aplus, target_Aplus],
             linestyle="dotted",
             color="black",
         )
         plt.plot(
-            [target_c + 0.01, target_c + 0.01],
+            [target_c + dtarget_c, target_c + dtarget_c],
             [0, target_Aplus],
             linestyle="dotted",
             color="black",

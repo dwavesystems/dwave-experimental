@@ -1,6 +1,7 @@
 """Orchestrates the multi-color-annealing calibration-refinement stages.
 
-This thin orchestrator threads a shared :class:`~mca_shim.common.MCAContext`
+This thin orchestrator threads a shared
+:class:`~mca_shim_AO_FB_helpers.common.MCAContext`
 through the individual ``stage_*`` modules, preserving the original sequential
 data flow while keeping each stage in its own small, readable script.
 """
@@ -26,8 +27,6 @@ def main(
     detector_lines: Iterable[int] | None = None,
     source_lines: Iterable[int] | None = None,
     target_lines: Iterable[int] | None = None,
-    unused_lines: Iterable[int] = (),
-    seed: int | None = None,
     max_num_embeddings: int | None = None,
     target_c: float | None = None,
     target_A: float | None = None,
@@ -50,9 +49,7 @@ def main(
     Jtt: float = 0.1,
     loop_length: int | None = 16,
     preparation_orientation: float = 1.0,
-    embedding_timeout: int = 60,
     colormap_type: Literal["divergent", "default"] = "divergent",
-    dt_div_A_final: float = 0.25,
     refine_delays: bool = True,
     dt_dc: float = 2.3e-3,
     show_artificial_timeseries: bool = False,
@@ -94,14 +91,7 @@ def main(
             An iterable of integer indices of the source lines.
         target_lines:
             An iterable of integer indices of the target lines. When None,
-            defaults to all lines that are neither detector, source, nor
-            unused lines.
-        unused_lines:
-            An iterable of integer indices of lines that are unused in the
-            experiment. These are excluded when target_lines defaults to all
-            remaining lines.
-        seed:
-            Random seed used for embedding generation.
+            defaults to all lines that are neither detector nor source lines.
         max_num_embeddings:
             Maximum number of embeddings to find. If None, search for all available embeddings.
         target_c:
@@ -176,12 +166,8 @@ def main(
             also skips the final loop experiment stage.
         preparation_orientation: The orientation of the target qubit whilst coupled
             to the source.
-        embedding_timeout: Time budget (seconds) for the embedding search.
         colormap_type: Colormap style used for the detector-magnetization
             heatmaps ("divergent" or "default").
-        dt_div_A_final: Sampling rate for the final (loop) experiment. Defaults
-            to the same value used in anneal_offset shimming (1/4), smaller values
-            can be used for pretty plots.
         dt_dc: Decoupling time change as a function of anneal offset. This is primarily
             anneal_schedule (quench C-interval and rate) dependent. For the default
             overshoot waveform on Advantage2 processors dt_dc ~ 2.3ns.
@@ -257,8 +243,6 @@ def main(
         detector_lines=detector_lines,
         source_lines=source_lines,
         target_lines=target_lines,
-        unused_lines=unused_lines,
-        seed=seed,
         max_num_embeddings=max_num_embeddings,
         target_c=target_c,
         target_A=target_A,
@@ -279,9 +263,7 @@ def main(
         Jtt=Jtt,
         loop_length=loop_length,
         preparation_orientation=preparation_orientation,
-        embedding_timeout=embedding_timeout,
         colormap_type=colormap_type,
-        dt_div_A_final=dt_div_A_final,
         refine_delays=refine_delays,
         dt_dc=dt_dc,
         show_artificial_timeseries=show_artificial_timeseries,

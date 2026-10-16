@@ -3,11 +3,16 @@
 from .common import *
 
 
-def run_embeddings(ctx):
+def run_embeddings(ctx, *, seed=None, embedding_timeout=60):
+    """Find T-D-S embeddings for parallel programming.
+
+    Args:
+        seed: Random seed used for embedding generation.
+        embedding_timeout: Time budget (seconds) for the embedding search.
+    """
     stage_idx = ctx.stage_idx
-    embedding_timeout = ctx.embedding_timeout
     qpu = ctx.qpu
-    line_assignments = ctx.line_assignments
+    line_assignments = line_assignments_from_feature_info(ctx.exp_feature_info)
     detector_lines = ctx.detector_lines
     source_lines = ctx.source_lines
     target_lines = ctx.target_lines
@@ -15,7 +20,6 @@ def run_embeddings(ctx):
     cache_str = ctx.cache_str
     solver = ctx.solver
     max_num_embeddings = ctx.max_num_embeddings
-    seed = ctx.seed
     Jtd = ctx.Jtd
     Jts = ctx.Jts
 
@@ -125,8 +129,6 @@ def run_embeddings(ctx):
     else:
         embs = embs_experiment
 
-    # for emb in embs.values():
-    #    assert all(n[2] == v[0][2] for n,v in emb.items()), "All qubits in an embedding must have the same target index."
     print(
         f"{len(embs)} T-D-S placements were found; each is calibrated with parallelized data collection. "
         "These are ordered by (target line, detector line, source line) for purposes of visualization. "

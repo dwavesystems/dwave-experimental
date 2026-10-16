@@ -218,10 +218,10 @@ def make_tds_intervals(
             larger value of order microseconds is desirable for robust
             preparation.
         skip_explicit_polarization: Whether to skip the polarization interval entirely.
-            If False a time interval is specified to characterize teh x_anneal_schedule
-            change from netural [t_1, 0] to polarized (t_p, +/-1), other stages are
-            delayed. If Ture the value (0.0,0.0) is rreturned (a polarized initialization)
-            is assumed. Defaults to True.
+            If False a time interval is specified to characterize the x_anneal_schedule
+            change from neutral [t_1, 0] to polarized (t_p, +/-1); other stages are
+            delayed. If True the value (0.0, 0.0) is returned and a polarized
+            initialization is assumed. Defaults to True.
     Returns:
         A 5-tuple containing ``polarization_interval``, ``polarized_preparation_interval``,
         ``depolarization_interval``, ``depolarized_preparation_interval``,
@@ -298,9 +298,8 @@ def standardize_schedule_endpoints(
         completion_time = max(completion_time, polarizing_schedule[-1][0])
     completion_time = completion_time + post_pwl_delay
     if decimals is not None:
-        completion_time = float(
-            math.ceil(10**decimals * completion_time / 10**decimals)
-        )
+        scale = 10**decimals
+        completion_time = math.ceil(completion_time * scale) / scale
 
     for anneal_schedule in anneal_schedules:
         if anneal_schedule[-1][0] != completion_time:
@@ -736,7 +735,7 @@ def make_tds_x_anneal_schedules(
     target_lines = set(target_lines)
     detected_target_lines = set(detected_target_lines)
     tds_lines = source_lines | detector_lines | target_lines | detected_target_lines
-    if len(tds_lines) != len(source_lines) + len(detector_lines) + len(target_lines) +len(detected_target_lines):
+    if len(tds_lines) != len(source_lines) + len(detector_lines) + len(target_lines) + len(detected_target_lines):
         raise ValueError("Source, detector and target lines must be disjoint.")
     if not tds_lines.issubset(all_lines):
         raise ValueError(
@@ -964,7 +963,7 @@ def make_tds_x_polarizing_schedule(
             the polarization interval, in microseconds. If None, defaults
             to the ``polarization_interval`` returned by
             :func:`make_tds_intervals` with default arguments.
-            Not if the zero interval is given, the waveform is specified as
+            Note if the zero interval is given, the waveform is specified as
             starting in a polarized state (0.0, sign_polarization), rather
             than progressing from 0 to sign_polarization over the given interval.
         depolarization_interval: Tuple containing the start and end times of
@@ -973,7 +972,7 @@ def make_tds_x_polarizing_schedule(
             :func:`make_tds_intervals` with default arguments.
         sign_polarization: Sign of the initial polarization, +1 or -1. If 0
             then no polarizing signal is applied, but the interval-wise
-            pattern of PWL construction doesnt change.
+            pattern of PWL construction doesn't change.
 
 
     Returns:

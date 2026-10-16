@@ -3,7 +3,14 @@
 from .common import *
 
 
-def run_loop(ctx):
+def run_loop(ctx, *, dt_div_A_final=0.25):
+    """pi/2-pulse propagation around coupled target loops.
+
+    Args:
+        dt_div_A_final: Sampling rate for the final (loop) experiment. Defaults
+            to the value used in anneal_offset shimming (1/4); smaller values can
+            be used for finer plots.
+    """
     # Build a loop-specific grid: a shorter window sampled 4x more finely than
     # the target-frequency stage to better resolve pi/2-pulse propagation.
     compute_delay_grid(ctx, ctx.loop_delay_range, rel_sampling_rate=4, rel_start=0.0)
@@ -18,7 +25,6 @@ def run_loop(ctx):
     Jtd = ctx.Jtd
     Jts = ctx.Jts
     cache_str = ctx.cache_str
-    dt_div_A_final = ctx.dt_div_A_final
     target_A = ctx.target_A
     delay_min = ctx.delay_min
     delay_max = ctx.delay_max

@@ -13,14 +13,14 @@
 # limitations under the License.
 """Multi-color-annealing calibration-refinement command-line entry point.
 
-The implementation is split into small per-stage modules under the ``mca_shim``
-package. This file keeps the original command-line interface and re-exports the
-shared helpers (e.g. ``plot_shim``) for backwards compatibility.
+The implementation is split into small per-stage modules under the
+``mca_shim_AO_FB_helpers`` package. This file defines the command-line interface
+and delegates to :func:`~mca_shim_AO_FB_helpers.runner.main`.
 """
 
 import argparse
 
-from mca_shim_AO_FB_helpers.common import *  # noqa: F401,F403  (re-export shared helpers)
+from mca_shim_AO_FB_helpers.common import SOLVER_FILTER, _get_experiment_id
 from mca_shim_AO_FB_helpers.runner import main
 
 
@@ -72,14 +72,6 @@ if __name__ == "__main__":
         nargs="+",
         help="Target lines (one or more integer indices).",
         default=None,  # Default: all lines that are neither detector nor source lines
-    )
-    parser.add_argument(
-        "--unused-lines",
-        dest="unused_lines",
-        type=int,
-        nargs="+",
-        help="Unused lines (one or more integer indices).",
-        default=(),  # Default: no unused lines
     )
     parser.add_argument(
         "--seed",
@@ -195,7 +187,8 @@ if __name__ == "__main__":
         action="store_true",
         default=False,
         help="Enable common c-bounds alignment across annealing lines. "
-        "This is necessary for the Target-Detector/TDS calibration-refinement method.",
+        "This ensures quench rates are nominally independent of the line choices."
+        "This is required by some non-default shimming methods.",
     )
     parser.add_argument(
         "--no-overshoot",
@@ -260,7 +253,6 @@ if __name__ == "__main__":
         detector_lines=args.detector_lines,
         source_lines=args.source_lines,
         target_lines=args.target_lines,
-        unused_lines=args.unused_lines,
         target_A=args.target_A,
         schedule_fn=args.schedule_fn,
         t_decoupled=args.t_decoupled,

@@ -57,9 +57,9 @@ from dwave.experimental.multicolor_anneal import (
 )
 from dwave.experimental.shimming import shim_tds_flux_biases
 
-# Re-exported so ``from mca_shim.common import *`` makes every name used by the
-# verbatim stage bodies available (including the underscore-prefixed helpers and
-# the third-party modules/functions those bodies reference).
+# Re-exported so ``from mca_shim_AO_FB_helpers.common import *`` makes every name
+# used by the verbatim stage bodies available (including the underscore-prefixed
+# helpers and the third-party modules/functions those bodies reference).
 __all__ = [
     # third-party modules and helpers used by stage bodies
     "defaultdict",
@@ -89,12 +89,12 @@ __all__ = [
     "_figure_path",
     "_apply_tight_layout",
     "_save_open_figures",
+    "line_assignments_from_feature_info",
     "_calc_anneal_offsets",
     "make_yC",
     "make_yE",
     "make_y",
     "dyC_dt0",
-    "dyC_dA",
     "artificial_data",
     "run_parallel_experiment",
     "plot_shim",
@@ -132,6 +132,15 @@ def _save_open_figures(figures_dir: str, cache_str: str | None = None) -> None:
         fig = plt.figure(fig_num)
         figure_label = fig.get_label() or f"Figure_{fig_num}"
         fig.savefig(_figure_path(figures_dir, figure_label, cache_str))
+
+
+def line_assignments_from_feature_info(exp_feature_info) -> dict[int, int]:
+    """Map each qubit to its annealing-line index from ``exp_feature_info``."""
+    return {
+        n: al_idx
+        for al_idx, al in enumerate(exp_feature_info[1])
+        for n in al["qubits"]
+    }
 
 
 def _calc_anneal_offsets(
@@ -321,32 +330,6 @@ def dyC_dt0(
     dy1_dt0 = -2 * np.pi * A * np.sin(2 * np.pi * A * delays)
 
     return sign_Jts_fbs * (dy0_dt0 * y1 + y0 * dy1_dt0)
-
-
-def dyC_dA(
-    delays: np.ndarray, A: float, T2: float = 0.0101, sign_Jts_fbs: int = 1
-) -> np.ndarray:
-    """Calculate derivative of signal model with respect to frequency.
-
-    EFFECTIVELY OBSOLETE FUNCTION
-
-    Computes the derivative of the ``make_y`` signal
-    ``sign_Jts_fbs * exp(-t/T2) * cos(2*pi*A*t)`` (for ``t > 0``) with respect
-    to the frequency parameter ``A``.
-
-    Args:
-        delays: Time delays at which to evaluate the derivative (microseconds).
-        A: Frequency (GHz).
-        T2: Exponential envelope time scale (microseconds).
-        sign_Jts_fbs: Sign convention for the Josephson coupling term (default: 1).
-
-    Returns:
-        Array of frequency derivatives evaluated at each delay.
-    """
-    y0 = np.clip(np.exp(-delays / T2), a_min=0, a_max=1)
-    dy1_dA = -2 * np.pi * delays * np.sin(2 * np.pi * A * delays)
-
-    return sign_Jts_fbs * (y0 * dy1_dA)
 
 
 def artificial_data(
@@ -742,7 +725,6 @@ def imshow_data(
     ax.set_xlabel("Target-Detector-Source embedding")
     ax.set_ylabel("Delay, nanoseconds")
     if vertical_lines is not None:
-        # plt.vlines(x=line_x, ymin=-0.5, ymax=rows - 0.5, colors="black", linewidth=1.5)
         for x in vertical_lines:
             ax.axvline(x=x, color="black", linewidth=1.5)
     _apply_tight_layout()
@@ -990,7 +972,7 @@ def estimate_decoupling_timescale(
                     t_guess += T2
         if verbose:
             print(
-                f"Estimate decoupling timescale to accuracy better than {time_accuracy}/target_A, with ~log(T2*target_A) programmings"
+                f"Estimate decoupling timescale to accuracy better than {phase_accuracy}/target_A, with ~log(T2*target_A) programmings"
             )
         while t_max - t_min > phase_accuracy / target_A:
             t_guess = (t_min + t_max) / 2
@@ -1183,7 +1165,6 @@ def compute_delay_grid(
     ctx.nyquist_frequency = nyquist_frequency
     ctx.delay_min = delay_min
     ctx.delay_max = delay_max
-    ctx.rel_start = rel_start
     ctx.delay_min_fit = delay_min_fit
     ctx.delay_max_fit = delay_max_fit
     ctx.delays = delays
@@ -1200,7 +1181,7 @@ class MCAContext:
     """
 
     #: Names of every attribute threaded between stages. Config values mirror the
-    #: parameters of :func:`mca_shim.runner.main`; the remainder are computed.
+    #: parameters of :func:`mca_shim_AO_FB_helpers.runner.main`; the remainder are computed.
     _FIELDS = (
         # configuration (see runner.main for documentation)
         "cache_str",
@@ -1208,8 +1189,6 @@ class MCAContext:
         "detector_lines",
         "source_lines",
         "target_lines",
-        "unused_lines",
-        "seed",
         "max_num_embeddings",
         "target_c",
         "target_A",
@@ -1230,9 +1209,7 @@ class MCAContext:
         "Jtt",
         "loop_length",
         "preparation_orientation",
-        "embedding_timeout",
         "colormap_type",
-        "dt_div_A_final",
         "refine_delays",
         "dt_dc",
         "show_artificial_timeseries",
@@ -1243,8 +1220,6 @@ class MCAContext:
         "qpu",
         "online",
         "exp_feature_info",
-        "line_assignments",
-        "num_lines",
         "line_color",
         "x_anneal_schedules",
         "x_polarizing_schedule",

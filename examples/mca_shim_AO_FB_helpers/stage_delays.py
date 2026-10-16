@@ -17,7 +17,7 @@ def run_detect_delays(ctx):
     sampling_params = ctx.sampling_params
     detector_lines = ctx.detector_lines
     target_A = ctx.target_A
-    line_assignments = ctx.line_assignments
+    line_assignments = line_assignments_from_feature_info(ctx.exp_feature_info)
     source_lines = ctx.source_lines
     by_det_src_pair = ctx.by_det_src_pair
     save_figures = ctx.save_figures
@@ -52,13 +52,6 @@ def run_detect_delays(ctx):
             if cache_str:
                 with open(fn_cache, "wb") as f:
                     pickle.dump((t_decoupled, t_mags, t_decoupled_by_qubit), f)
-
-        # plt.figure('Per-qubit delays')
-        # num_estimated = len(t_decoupled_by_qubit)
-        # plt.plot(sorted(t_decoupled_by_qubit.values()), np.arange(num_estimated)/num_estimated)
-        # plt.xlabel('Per-detected qubit decoupling time, us')
-        # plt.ylabel(f'Cumulative Distribution Function')
-        # plt.title(f'Linear interpolation estimates for {num_estimated} of {len(sampler.embeddings)} cases')
 
         delays_arr = np.array([t for t, _ in t_mags])
         mags_arr = np.array([mag for _, mag in t_mags])
@@ -159,7 +152,23 @@ def run_detect_delays(ctx):
     return ctx
 
 
-def run_refine_delays(ctx):
+def run_refine_delays(
+    ctx,
+    *,
+    refine_phase_accuracy=0.05,
+    refine_delay_t_min_factor=-2.0,
+    refine_delay_t_max_factor=4.0,
+):
+    """Refine source and detector delays after anneal-offset refinement.
+
+    Args:
+        refine_phase_accuracy: Target phase accuracy (in oscillation cycles) for
+            the per-qubit decoupling-delay refinement.
+        refine_delay_t_min_factor: Lower bound of the refinement bisection search
+            window, as a multiple of the target period ``1 / target_A``.
+        refine_delay_t_max_factor: Upper bound of the refinement bisection search
+            window, as a multiple of the target period ``1 / target_A``.
+    """
     stage_idx = ctx.stage_idx
     cache_str = ctx.cache_str
     sampler = ctx.sampler
@@ -167,7 +176,7 @@ def run_refine_delays(ctx):
     sampling_params = ctx.sampling_params
     detector_lines = ctx.detector_lines
     target_A = ctx.target_A
-    line_assignments = ctx.line_assignments
+    line_assignments = line_assignments_from_feature_info(ctx.exp_feature_info)
     source_lines = ctx.source_lines
     by_det_src_pair = ctx.by_det_src_pair
     embs = ctx.embs
@@ -199,10 +208,10 @@ def run_refine_delays(ctx):
             line_assignments=line_assignments,
             source_lines=source_lines,
             by_det_src_pair=by_det_src_pair,
-            phase_accuracy=0.05,
+            phase_accuracy=refine_phase_accuracy,
             interpolate_final_interval=True,
-            t_min=-2 / target_A / 1000,
-            t_max=4 / target_A / 1000,
+            t_min=refine_delay_t_min_factor / target_A / 1000,
+            t_max=refine_delay_t_max_factor / target_A / 1000,
         )
         if cache_str:
             with open(fn_cache, "wb") as f:
@@ -324,10 +333,6 @@ def run_refine_delays(ctx):
         sampling_params["anneal_offsets"][det_q] *= dt_dc / dt_dc_bulk
     print("Revised estimation of dt/dc ", dt_dc_bulk, " used value ", dt_dc)
     print("The final anneal_offsets are adjusted to this new estimate.")
-    # print(
-    #    "Broken down by (source line, detector line) - note that data defaults may be too sparse for variation to be considered significant: ",
-    #    dt_dc_new,
-    # )  # Not significant at defaults.
 
     ctx.stage_idx = stage_idx
     ctx.t_decoupled = t_decoupled

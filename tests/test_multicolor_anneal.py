@@ -734,3 +734,103 @@ class UtilsTestWithoutClient(unittest.TestCase):
         self.assertAlmostEqual(delays[0], -0.5)
         self.assertAlmostEqual(delays[1], -0.5)
         self.assertEqual(delays[2], 9.0)
+
+    def test_qubit_to_Advantage2_annealing_line_num_lines(self):
+        shape = [3, 2]
+        qpu = MockDWaveSampler(topology_type="zephyr", topology_shape=shape)
+
+        lines_6 = {qubit_to_Advantage2_annealing_line(n, shape, 6) for n in qpu.nodelist}
+        self.assertSetEqual(lines_6, set(range(6)), "6-line scheme uses lines 0-5")
+
+        lines_12 = {
+            qubit_to_Advantage2_annealing_line(n, shape, 12) for n in qpu.nodelist
+        }
+        self.assertSetEqual(lines_12, set(range(12)), "12-line scheme uses lines 0-11")
+
+        with self.assertRaises(ValueError):
+            qubit_to_Advantage2_annealing_line(qpu.nodelist[0], shape, num_lines=7)
+
+    def test_make_tds_graph_invalid_nodes(self):
+        target_graph = nx.from_edgelist([(0, 1)])
+        with self.assertRaises(ValueError):
+            make_tds_graph(target_graph, detected_nodes=[5])
+        with self.assertRaises(ValueError):
+            make_tds_graph(target_graph, sourced_nodes=[5])
+
+    def test_make_tds_x_polarizing_schedule_variants(self):
+        # Zero sign produces a flat zero schedule retaining the interval pattern.
+        schedule_zero = make_tds_x_polarizing_schedule(
+            (2.0, 5.0), (8.0, 10.0), sign_polarization=0
+        )
+        self.assertListEqual(
+            schedule_zero, [[0.0, 0], [2.0, 0], [5.0, 0], [8.0, 0], [10.0, 0]]
+        )
+
+        # With default arguments the schedule starts polarized at time 0 and
+        # relaxes over the default depolarization interval.
+        schedule = make_tds_x_polarizing_schedule()
+        self.assertListEqual(schedule, [[0.0, 1], [4.0, 1], [6.0, 0]])
+
+        # A depolarization interval that does not start after polarization ends
+        # is rejected.
+        with self.assertRaises(ValueError):
+            make_tds_x_polarizing_schedule((2.0, 5.0), (3.0, 6.0))
+
+        # A depolarization interval cannot be supplied without a polarization
+        # interval.
+        with self.assertRaises(ValueError):
+            make_tds_x_polarizing_schedule(depolarization_interval=(4.0, 6.0))
+
+    def test_standardize_schedule_endpoints_decimals(self):
+        # ``decimals`` rounds the common endpoint up to the given precision.
+        x_anneal = [[[0.0, 0.0], [2.33, 1.0]]]
+
+        anneal_std, _ = standardize_schedule_endpoints(
+            x_anneal, post_pwl_delay=0.0, decimals=1
+        )
+        self.assertEqual(anneal_std[0][-1], [2.4, 1.0])
+
+        anneal_std, _ = standardize_schedule_endpoints(
+            x_anneal, post_pwl_delay=0.0, decimals=0
+        )
+        self.assertEqual(anneal_std[0][-1], [3.0, 1.0])
+
+    def test_make_tds_x_schedules_bound_options(self):
+        n_lines = 4
+        minC, maxC = -2.0, 3.0
+        minCOvershoot, maxCOvershoot = -7.0, 8.0
+        annealing_line_info = self._annealing_line_info(
+            n_lines, minC=minC, maxC=maxC
+        )
+        exp_feature_info = [
+            {
+                "minPolarizingTimeStep": 0.02,
+                "depolarizationAnnealScheduleRequiredDelay": 2.0,
+            },
+            annealing_line_info,
+        ]
+        common = dict(
+            exp_feature_info=exp_feature_info,
+            target_lines={0},
+            target_c=0.5,
+            detector_lines={1},
+            source_lines={2},
+        )
+
+        with self.subTest(option="symmetrize_c_bounds"):
+            schedules, _ = make_tds_x_schedules(**common, symmetrize_c_bounds=True)
+            values = [c for s in schedules for _, c in s]
+            # minC/maxC become symmetric at min(|minC|, maxC) = 2.0, and the
+            # overshoot bounds at min(|minCOvershoot|, maxCOvershoot) = 7.0.
+            self.assertEqual(max(values), 7.0)
+            self.assertEqual(min(values), -7.0)
+
+        with self.subTest(option="use_01_c_range"):
+            schedules, _ = make_tds_x_schedules(**common, use_01_c_range=True)
+            values = [c for s in schedules for _, c in s]
+            self.assertEqual(min(values), 0.0)
+            self.assertEqual(max(values), 1.0)
+
+        with self.subTest(option="use_common_bounds"):
+            schedules, _ = make_tds_x_schedules(**common, use_common_bounds=True)
+            self.assertEqual(len(schedules), n_lines)

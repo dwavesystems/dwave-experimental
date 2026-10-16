@@ -3,7 +3,14 @@
 from .common import *
 
 
-def run_flux_biases(ctx):
+def run_flux_biases(ctx, *, anomalous_flux_bias_threshold=1e-4):
+    """Compensate static qubit body cross-talks via flux_biases.
+
+    Args:
+        anomalous_flux_bias_threshold: Magnitude (in normalized flux-bias units)
+            above which a refined flux_bias is flagged as anomalously large and
+            reported as a possible calibration issue or bad qubit.
+    """
     stage_idx = ctx.stage_idx
     td_shim_type = ctx.td_shim_type
     cache_str = ctx.cache_str
@@ -17,7 +24,7 @@ def run_flux_biases(ctx):
     source_lines = ctx.source_lines
     exp_feature_info = ctx.exp_feature_info
     target_c = ctx.target_c
-    line_assignments = ctx.line_assignments
+    line_assignments = line_assignments_from_feature_info(exp_feature_info)
     save_figures = ctx.save_figures
     x_polarizing_schedule = ctx.x_polarizing_schedule
     flux_biases = ctx.flux_biases
@@ -59,7 +66,7 @@ def run_flux_biases(ctx):
         polarization_candidates = [
             (i, flux_biases[i])
             for i in range(len(flux_biases))
-            if abs(flux_biases[i]) > 1e-4
+            if abs(flux_biases[i]) > anomalous_flux_bias_threshold
         ]
         if polarization_candidates:
             print(

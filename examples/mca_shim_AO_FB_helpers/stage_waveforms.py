@@ -10,7 +10,6 @@ def run_waveforms(ctx):
     detector_lines = ctx.detector_lines
     source_lines = ctx.source_lines
     target_lines = ctx.target_lines
-    unused_lines = ctx.unused_lines
     target_c = ctx.target_c
     use_common_c_bounds = ctx.use_common_c_bounds
     use_overshoot = ctx.use_overshoot
@@ -58,9 +57,7 @@ def run_waveforms(ctx):
         online = False
     if len(exp_feature_info) != 2:
         raise ValueError("Legacy format")
-    line_assignments = {
-        n: al_idx for al_idx, al in enumerate(exp_feature_info[1]) for n in al["qubits"]
-    }
+    line_assignments = line_assignments_from_feature_info(exp_feature_info)
     num_lines = len(exp_feature_info[1])
     # 2/3 of lines reserved for the target (typical applications)
     if (detector_lines is None) != (source_lines is None):
@@ -79,10 +76,7 @@ def run_waveforms(ctx):
 
     if target_lines is None:
         target_lines = (
-            set(range(num_lines))
-            - set(detector_lines)
-            - set(source_lines)
-            - set(unused_lines)
+            set(range(num_lines)) - set(detector_lines) - set(source_lines)
         )
     if len(target_lines) == 0:
         raise ValueError("No target lines available.")
@@ -112,12 +106,6 @@ def run_waveforms(ctx):
     _apply_tight_layout()
     plt.show()
 
-    # x_schedule_delays = make_tds_x_schedule_delays(
-    #    x_anneal_schedules=x_anneal_schedules,
-    #    quenched_lines=set(detector_lines) | set(source_lines),
-    #    target_c=target_c,
-    #    decimal_places=6,
-    # )  # Quench rates implied by linear PWL are unreliable, especially with overshoot.
     x_schedule_delays = [0.0] * num_lines
 
     anneal_offsets = [0.0] * qpu.properties["num_qubits"]
@@ -138,8 +126,6 @@ def run_waveforms(ctx):
     ctx.qpu = qpu
     ctx.online = online
     ctx.exp_feature_info = exp_feature_info
-    ctx.line_assignments = line_assignments
-    ctx.num_lines = num_lines
     ctx.detector_lines = detector_lines
     ctx.source_lines = source_lines
     ctx.target_lines = target_lines
