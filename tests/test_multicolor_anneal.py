@@ -25,6 +25,7 @@ from dwave.experimental.multicolor_anneal import (
     get_solver_name,
     SOLVER_FILTER,
     qubit_to_Advantage2_annealing_line,
+    line_assignments_from_feature_info,
     make_tds_graph,
     make_tds_intervals,
     make_tds_x_anneal_schedules,
@@ -205,6 +206,34 @@ class UtilsTestWithoutClient(unittest.TestCase):
             qubit_to_Advantage2_annealing_line(test_nodeC, shape),
             "shape is optional when a Zephyr coordinate tuple is given",
         )
+
+    def test_line_assignments_from_feature_info(self):
+        polarizing_line_info = {
+            "minPolarizingTimeStep": 0.02,
+            "depolarizationAnnealScheduleRequiredDelay": 2.0,
+        }
+        annealing_line_info = [
+            {"annealingLine": 0, "qubits": [2, 6, 9]},
+            {"annealingLine": 1, "qubits": [0, 4]},
+            {"annealingLine": 2, "qubits": [1, 3, 5, 7]},
+        ]
+        exp_feature_info = (polarizing_line_info, annealing_line_info)
+
+        assignments = line_assignments_from_feature_info(exp_feature_info)
+
+        self.assertEqual(
+            assignments,
+            {2: 0, 6: 0, 9: 0, 0: 1, 4: 1, 1: 2, 3: 2, 5: 2, 7: 2},
+        )
+        # Every qubit maps to the line whose ``qubits`` list contains it.
+        self.assertTrue(
+            all(
+                n in annealing_line_info[line]["qubits"]
+                for n, line in assignments.items()
+            )
+        )
+        # Empty annealing-line list yields an empty mapping.
+        self.assertEqual(line_assignments_from_feature_info(({}, [])), {})
 
     def test_tds_graph(self):
         target_graph = nx.from_edgelist([(0, 1)])

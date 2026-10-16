@@ -15,7 +15,7 @@
 from copy import deepcopy
 import math
 import numpy as np
-from typing import Iterable, Literal, Sequence
+from typing import Any, Iterable, Literal, Sequence
 
 import networkx as nx
 
@@ -24,6 +24,7 @@ from dwave.graphs import zephyr_coordinates
 __all__ = [
     "ScheduleError",
     "qubit_to_Advantage2_annealing_line",
+    "line_assignments_from_feature_info",
     "make_tds_graph",
     "make_tds_intervals",
     "make_tds_x_anneal_schedules",
@@ -127,6 +128,41 @@ def qubit_to_Advantage2_annealing_line(
         return 6 * u + (z % 3 + 3 * j)
     else:
         raise ValueError("num_lines must be 6 or 12")
+
+
+def line_assignments_from_feature_info(
+    exp_feature_info: tuple[dict[str, Any], list[dict[str, Any]]],
+) -> dict[int, int]:
+    """Map each qubit to its annealing-line index.
+
+    Builds a lookup from qubit label to annealing-line index using the per-line
+    ``qubits`` lists of ``exp_feature_info``. This is the properties-driven
+    counterpart to :func:`qubit_to_Advantage2_annealing_line`, which instead
+    derives the line from a qubit's Zephyr coordinate.
+
+    Args:
+        exp_feature_info: Multicolor-annealing properties, as returned by
+            :func:`~dwave.experimental.multicolor_anneal.api.get_properties`.
+            The second element is a list of per-annealing-line dictionaries in
+            ascending order of annealing-line index, each with a ``qubits``
+            entry.
+
+    Returns:
+        A dictionary mapping each qubit label to its annealing-line index.
+
+    Examples:
+        >>> from dwave.system import DWaveSampler
+        >>> import dwave.experimental.multicolor_anneal as mca
+        >>> exp_feature_info = mca.get_properties(DWaveSampler())   # doctest: +SKIP
+        >>> line_assignments = mca.line_assignments_from_feature_info(
+        ...     exp_feature_info
+        ... )            # doctest: +SKIP
+    """
+    return {
+        n: al_idx
+        for al_idx, al in enumerate(exp_feature_info[1])
+        for n in al["qubits"]
+    }
 
 
 def make_tds_graph(

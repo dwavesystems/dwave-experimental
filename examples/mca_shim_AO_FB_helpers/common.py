@@ -51,6 +51,7 @@ from dwave.system.composites import ParallelEmbeddingComposite
 from minorminer.utils.parallel_embeddings import find_multiple_embeddings
 from dwave.experimental.multicolor_anneal import (
     get_properties,
+    line_assignments_from_feature_info,
     make_tds_graph,
     make_tds_x_schedules,
     SOLVER_FILTER,
@@ -81,6 +82,7 @@ __all__ = [
     "ParallelEmbeddingComposite",
     "find_multiple_embeddings",
     "get_properties",
+    "line_assignments_from_feature_info",
     "make_tds_graph",
     "make_tds_x_schedules",
     "SOLVER_FILTER",
@@ -89,7 +91,6 @@ __all__ = [
     "_figure_path",
     "_apply_tight_layout",
     "_save_open_figures",
-    "line_assignments_from_feature_info",
     "_calc_anneal_offsets",
     "make_yC",
     "make_yE",
@@ -132,15 +133,6 @@ def _save_open_figures(figures_dir: str, cache_str: str | None = None) -> None:
         fig = plt.figure(fig_num)
         figure_label = fig.get_label() or f"Figure_{fig_num}"
         fig.savefig(_figure_path(figures_dir, figure_label, cache_str))
-
-
-def line_assignments_from_feature_info(exp_feature_info) -> dict[int, int]:
-    """Map each qubit to its annealing-line index from ``exp_feature_info``."""
-    return {
-        n: al_idx
-        for al_idx, al in enumerate(exp_feature_info[1])
-        for n in al["qubits"]
-    }
 
 
 def _calc_anneal_offsets(
