@@ -1,0 +1,11 @@
+---
+features:
+  - |
+    Add schedule-construction helpers to
+    ``dwave.experimental.multicolor_anneal`` for building
+    target-detector-source (TDS) annealing experiments:
+    ``make_tds_intervals``, ``make_tds_x_anneal_schedules``,
+    ``make_tds_x_polarizing_schedule``, ``make_tds_x_schedules``,
+    ``make_tds_x_schedule_delays`` and ``standardize_schedule_endpoints``.
+    A ``ScheduleError`` exception is raised when generated schedules are
+    incompatible with sequencing constraints.
