@@ -12,13 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from copy import deepcopy
 import math
-import numpy as np
 from collections.abc import Iterable, Sequence
+from copy import deepcopy
+from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from typing import Any, Literal
+from warnings import warn
 
 import networkx as nx
+import numpy as np
 
 from dwave.graphs import zephyr_coordinates
 
@@ -32,11 +34,14 @@ __all__ = [
     "make_tds_x_polarizing_schedule",
     "make_tds_x_schedules",
     "make_tds_x_schedule_delays",
+    "parse_exp_feature_line_info",
     "standardize_schedule_endpoints",
+    "verify_schedules",
 ]
 
 Interval = tuple[float, float]
-LineFeatureInfo = dict[str, float]
+LineFeatureInfo = dict[str, Any]
+ExpFeatureInfo = tuple[dict[str, Any], list[LineFeatureInfo]]
 AnnealSchedule = list[list[float]]
 XAnnealSchedules = list[AnnealSchedule]
 
@@ -67,10 +72,11 @@ def _round_sigfigs(
         raise ValueError("sigfigs must be positive")
     if mode not in ("up", "down"):
         raise ValueError("mode must be 'up' or 'down'")
-    scale = 10 ** (sigfigs - 1 - math.floor(math.log10(abs(value))))
-    if mode == "up":
-        return math.ceil(value * scale) / scale
-    return math.floor(value * scale) / scale
+    # Use Decimal to avoid binary floating-point artifacts when rounding.
+    d = Decimal(repr(value))
+    exp = d.adjusted() - (sigfigs - 1)
+    rounding = ROUND_CEILING if mode == "up" else ROUND_FLOOR
+    return float(d.quantize(Decimal(1).scaleb(exp), rounding=rounding))
 
 
 def qubit_to_Advantage2_annealing_line(
@@ -86,8 +92,8 @@ def qubit_to_Advantage2_annealing_line(
     Based on the Zephyr coordinate system (u,w,k,j,z), a qubit
     can be uniquely assigned a color. u denotes qubit orientation
     while j and z control aligned displacement on the processor. See also
-    :func:`dwave_networkx.zephyr_graph` and
-    :func:`dwave_networkx.zephyr_coordinates`.
+    :func:`dwave.graphs.zephyr_graph` and
+    :class:`dwave.graphs.zephyr_coordinates`.
 
     Args:
         n: Qubit label, as an integer, or a Zephyr coordinate as a 5-tuple.
@@ -131,7 +137,7 @@ def qubit_to_Advantage2_annealing_line(
 
 
 def line_assignments_from_feature_info(
-    exp_feature_info: tuple[dict[str, Any], list[dict[str, Any]]],
+    exp_feature_info: ExpFeatureInfo,
 ) -> dict[int, int]:
     """Map each qubit to its annealing-line index.
 
@@ -346,7 +352,7 @@ def standardize_schedule_endpoints(
 
 
 def verify_schedules(
-    exp_feature_info: list[dict, list[LineFeatureInfo]],
+    exp_feature_info: ExpFeatureInfo,
     x_anneal_schedules: XAnnealSchedules | None = None,
     x_polarizing_schedule: AnnealSchedule | None = None,
     check_rounding: bool = True,
@@ -399,7 +405,8 @@ def verify_schedules(
                 len(s) != 2 for s in x_anneal_schedules[line]
             ):
                 raise ScheduleError(
-                    f"Anneal schedule on line {line} must contain at least two [time, value] points."
+                    f"Anneal schedule on line {line} must contain at least "
+                    "two [time, value] points."
                 )
             if not math.isclose(seq_times[0], 0, abs_tol=1e-9):
                 raise ScheduleError(
@@ -419,7 +426,8 @@ def verify_schedules(
 
             if sorted(seq_times) != seq_times:
                 raise ScheduleError(
-                    f"Anneal schedule on line {line} is non-increasing at specified time precision."
+                    f"Anneal schedule on line {line} is non-increasing at "
+                    "specified time precision."
                 )
             if check_rounding:
                 for seq_time in seq_times:
@@ -428,7 +436,9 @@ def verify_schedules(
                         ratio, round(ratio), rel_tol=1e-9, abs_tol=1e-9
                     ):
                         raise ScheduleError(
-                            f"Anneal schedule time {seq_time} on line {line} is not an almost multiple of minAnnealingTimeStep={min_time_steps[line]}."
+                            f"Anneal schedule time {seq_time} on line {line} is "
+                            "not an almost multiple of "
+                            f"minAnnealingTimeStep={min_time_steps[line]}."
                         )
             term_time = x_anneal_schedules[line][-1][0]
 
@@ -456,7 +466,8 @@ def verify_schedules(
                 x_polarizing_schedule[-1][0], term_time, rel_tol=1e-9, abs_tol=1e-9
             ):
                 raise ScheduleError(
-                    f"Polarizing schedule ends at {x_polarizing_schedule[-1][0]}, expected {term_time}."
+                    f"Polarizing schedule ends at {x_polarizing_schedule[-1][0]}, "
+                    f"expected {term_time}."
                 )
         if sorted(seq_times) != seq_times:
             raise ScheduleError(
@@ -467,7 +478,8 @@ def verify_schedules(
                 ratio = seq_time / min_time_step
                 if not math.isclose(ratio, round(ratio), rel_tol=1e-9, abs_tol=1e-9):
                     raise ScheduleError(
-                        f"Polarizing schedule time {seq_time} is not an almost multiple of minPolarizingTimeStep={min_time_step}."
+                        f"Polarizing schedule time {seq_time} is not an almost "
+                        f"multiple of minPolarizingTimeStep={min_time_step}."
                     )
 
 
@@ -543,7 +555,8 @@ def parse_exp_feature_line_info(
         for line, efi in enumerate(exp_feature_line_info)
     }
     if use_common_bounds:
-        min_time_step = min(min_time_steps.values())
+        # The shared step must satisfy every line, so take the largest minimum.
+        min_time_step = max(min_time_steps.values())
         min_time_steps = {line: min_time_step for line in range(num_lines)}
         holdOvershootFor = max(holdOvershootFors.values())
         holdOvershootFors = {line: holdOvershootFor for line in range(num_lines)}
@@ -580,7 +593,8 @@ def parse_exp_feature_line_info(
         ]
         if invalid_lines:
             raise ValueError(
-                f"minCOvershoot, minC, maxC and maxCOvershoot are not ordered on line(s) {invalid_lines}."
+                "minCOvershoot, minC, maxC and maxCOvershoot are not ordered on "
+                f"line(s) {invalid_lines}."
             )
 
     if use_common_bounds and not standard_01_c_range:
@@ -598,7 +612,8 @@ def parse_exp_feature_line_info(
         minCOvershoots = {line: minCOvershoot for line in range(num_lines)}
         if minCOvershoot >= maxCOvershoot:
             raise ValueError(
-                "Incompatible maxCOvershoot and minCOvershoot values across lines, cannot use common bounds."
+                "Incompatible maxCOvershoot and minCOvershoot values across "
+                "lines, cannot use common bounds."
             )
 
     if symmetrize_c_bounds and not standard_01_c_range:
@@ -614,6 +629,14 @@ def parse_exp_feature_line_info(
         }
         minCs = {line: -c for line, c in maxCs.items()}
         minCOvershoots = {line: -c for line, c in maxCOvershoots.items()}
+        degenerate_lines = [
+            line for line in range(num_lines) if maxCs[line] <= minCs[line]
+        ]
+        if degenerate_lines:
+            warn(
+                "Symmetrizing C bounds produced a degenerate (empty) C range on "
+                f"line(s) {degenerate_lines}."
+            )
 
     return (
         maxCs,
@@ -675,7 +698,7 @@ def make_tds_x_anneal_schedules(
         target_lines: Iterable of target line indices.
         detector_lines: Iterable of detector line indices.
         target_c: Schedule value at which the target is held. This must be specified
-            if target_lines is not empty. If a dictionary format is provided, the 
+            if target_lines is not empty. If a dictionary format is provided, the
             held value can vary by line - it should be keyed by line number. If it is
             not specified lines are prepared to Cmin.
         polarized_preparation_interval: Tuple ``(start, end)`` giving the
@@ -684,15 +707,15 @@ def make_tds_x_anneal_schedules(
             source lines are set to ``maxC``. If None, defaults to the
             ``polarized_preparation_interval`` returned by
             :func:`make_tds_intervals` with default arguments.
-        detector_quench_time: Time at which to quench the detector line quench,
-            in microseconds. If None, defaults to the ``quench_time`` returned
-            by :func:`make_tds_intervals` with default arguments.
-        source_lines: Iterable of source line indices.
         depolarized_preparation_interval: Tuple ``(start, end)`` for the
             preparation stage that occurs after the polarizing schedule is
             returned to zero. If None, defaults to the
             ``depolarized_preparation_interval`` returned by
             :func:`make_tds_intervals` with default arguments.
+        detector_quench_time: Time at which to quench the detector line quench,
+            in microseconds. If None, defaults to the ``quench_time`` returned
+            by :func:`make_tds_intervals` with default arguments.
+        source_lines: Iterable of source line indices.
         source_quench_time: Time at which to quench the source line
             from ``maxC`` to ``minC``, in microseconds. If None, defaults to
             ``detector_quench_time``. Setting ``source_quench_time`` equal to
@@ -720,7 +743,7 @@ def make_tds_x_anneal_schedules(
             Specified as a dictionary (one per line) or a single value applied
             to all lines. Defaults to min step size permissible
             according to exp_feature_info by line.
-        detected_target_lines: Target lines that are held at non-zero Cmin, 
+        detected_target_lines: Target lines that are held at non-zero Cmin,
             and then read out by the detection process.
 
     Returns:
@@ -752,11 +775,11 @@ def make_tds_x_anneal_schedules(
         depolarized_preparation_interval0,
         quench_time0,
     ) = make_tds_intervals()
-    if not polarized_preparation_interval:
+    if polarized_preparation_interval is None:
         polarized_preparation_interval = polarized_preparation_interval0
-    if not depolarized_preparation_interval:
+    if depolarized_preparation_interval is None:
         depolarized_preparation_interval = depolarized_preparation_interval0
-    if not detector_quench_time:
+    if detector_quench_time is None:
         detector_quench_time = quench_time0
     if isinstance(use_overshoot, bool):
         use_overshoot_source = use_overshoot_detector = use_overshoot
@@ -770,7 +793,12 @@ def make_tds_x_anneal_schedules(
     target_lines = set(target_lines)
     detected_target_lines = set(detected_target_lines)
     tds_lines = source_lines | detector_lines | target_lines | detected_target_lines
-    if len(tds_lines) != len(source_lines) + len(detector_lines) + len(target_lines) + len(detected_target_lines):
+    if len(tds_lines) != (
+        len(source_lines)
+        + len(detector_lines)
+        + len(target_lines)
+        + len(detected_target_lines)
+    ):
         raise ValueError("Source, detector and target lines must be disjoint.")
     if not tds_lines.issubset(all_lines):
         raise ValueError(
@@ -796,11 +824,6 @@ def make_tds_x_anneal_schedules(
         else:
             target_c = {line: target_c for line in all_lines}
     times = []
-    if len(source_lines) > 0:
-        if polarized_preparation_interval is None:
-            raise ValueError(
-                "Must specify polarized_preparation_interval if source_lines is not empty."
-            )
     if len(target_lines) > 0 and polarized_preparation_interval[
         1
     ] - polarized_preparation_interval[0] < min(
@@ -810,10 +833,7 @@ def make_tds_x_anneal_schedules(
             "polarized_preparation_interval must have duration compatible with min step."
         )
     times += list(polarized_preparation_interval)
-    if not depolarized_preparation_interval:
-        depolarized_preparation_interval = polarized_preparation_interval
-    else:
-        times += list(depolarized_preparation_interval)
+    times += list(depolarized_preparation_interval)
 
     if len(target_lines) > 0 and depolarized_preparation_interval[
         1
@@ -898,15 +918,10 @@ def make_tds_x_anneal_schedules(
                 ]
             else:
                 anneal_schedules[line] += [
-                    [
-                        source_quench_time
-                        - holdOvershootFors[line]
-                        + min_time_steps[line],
-                        maxCs[line],
-                    ],
+                    [source_quench_time - min_time_steps[line], maxCs[line]],
                     [source_quench_time, maxCOvershoots[line]],
                     [source_quench_time + min_time_steps[line], minCOvershoots[line]],
-                    [source_quench_time + holdOvershootFors[line], minCs[line]],
+                    [source_quench_time + 2 * min_time_steps[line], minCs[line]],
                 ]
         else:
             anneal_schedules[line] += [
@@ -915,7 +930,6 @@ def make_tds_x_anneal_schedules(
             ]
     for line in detected_target_lines:
         # Prepare like a target line, read out like a detector
-        
         anneal_schedules[line] = [
             [depolarized_preparation_interval[0], 0.0],
             [depolarized_preparation_interval[1], target_c[line]],
@@ -1032,8 +1046,14 @@ def make_tds_x_polarizing_schedule(
         ... )            # doctest: +SKIP
     """
     if depolarization_interval is None:
-        polarization_interval, _, depolarization_interval, _, _ = make_tds_intervals()
-    elif polarization_interval is not None:
+        default_polarization, _, default_depolarization, _, _ = make_tds_intervals()
+        depolarization_interval = default_depolarization
+        if polarization_interval is None:
+            polarization_interval = default_polarization
+    else:
+        if polarization_interval is None:
+            # Only a depolarization interval was given: start polarized.
+            polarization_interval = (0.0, 0.0)
         if polarization_interval[0] == polarization_interval[1] == 0:
             intervals = (depolarization_interval,)
         else:
@@ -1047,10 +1067,6 @@ def make_tds_x_polarizing_schedule(
             for interval in intervals
         ):
             raise ValueError("intervals must have positive durations.")
-    else:
-        raise ValueError(
-            "Cannot infer depolarization_interval without polarization_interval."
-        )
     polarizing_schedule = []
     if polarization_interval[0] != polarization_interval[1]:
         polarizing_schedule += [
@@ -1069,7 +1085,7 @@ def make_tds_x_polarizing_schedule(
 
 
 def make_tds_x_schedules(
-    exp_feature_info: list[dict, list[LineFeatureInfo]],
+    exp_feature_info: ExpFeatureInfo,
     target_lines: Iterable[int],
     detector_lines: Iterable[int],
     source_lines: Iterable[int] = tuple(),
@@ -1081,9 +1097,9 @@ def make_tds_x_schedules(
     use_01_c_range: bool = False,
     symmetrize_c_bounds: bool = False,
     use_overshoot: bool | dict[str, bool] = True,
-    sign_polarization: Literal[-1, 1] = 1,
+    sign_polarization: Literal[-1, 1, 0] = 1,
     skip_explicit_polarization: bool = True,
-) -> tuple[XAnnealSchedules, AnnealSchedule]:
+) -> tuple[XAnnealSchedules, AnnealSchedule | None]:
     """Build synchronized anneal and polarizing schedules for TDS experiments.
 
     This helper composes interval construction, anneal schedule generation,
@@ -1098,9 +1114,10 @@ def make_tds_x_schedules(
         target_lines: Iterable of target line indices.
         detector_lines: Iterable of detector line indices.
         source_lines: Iterable of source line indices.
-        target_c: Schedule value at which the target is held. Can be a float (applied to all target lines)
-            or a dictionary mapping target line indices to their respective schedule values. target_c must be specified if
-            target_lines is not empty.
+        target_c: Schedule value at which the target is held. Can be a float
+            (applied to all target lines) or a dictionary mapping target line
+            indices to their respective schedule values. target_c must be
+            specified if target_lines is not empty.
         post_preparation_delay: Delay in microseconds between completion of
             depolarization and start of depolarized target preparation.
         depolarization_time_scale: Time scale for slow (quasi-static)
@@ -1124,7 +1141,7 @@ def make_tds_x_schedules(
             ``"detector"`` may be provided instead to control overshoot for
             source and detector quenches independently; missing keys default to
             ``True``.
-        sign_polarization: Initial sign of the polarizing bias, +1 or -1.
+        sign_polarization: Initial sign of the polarizing bias, +1, -1 or 0.
         skip_explicit_polarization: Whether to skip the polarization interval
             entirely when constructing intervals via :func:`make_tds_intervals`.
             Defaults to True.
@@ -1194,7 +1211,7 @@ def _target_c_time(
     decimal_places: int | None = None,
 ) -> float:
     """Calculate time at which target_c is realized assuming a linear quench.
-    
+
     Over the range C1~0 to C2~1 the quench can be well approximated as linear,
     whereas for faster quenches it typically deviates. The rate specified in the
     PWL is typically an overestimate to the rate physically realized through the
@@ -1211,7 +1228,12 @@ def _target_c_time(
 
     Returns:
         Time at which the target_c is realized under a linear quench.
+
+    Raises:
+        ValueError: If ``C1`` equals ``C2`` (the quench has no extent).
     """
+    if C1 == C2:
+        raise ValueError("C1 and C2 must differ to define a linear quench.")
     result = (target_c - C1) / (C2 - C1) * quench_time
     if decimal_places is not None:
         result = round(result, decimal_places)
@@ -1243,6 +1265,8 @@ def make_tds_x_schedule_delays(
            PWL schedule yields time 0.0 at the target_c value, which is set to
            0.0 if not specified.
         x_schedule_delays: Optional initial schedule delays. If None, initialized to zeros.
+        decimal_places: Optional number of decimal places to round each
+            computed delay to.
 
     Returns:
         Updated schedule delays array adjusted for target_c.
@@ -1272,6 +1296,8 @@ def make_tds_x_schedule_delays(
         target_c = 0.0
     if x_schedule_delays is None:
         x_schedule_delays = [0.0] * len(x_anneal_schedules)
+    else:
+        x_schedule_delays = list(x_schedule_delays)
     for line in quenched_lines:
         cvals = [c for _, c in x_anneal_schedules[line]]
         idx = np.argmax(
