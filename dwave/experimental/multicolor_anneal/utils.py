@@ -15,7 +15,8 @@
 from copy import deepcopy
 import math
 import numpy as np
-from typing import Any, Iterable, Literal, Sequence
+from collections.abc import Iterable, Sequence
+from typing import Any, Literal
 
 import networkx as nx
 
@@ -56,10 +57,10 @@ def _round_sigfigs(
         value: The value to round.
         sigfigs: The number of significant figures to round to.
         mode: Whether to round up or down.
+
     Returns:
         The rounded value.
     """
-
     if value == 0:
         return 0.0
     if sigfigs <= 0:
@@ -217,17 +218,17 @@ def make_tds_intervals(
     post_preparation_delay: float = 20.0,
     buffering_time_scale: float = 2.0,
     *,
-    depolarizing_time_scale: None | float = None,
-    anneal_preparation_time_scale: None | float = None,
+    depolarizing_time_scale: float | None= None,
+    anneal_preparation_time_scale: float | None = None,
     skip_explicit_polarization: bool = True,
 ) -> tuple[Interval, Interval, Interval, Interval, float]:
-    """Make default intervals for schedules construction.
+    """Make default intervals for schedule construction.
 
     This routine sets up the timescales on which the source (and detector)
     lines are prepared in polarized (depolarized) states, the polarizing bias
     is removed, and the target is prepared.
 
-    Defaulting is designed with a view to Larmour precession examples in
+    Defaulting is designed with a view to Larmor precession examples in
     :ref:`qpu_experimental_research_mca_example`
     and to allow replication of the
     `published experimental results <https://doi.org/10.48550/arXiv.2603.15534>`_.
@@ -242,7 +243,7 @@ def make_tds_intervals(
             This is lower bounded by the
             depolarizationAnnealScheduleRequiredDelay annealing-line property.
         depolarizing_time_scale: Step size for the polarizing schedule.
-            It is lower bounded by minPolarizingTimeStep, but typically a
+            It is lower bounded by ``minPolarizingTimeStep``, but typically a
             larger value of order microseconds is desirable for robust
             preparation. Defaults to ``buffering_time_scale`` when not
             set.
@@ -257,6 +258,7 @@ def make_tds_intervals(
             change from neutral [t_1, 0] to polarized (t_p, +/-1); other stages are
             delayed. If True the value (0.0, 0.0) is returned and a polarized
             initialization is assumed. Defaults to True.
+
     Returns:
         A 5-tuple containing ``polarization_interval``, ``polarized_preparation_interval``,
         ``depolarization_interval``, ``depolarized_preparation_interval``,
@@ -281,10 +283,7 @@ def make_tds_intervals(
     depolarization_interval = (tp, tp + depolarizing_time_scale)
     ts = depolarization_interval[-1] + buffering_time_scale
 
-    depolarized_preparation_interval = (
-        ts,
-        ts + anneal_preparation_time_scale,
-    )
+    depolarized_preparation_interval = (ts, ts + anneal_preparation_time_scale)
     quench_time = depolarized_preparation_interval[-1] + post_preparation_delay
 
     return (
@@ -301,8 +300,8 @@ def standardize_schedule_endpoints(
     x_polarizing_schedule: AnnealSchedule | None = None,
     *,
     post_pwl_delay: float = 0.0,
-    decimals: int = 0,
-) -> tuple[XAnnealSchedules, AnnealSchedule]:
+    decimals: int | None = 0,
+) -> tuple[XAnnealSchedules, AnnealSchedule | None]:
     """Adapt anneal schedules to account for a delayed measurement.
 
     All schedule lengths (max time) are reset to accommodate the largest
@@ -310,7 +309,7 @@ def standardize_schedule_endpoints(
     microsecond.
 
     Args:
-        x_anneal_schedules: List of anneal schedules, as might
+        x_anneal_schedules: List of anneal schedules, as might be
             returned by :func:`make_tds_x_anneal_schedules`.
         x_polarizing_schedule: Anneal schedule, as might be returned by
             :func:`make_tds_x_polarizing_schedule`.
@@ -366,7 +365,7 @@ def verify_schedules(
             as returned by :func:`~dwave.experimental.multicolor_anneal.api.get_properties`.
             The first element is a dictionary describing the polarizing line; the second
             element is a list of per-annealing-line dictionaries.
-        x_anneal_schedules: List of anneal schedules, as might
+        x_anneal_schedules: List of anneal schedules, as might be
             returned by :func:`make_tds_x_anneal_schedules`.
         x_polarizing_schedule: Anneal schedule, as might be returned by
             :func:`make_tds_x_polarizing_schedule`.
@@ -414,7 +413,8 @@ def verify_schedules(
                     abs_tol=1e-9,
                 ):
                     raise ScheduleError(
-                        f"Anneal schedule on line {line} ends at {x_anneal_schedules[line][-1][0]}, expected {term_time}."
+                        f"Anneal schedule on line {line} ends at "
+                        f"{x_anneal_schedules[line][-1][0]}, expected {term_time}."
                     )
 
             if sorted(seq_times) != seq_times:
@@ -580,7 +580,7 @@ def parse_exp_feature_line_info(
         ]
         if invalid_lines:
             raise ValueError(
-                f"minCOvershoot, minC, maxC and  maxCOvershoot are not ordered on line(s) {invalid_lines}."
+                f"minCOvershoot, minC, maxC and maxCOvershoot are not ordered on line(s) {invalid_lines}."
             )
 
     if use_common_bounds and not standard_01_c_range:
@@ -655,11 +655,11 @@ def make_tds_x_anneal_schedules(
     control bias to ``maxC`` or ``minC`` as appropriate.
     The polarizing schedule is assumed to be turned off with a safe
     separation before ``depolarized_preparation_interval``.
-    Target line qubits are then quasistatically prepared to `target_c`.
+    Target line qubits are then quasistatically prepared to ``target_c``.
     Source line qubits are then quenched to decouple them from the target.
     Detector line qubits are then quenched to measure the target.
 
-    Defaulting is designed with a view to Larmour precession examples in
+    Defaulting is designed with a view to Larmor precession examples in
     :ref:`qpu_experimental_research_mca_example`
     and to allow replication of the
     `published experimental results <https://doi.org/10.48550/arXiv.2603.15534>`_.
@@ -696,7 +696,7 @@ def make_tds_x_anneal_schedules(
         source_quench_time: Time at which to quench the source line
             from ``maxC`` to ``minC``, in microseconds. If None, defaults to
             ``detector_quench_time``. Setting ``source_quench_time`` equal to
-            ``detector_quench_time`` is recommended as `x_schedule_delays` can
+            ``detector_quench_time`` is recommended as ``x_schedule_delays`` can
             be used for higher fidelity variation of the time difference.
         use_common_bounds: Parameters can vary by line. When True is used,
             a set of common compatible values define all lines. False allows
@@ -718,7 +718,7 @@ def make_tds_x_anneal_schedules(
             terminal values of all schedules to a common endpoint.
         quench_step_sizes: Time in microseconds for detector or source quench.
             Specified as a dictionary (one per line) or a single value applied
-            to all lines. Defaults to min step size permissable
+            to all lines. Defaults to min step size permissible
             according to exp_feature_info by line.
         detected_target_lines: Target lines that are held at non-zero Cmin, 
             and then read out by the detection process.
@@ -807,7 +807,7 @@ def make_tds_x_anneal_schedules(
         min_time_steps[l] for l in all_lines - target_lines
     ):
         raise ValueError(
-            "polarized_preparation_interval must have duration compatible with min step ."
+            "polarized_preparation_interval must have duration compatible with min step."
         )
     times += list(polarized_preparation_interval)
     if not depolarized_preparation_interval:
@@ -821,7 +821,7 @@ def make_tds_x_anneal_schedules(
         min_time_steps[l] for l in target_lines
     ):
         raise ValueError(
-            "depolarized_preparation_interval must have duration compatible with min step ."
+            "depolarized_preparation_interval must have duration compatible with min step."
         )
     if not source_lines or source_quench_time is None:
         source_quench_time = detector_quench_time
@@ -982,7 +982,6 @@ def make_tds_x_anneal_schedules(
 
     return anneal_schedules
 
-
 def make_tds_x_polarizing_schedule(
     polarization_interval: Interval | None = None,
     depolarization_interval: Interval | None = None,
@@ -1009,7 +1008,6 @@ def make_tds_x_polarizing_schedule(
             then no polarizing signal is applied, but the interval-wise
             pattern of PWL construction doesn't change.
 
-
     Returns:
         A piecewise-linear polarizing schedule beginning at time 0 with
         given polarization, and evolving to polarization 0
@@ -1027,7 +1025,7 @@ def make_tds_x_polarizing_schedule(
         ...     'depolarizationAnnealScheduleRequiredDelay'
         ... ]            # doctest: +SKIP
         >>> _, _, depolarization_interval, _, _ = make_tds_intervals(
-        ...     depolarization_time_scale=delay,
+        ...     depolarizing_time_scale=delay,
         ... )            # doctest: +SKIP
         >>> x_polarizing_schedule = make_tds_x_polarizing_schedule(
         ...     depolarization_interval=depolarization_interval,
@@ -1194,7 +1192,7 @@ def _target_c_time(
     quench_time: float = 1.0,
     target_c: float = 0.0,
     decimal_places: int | None = None,
-):
+) -> float:
     """Calculate time at which target_c is realized assuming a linear quench.
     
     Over the range C1~0 to C2~1 the quench can be well approximated as linear,
@@ -1227,12 +1225,12 @@ def make_tds_x_schedule_delays(
     x_schedule_delays: Sequence[float] | None = None,
     decimal_places: int | None = None,
 ) -> Sequence:
-    """Update delays so that `target_c` is achieved at time 0.
+    """Update delays so that ``target_c`` is achieved at time 0.
 
     Normalized anneal offsets quench from a min
     to a max value for a detector, and vice versa for a source.
     Delays are adjusted so that sources and targets quench
-    through `target_c` at equal time under the piece-wise-linear
+    through ``target_c`` at equal time under the piece-wise-linear
     schedule. Since the piecewise linear schedule is subject to
     filtering and non-idealities, the predicted delays may require
     adjustment particularly in the context of schedules exploiting

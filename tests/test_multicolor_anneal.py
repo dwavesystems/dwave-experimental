@@ -238,8 +238,8 @@ class UtilsTestWithoutClient(unittest.TestCase):
         self.assertEqual(G.number_of_nodes(), 4)
 
     def test_make_tds_x_schedules(self):
-        n_lines = 6  # Must be atleast 3.
-        target_c = (random.random() * 100) / 100  # target_c to 2 s.f.
+        n_lines = 6  # Must be at least 3.
+        target_c = round(random.random(), 2)
         minCOvershoot = -7.0
         maxCOvershoot = 8.0
         depolarization_time_scale = (
