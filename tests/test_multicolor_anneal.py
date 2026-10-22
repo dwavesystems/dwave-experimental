@@ -18,13 +18,10 @@ import unittest.mock
 
 import networkx as nx
 
-from dwave.system import DWaveSampler
-from dwave.system.testing import MockDWaveSampler
 from dwave.experimental.multicolor_anneal import (
+    SOLVER_FILTER,
     get_properties,
     get_solver_name,
-    SOLVER_FILTER,
-    qubit_to_Advantage2_annealing_line,
     line_assignments_from_feature_info,
     make_tds_graph,
     make_tds_intervals,
@@ -32,9 +29,13 @@ from dwave.experimental.multicolor_anneal import (
     make_tds_x_polarizing_schedule,
     make_tds_x_schedule_delays,
     make_tds_x_schedules,
+    parse_exp_feature_line_info,
+    qubit_to_Advantage2_annealing_line,
     standardize_schedule_endpoints,
 )
 from dwave.graphs import zephyr_coordinates
+from dwave.system import DWaveSampler
+from dwave.system.testing import MockDWaveSampler
 
 
 class PropertiesCheckMixin:
@@ -238,8 +239,9 @@ class UtilsTestWithoutClient(unittest.TestCase):
         self.assertEqual(G.number_of_nodes(), 4)
 
     def test_make_tds_x_schedules(self):
+        random.seed(0)
         n_lines = 6  # Must be at least 3.
-        target_c = round(random.random(), 2)
+        target_c = round(random.random(), 2)  # target_c to 2 d.p.
         minCOvershoot = -7.0
         maxCOvershoot = 8.0
         depolarization_time_scale = (
@@ -574,8 +576,9 @@ class UtilsTestWithoutClient(unittest.TestCase):
                 )
 
     def test_make_tds_x_schedules_empty_lines(self):
+        random.seed(0)
         n_lines = 6  # Must be at least 3.
-        target_c = (random.random() * 100) / 100  # target_c to 2 s.f.
+        target_c = round(random.random(), 2)  # target_c to 2 d.p.
 
         polarizing_line_info = {
             "minPolarizingTimeStep": 0.02,
@@ -785,10 +788,12 @@ class UtilsTestWithoutClient(unittest.TestCase):
         with self.assertRaises(ValueError):
             make_tds_x_polarizing_schedule((2.0, 5.0), (3.0, 6.0))
 
-        # A depolarization interval cannot be supplied without a polarization
-        # interval.
-        with self.assertRaises(ValueError):
-            make_tds_x_polarizing_schedule(depolarization_interval=(4.0, 6.0))
+        # A depolarization interval supplied without a polarization interval
+        # defaults to starting in a polarized state at time 0.
+        schedule_depol_only = make_tds_x_polarizing_schedule(
+            depolarization_interval=(4.0, 6.0)
+        )
+        self.assertListEqual(schedule_depol_only, [[0.0, 1], [4.0, 1], [6.0, 0]])
 
     def test_standardize_schedule_endpoints_decimals(self):
         # ``decimals`` rounds the common endpoint up to the given precision.
@@ -843,3 +848,20 @@ class UtilsTestWithoutClient(unittest.TestCase):
         with self.subTest(option="use_common_bounds"):
             schedules, _ = make_tds_x_schedules(**common, use_common_bounds=True)
             self.assertEqual(len(schedules), n_lines)
+
+    def test_parse_exp_feature_line_info_common_time_step(self):
+        # Lines have different minimum time steps; the common step must satisfy
+        # every line, i.e. it is the largest per-line minimum, not the smallest.
+        annealing_line_info = self._annealing_line_info(3)
+        annealing_line_info[0]["minAnnealingTimeStep"] = 0.01
+        annealing_line_info[1]["minAnnealingTimeStep"] = 0.05
+        annealing_line_info[2]["minAnnealingTimeStep"] = 0.02
+
+        min_time_steps = parse_exp_feature_line_info(
+            annealing_line_info,
+            use_common_bounds=True,
+            symmetrize_c_bounds=False,
+        )[4]
+
+        self.assertTrue(all(step == 0.05 for step in min_time_steps.values()))
+
