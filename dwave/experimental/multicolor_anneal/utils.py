@@ -13,10 +13,10 @@
 # limitations under the License.
 
 import math
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from copy import deepcopy
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
-from typing import Any, Literal
+from typing import Any, Literal, TypeAlias
 from warnings import warn
 
 import networkx as nx
@@ -117,7 +117,11 @@ def qubit_to_Advantage2_annealing_line(
         >>> annealing_lines = mca.get_properties(qpu)            # doctest: +SKIP
         >>> shape = qpu.properties['topology']['shape']          # doctest: +SKIP
         >>> num_lines = len(annealing_lines)            # doctest: +SKIP
-        >>> assert(all(mca.qubit_to_Advantage2_annealing_line(n, shape, num_lines)==al_idx for al_idx, al in enumerate(annealing_lines) for n in al['qubits']))            # doctest: +SKIP
+        >>> assert all(            # doctest: +SKIP
+        ...     mca.qubit_to_Advantage2_annealing_line(n, shape, num_lines) == al_idx
+        ...     for al_idx, al in enumerate(annealing_lines)
+        ...     for n in al['qubits']
+        ... )
 
         To explicitly select a solver that supports advanced annealing
         features, such as multi-color annealing, see
@@ -127,6 +131,8 @@ def qubit_to_Advantage2_annealing_line(
     if isinstance(n, tuple):
         u, _, _, j, z = n
     else:
+        if shape is None:
+            raise ValueError("shape is required when n is an integer qubit label.")
         u, _, _, j, z = zephyr_coordinates(*shape).linear_to_zephyr(n)
     if num_lines == 6:
         return 3 * u + (1 - 2 * z - j) % 3
@@ -398,7 +404,7 @@ def verify_schedules(
         }
         for line, min_time_step in min_time_steps.items():
             seq_times = [
-                t + min_time_step * idx
+                t - min_time_step * idx
                 for idx, (t, _) in enumerate(x_anneal_schedules[line])
             ]
             if len(x_anneal_schedules[line]) < 2 or any(
@@ -424,10 +430,13 @@ def verify_schedules(
                         f"{x_anneal_schedules[line][-1][0]}, expected {term_time}."
                     )
 
-            if sorted(seq_times) != seq_times:
+            if any(
+                later < earlier - 1e-9
+                for earlier, later in zip(seq_times, seq_times[1:])
+            ):
                 raise ScheduleError(
-                    f"Anneal schedule on line {line} is non-increasing at "
-                    "specified time precision."
+                    f"Anneal schedule on line {line} does not maintain the "
+                    "minimum time-step spacing."
                 )
             if check_rounding:
                 for seq_time in seq_times:
@@ -455,7 +464,7 @@ def verify_schedules(
                 "Polarizing schedule must contain at least two [time, value] points."
             )
         seq_times = [
-            t + min_time_step * idx for idx, (t, _) in enumerate(x_polarizing_schedule)
+            t - min_time_step * idx for idx, (t, _) in enumerate(x_polarizing_schedule)
         ]
         if not math.isclose(seq_times[0], 0, abs_tol=1e-9):
             raise ScheduleError(
@@ -469,9 +478,12 @@ def verify_schedules(
                     f"Polarizing schedule ends at {x_polarizing_schedule[-1][0]}, "
                     f"expected {term_time}."
                 )
-        if sorted(seq_times) != seq_times:
+        if any(
+            later < earlier - 1e-9
+            for earlier, later in zip(seq_times, seq_times[1:])
+        ):
             raise ScheduleError(
-                "Polarizing schedule is non-increasing at specified time precision."
+                "Polarizing schedule does not maintain the minimum time-step spacing."
             )
         if check_rounding:
             for seq_time in seq_times:
@@ -824,10 +836,11 @@ def make_tds_x_anneal_schedules(
         else:
             target_c = {line: target_c for line in all_lines}
     times = []
-    if len(target_lines) > 0 and polarized_preparation_interval[
+    non_target_lines = all_lines - target_lines
+    if non_target_lines and polarized_preparation_interval[
         1
     ] - polarized_preparation_interval[0] < min(
-        min_time_steps[l] for l in all_lines - target_lines
+        min_time_steps[l] for l in non_target_lines
     ):
         raise ValueError(
             "polarized_preparation_interval must have duration compatible with min step."
@@ -884,11 +897,13 @@ def make_tds_x_anneal_schedules(
     if quench_step_sizes is not None:
         if not isinstance(quench_step_sizes, dict):
             quench_step_sizes = {line: quench_step_sizes for line in all_lines}
-        if any(quench_step_sizes[line] < min_time_steps[line] for line in all_lines):
+        if any(
+            quench_step_sizes[line] < min_time_steps[line] for line in quench_step_sizes
+        ):
             raise ValueError(
                 "Quench step sizes must be at least the minimum time step for each line."
             )
-        min_time_steps = quench_step_sizes
+        min_time_steps = {**min_time_steps, **quench_step_sizes}
 
     for line in source_lines:
         if use_overshoot_source:
@@ -1050,23 +1065,23 @@ def make_tds_x_polarizing_schedule(
         depolarization_interval = default_depolarization
         if polarization_interval is None:
             polarization_interval = default_polarization
+    elif polarization_interval is None:
+        # Only a depolarization interval was given: start polarized.
+        polarization_interval = (0.0, 0.0)
+
+    if polarization_interval[0] == polarization_interval[1] == 0:
+        intervals = (depolarization_interval,)
     else:
-        if polarization_interval is None:
-            # Only a depolarization interval was given: start polarized.
-            polarization_interval = (0.0, 0.0)
-        if polarization_interval[0] == polarization_interval[1] == 0:
-            intervals = (depolarization_interval,)
-        else:
-            if depolarization_interval[0] <= polarization_interval[1]:
-                raise ValueError(
-                    "polarization_interval must end before depolarization_interval starts."
-                )
-            intervals = (polarization_interval, depolarization_interval)
-        if any(
-            len(interval) != 2 or interval[1] - interval[0] <= 0
-            for interval in intervals
-        ):
-            raise ValueError("intervals must have positive durations.")
+        if depolarization_interval[0] <= polarization_interval[1]:
+            raise ValueError(
+                "polarization_interval must end before depolarization_interval starts."
+            )
+        intervals = (polarization_interval, depolarization_interval)
+    if any(
+        len(interval) != 2 or interval[1] - interval[0] <= 0
+        for interval in intervals
+    ):
+        raise ValueError("intervals must have positive durations.")
     polarizing_schedule = []
     if polarization_interval[0] != polarization_interval[1]:
         polarizing_schedule += [
