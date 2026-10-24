@@ -327,12 +327,14 @@ def standardize_schedule_endpoints(
     *,
     post_pwl_delay: float = 0.0,
     decimals: int | None = 0,
+    end_buffer: float = 1.0,
 ) -> tuple[XAnnealSchedules, AnnealSchedule | None]:
-    """Adapt anneal schedules to account for a delayed measurement.
+    """Adapt anneal schedules to accommodate a common end point.
 
     All schedule lengths (max time) are reset to accommodate the largest
     support time plus a delay. The final time is rounded up to the nearest
-    microsecond.
+    microsecond. Terminating the PWL schedules with a flat signal on the order
+    of microseconds ensures smoother termination of the realized signals.
 
     Args:
         x_anneal_schedules: List of anneal schedules, as might be
@@ -345,6 +347,11 @@ def standardize_schedule_endpoints(
             interfering with waveform completion.
         decimals: Decimals to which the end point is rounded up. By default
             to the nearest microsecond.
+        end_buffer: Minimum terminal hold, in microseconds, required for a
+            schedule to be considered already standardized. When every schedule
+            already holds its final value for at least this long, the schedules
+            are returned unchanged, keeping repeated calls idempotent. Any
+            non-negative value, including 0, is accepted.
 
     Returns:
         tuple consisting of adapted anneal and polarizing schedules
@@ -353,20 +360,43 @@ def standardize_schedule_endpoints(
     polarizing_schedule = deepcopy(x_polarizing_schedule)
     if post_pwl_delay < 0.0:
         raise ValueError("delay must be non-negative.")
-    completion_time = max(pwl[-1][0] for pwl in anneal_schedules)
+    if end_buffer < 0.0:
+        raise ValueError("end_buffer must be non-negative.")
+
+    schedules = list(anneal_schedules)
     if polarizing_schedule:
-        completion_time = max(completion_time, polarizing_schedule[-1][0])
-    completion_time = completion_time + post_pwl_delay
+        schedules.append(polarizing_schedule)
+
+    def has_end_buffer(pwl: AnnealSchedule) -> bool:
+        return (
+            len(pwl) >= 2
+            and pwl[-1][1] == pwl[-2][1]
+            and pwl[-1][0] - pwl[-2][0] >= end_buffer - 1e-9
+        )
+
+    # Already-buffered schedules need no change; this makes repeated calls
+    # (e.g. the internal standardization in make_tds_x_schedules) idempotent.
+    if all(has_end_buffer(pwl) for pwl in schedules):
+        return anneal_schedules, polarizing_schedule
+
+    completion_time = max(pwl[-1][0] for pwl in schedules) + post_pwl_delay
     if decimals is not None:
         scale = 10**decimals
         completion_time = math.ceil(completion_time * scale) / scale
 
-    for anneal_schedule in anneal_schedules:
-        if anneal_schedule[-1][0] != completion_time:
-            anneal_schedule += [[completion_time, anneal_schedule[-1][1]]]
+    def extend(pwl: AnnealSchedule) -> None:
+        if pwl[-1][0] == completion_time:
+            return
+        # Move an existing terminal hold rather than add a collinear point.
+        if len(pwl) >= 2 and pwl[-1][1] == pwl[-2][1] and pwl[-1][0] < completion_time:
+            pwl[-1][0] = completion_time
+        else:
+            pwl.append([completion_time, pwl[-1][1]])
 
-    if polarizing_schedule and polarizing_schedule[-1][0] != completion_time:
-        polarizing_schedule.append([completion_time, polarizing_schedule[-1][1]])
+    for anneal_schedule in anneal_schedules:
+        extend(anneal_schedule)
+    if polarizing_schedule:
+        extend(polarizing_schedule)
 
     return anneal_schedules, polarizing_schedule
 
@@ -1204,7 +1234,7 @@ def make_tds_x_schedules(
         source_lines=source_lines,
         polarized_preparation_interval=polarized_preparation_interval,
         target_c=target_c,
-        post_pwl_delay=0.0,
+        post_pwl_delay=depolarization_time_scale,
         use_common_bounds=use_common_bounds,
         use_standard_01_c_range=use_01_c_range,
         symmetrize_c_bounds=symmetrize_c_bounds,
@@ -1218,7 +1248,7 @@ def make_tds_x_schedules(
     x_anneal_schedules, x_polarizing_schedule = standardize_schedule_endpoints(
         x_anneal_schedules,
         x_polarizing_schedule,
-        post_pwl_delay=depolarization_time_scale,
+        post_pwl_delay=0.0,
     )
     verify_schedules(
         exp_feature_info,
