@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 import math
 from copy import deepcopy
 from typing import Any, Callable, Collection, Iterable, Literal, Mapping, Sequence
@@ -21,8 +22,12 @@ from typing import Any, Callable, Collection, Iterable, Literal, Mapping, Sequen
 import dimod
 import numpy as np
 from dimod.typing import Bias, Variable
-from dwave.experimental.multicolor_anneal import (LineFeatureInfo, XAnnealSchedules,
-                                                  make_tds_x_anneal_schedules)
+
+from dwave.experimental.multicolor_anneal import (
+    make_tds_x_anneal_schedules,
+    LineFeatureInfo,
+    XAnnealSchedules,
+)
 
 __all__ = [
     "shim_flux_biases",

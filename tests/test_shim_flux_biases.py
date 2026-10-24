@@ -18,11 +18,16 @@ import unittest.mock
 from copy import deepcopy
 from itertools import product
 
-import dimod
 from dwave.experimental.multicolor_anneal import make_tds_x_schedules
-from dwave.experimental.shimming import (qubit_freezeout_alpha_phi, shim_flux_biases,
-                                         shim_tds_flux_biases)
-from dwave.experimental.shimming.flux_biases import _extend_history, shim_linewise_flux_biases
+from dwave.experimental.shimming import (
+    shim_flux_biases,
+    shim_tds_flux_biases,
+    qubit_freezeout_alpha_phi,
+)
+from dwave.experimental.shimming.flux_biases import (
+    shim_linewise_flux_biases,
+    _extend_history,
+)
 from dwave.experimental.shimming.testing import ShimmingMockSampler
 from dwave.samplers import SteepestDescentSampler
 
