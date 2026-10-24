@@ -21,6 +21,7 @@ import networkx as nx
 from dwave.experimental.multicolor_anneal import (
     SOLVER_FILTER,
     ExpFeatureInfo,
+    ScheduleError,
     get_properties,
     get_solver_name,
     line_assignments_from_feature_info,
@@ -33,6 +34,7 @@ from dwave.experimental.multicolor_anneal import (
     parse_exp_feature_line_info,
     qubit_to_Advantage2_annealing_line,
     standardize_schedule_endpoints,
+    verify_schedules,
 )
 from dwave.graphs import zephyr_coordinates
 from dwave.system import DWaveSampler
@@ -42,7 +44,8 @@ from dwave.system.testing import MockDWaveSampler
 class PropertiesCheckMixin:
 
     polarizing_line_properties = ['minPolarizingTimeStep',
-        'depolarizationAnnealScheduleRequiredDelay']
+        'depolarizationAnnealScheduleRequiredDelay'] 
+    # Pending addition: 'polarizationChangeAnnealScheduleRequiredDelay'
 
     annealing_line_properties = [
         'annealingLine', 'minAnnealingTimeStep', 'holdOvershootFor',
@@ -77,7 +80,8 @@ class MCA(unittest.TestCase, PropertiesCheckMixin):
         n_lines = 6
         n_qubits = 100
         polarizing_line_info = {'minPolarizingTimeStep': 0.02,
-                                'depolarizationAnnealScheduleRequiredDelay': 2.0}
+                                'depolarizationAnnealScheduleRequiredDelay': 2.0,
+                                'polarizationChangeAnnealScheduleRequiredDelay': 1.0}
         annealing_line_info = [{'annealingLine': i,
                  'minAnnealingTimeStep': 0.01,
                  'depolarizationAnnealScheduleRequiredDelay': 2.0,
@@ -193,6 +197,7 @@ class UtilsTestWithoutClient(unittest.TestCase):
         polarizing_line_info = {
             "minPolarizingTimeStep": 0.02,
             "depolarizationAnnealScheduleRequiredDelay": 2.0,
+            "polarizationChangeAnnealScheduleRequiredDelay": 1.0,
         }
         annealing_line_info = [
             {"annealingLine": 0, "qubits": [2, 6, 9]},
@@ -252,6 +257,7 @@ class UtilsTestWithoutClient(unittest.TestCase):
         polarizing_line_info = {
             "minPolarizingTimeStep": 0.02,
             "depolarizationAnnealScheduleRequiredDelay": 2.0,
+            "polarizationChangeAnnealScheduleRequiredDelay": 1.0,
         }
         annealing_line_info = [
             {
@@ -584,6 +590,7 @@ class UtilsTestWithoutClient(unittest.TestCase):
         polarizing_line_info = {
             "minPolarizingTimeStep": 0.02,
             "depolarizationAnnealScheduleRequiredDelay": 2.0,
+            "polarizationChangeAnnealScheduleRequiredDelay": 1.0,
         }
         annealing_line_info = [
             {
@@ -821,6 +828,7 @@ class UtilsTestWithoutClient(unittest.TestCase):
             {
                 "minPolarizingTimeStep": 0.02,
                 "depolarizationAnnealScheduleRequiredDelay": 2.0,
+                "polarizationChangeAnnealScheduleRequiredDelay": 1.0,
             },
             annealing_line_info,
         ]
@@ -865,4 +873,160 @@ class UtilsTestWithoutClient(unittest.TestCase):
         )[4]
 
         self.assertTrue(all(step == 0.05 for step in min_time_steps.values()))
+
+    def test_exp_feature_info_namedtuple(self):
+        info = ExpFeatureInfo({"minPolarizingTimeStep": 0.02}, [{"annealingLine": 0}])
+        self.assertEqual(info.polarizing_line_info, {"minPolarizingTimeStep": 0.02})
+        self.assertEqual(info.annealing_line_info, [{"annealingLine": 0}])
+        # Still behaves as a 2-tuple for backward compatibility.
+        self.assertEqual(info[0], info.polarizing_line_info)
+        self.assertEqual(len(info), 2)
+
+    def test_qubit_to_Advantage2_annealing_line_requires_shape(self):
+        # An integer qubit label needs a shape to resolve Zephyr coordinates.
+        with self.assertRaises(ValueError):
+            qubit_to_Advantage2_annealing_line(42)
+        # A coordinate tuple does not need a shape.
+        self.assertIsInstance(
+            qubit_to_Advantage2_annealing_line((0, 0, 0, 0, 0)), int
+        )
+
+    def test_make_tds_x_anneal_schedules_all_target_lines(self):
+        # Every line is a target: the non-target duration check must not be
+        # evaluated over an empty set (regression for min() on empty sequence).
+        annealing_line_info = self._annealing_line_info(2)
+        schedules = make_tds_x_anneal_schedules(
+            annealing_line_info,
+            target_lines={0, 1},
+            target_c=0.5,
+        )
+        self.assertEqual(len(schedules), 2)
+
+    def test_make_tds_x_anneal_schedules_partial_quench_step_sizes(self):
+        # A dict covering only the quenched line is accepted; other lines keep
+        # their own minimum step.
+        minC, maxC = -2.0, 3.0
+        annealing_line_info = self._annealing_line_info(
+            3, min_step=0.01, minC=minC, maxC=maxC
+        )
+        schedule = make_tds_x_anneal_schedules(
+            annealing_line_info,
+            detector_lines={0},
+            use_overshoot=False,
+            quench_step_sizes={0: 0.05},
+        )
+        self.assertEqual(len(schedule), 3)
+        gaps = [
+            t1 - t0
+            for (t0, c0), (t1, c1) in zip(schedule[0], schedule[0][1:])
+            if c0 == minC and c1 == maxC
+        ]
+        self.assertTrue(any(abs(gap - 0.05) < 1e-9 for gap in gaps))
+
+    def test_make_tds_x_anneal_schedules_large_hold_overshoot(self):
+        # A holdOvershootFor reaching before the preparation interval must not
+        # produce a backwards (non-monotonic) schedule.
+        annealing_line_info = self._annealing_line_info(2)
+        for line in annealing_line_info:
+            line["holdOvershootFor"] = 29.0
+        schedules = make_tds_x_anneal_schedules(
+            annealing_line_info,
+            source_lines={0},
+            detector_lines={1},
+        )
+        for schedule in schedules:
+            times = [t for t, _ in schedule]
+            self.assertEqual(times, sorted(times))
+
+    def test_make_tds_x_polarizing_schedule_requires_ordered_intervals(self):
+        # Supplying only a polarization interval still validates ordering
+        # against the default depolarization interval.
+        with self.assertRaises(ValueError):
+            make_tds_x_polarizing_schedule(polarization_interval=(0.0, 5.0))
+
+    def test_standardize_schedule_endpoints_idempotent(self):
+        x_anneal = [[[0.0, 0.0], [2.0, 1.0]]]
+        once, _ = standardize_schedule_endpoints(x_anneal, post_pwl_delay=1.0)
+        twice, _ = standardize_schedule_endpoints(once, post_pwl_delay=1.0)
+        self.assertEqual(once, twice)
+
+    def test_standardize_schedule_endpoints_end_buffer(self):
+        x_anneal = [[[0.0, 0.0], [2.0, 1.0]]]
+        # A negative end_buffer is rejected.
+        with self.assertRaises(ValueError):
+            standardize_schedule_endpoints(x_anneal, end_buffer=-1.0)
+        # end_buffer of 0 is accepted.
+        result, _ = standardize_schedule_endpoints(
+            x_anneal, post_pwl_delay=0.0, end_buffer=0.0
+        )
+        self.assertEqual(len(result), 1)
+
+    def test_verify_schedules_min_time_step_spacing(self):
+        info = [
+            {"minPolarizingTimeStep": 0.02},
+            [{"minAnnealingTimeStep": 0.01}],
+        ]
+        # Consecutive points closer than the minimum time step are rejected.
+        bad = [[[0.0, 0.0], [0.005, 1.0], [1.0, 1.0]]]
+        with self.assertRaises(ScheduleError):
+            verify_schedules(info, x_anneal_schedules=bad, check_rounding=False)
+        # A compliant schedule passes.
+        good = [[[0.0, 0.0], [0.5, 1.0], [1.0, 1.0]]]
+        verify_schedules(info, x_anneal_schedules=good, check_rounding=False)
+
+    def test_verify_schedules_depolarization_constancy(self):
+        info = [
+            {
+                "minPolarizingTimeStep": 0.02,
+                "depolarizationAnnealScheduleRequiredDelay": 2.0,
+            },
+            [{"minAnnealingTimeStep": 0.01}],
+        ]
+        polarizing = [[0.0, 1], [4.0, 1], [6.0, 0], [10.0, 0]]
+        # Anneal varies within [6, 8] (the depolarization settling window) but
+        # is flat across the depolarization interval itself.
+        bad = [[[0.0, 0.5], [6.5, 0.5], [7.0, 0.9], [8.0, 0.9], [10.0, 0.9]]]
+        with self.assertRaises(ScheduleError):
+            verify_schedules(
+                info,
+                x_anneal_schedules=bad,
+                x_polarizing_schedule=polarizing,
+                check_rounding=False,
+            )
+        # Holding constant across the window passes.
+        good = [[[0.0, 0.5], [10.0, 0.5]]]
+        verify_schedules(
+            info,
+            x_anneal_schedules=good,
+            x_polarizing_schedule=polarizing,
+            check_rounding=False,
+        )
+
+    def test_verify_schedules_polarization_change_constancy(self):
+        info = [
+            {
+                "minPolarizingTimeStep": 0.02,
+                "depolarizationAnnealScheduleRequiredDelay": 2.0,
+                "polarizationChangeAnnealScheduleRequiredDelay": 1.0,
+            },
+            [{"minAnnealingTimeStep": 0.01}],
+        ]
+        # Polarization onset 0 -> 1 over (0, 3); padded window (-1, 4).
+        polarizing = [[0.0, 0], [3.0, 1], [4.0, 1], [6.0, 0], [10.0, 0]]
+        bad = [[[0.0, 0.5], [3.5, 0.9], [10.0, 0.9]]]
+        with self.assertRaises(ScheduleError):
+            verify_schedules(
+                info,
+                x_anneal_schedules=bad,
+                x_polarizing_schedule=polarizing,
+                check_rounding=False,
+            )
+        good = [[[0.0, 0.5], [10.0, 0.5]]]
+        verify_schedules(
+            info,
+            x_anneal_schedules=good,
+            x_polarizing_schedule=polarizing,
+            check_rounding=False,
+        )
+
 

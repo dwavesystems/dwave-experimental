@@ -203,10 +203,8 @@ def make_tds_graph(
 
     Args:
         target_graph: A networkx target graph
-        detected_nodes: An iterable on the target nodes, if None
-            all target nodes.
-        sourced_nodes: An iterable on the target nodes, if None
-            all target nodes.
+        detected_nodes: A collection of target nodes, if None all target nodes.
+        sourced_nodes: A collection of target nodes, if None all target nodes.
 
     Returns:
         A copy of the graph where each selected target node ``n`` is connected
@@ -401,6 +399,20 @@ def standardize_schedule_endpoints(
     return anneal_schedules, polarizing_schedule
 
 
+def _pwl_value(pwl: AnnealSchedule, t: float) -> float:
+    """Linearly interpolate a piecewise-linear schedule at time ``t``."""
+    if t <= pwl[0][0]:
+        return pwl[0][1]
+    if t >= pwl[-1][0]:
+        return pwl[-1][1]
+    for (t0, v0), (t1, v1) in zip(pwl, pwl[1:]):
+        if t0 <= t <= t1:
+            if t1 == t0:
+                return v1
+            return v0 + (v1 - v0) * (t - t0) / (t1 - t0)
+    return pwl[-1][1]
+
+
 def verify_schedules(
     exp_feature_info: ExpFeatureInfo,
     x_anneal_schedules: XAnnealSchedules | None = None,
@@ -493,10 +505,10 @@ def verify_schedules(
 
     if x_polarizing_schedule:
         min_time_step = exp_feature_info.polarizing_line_info["minPolarizingTimeStep"]
-        # NotYetImplemented: a check that annealing_schedules do not change in this interval:
-        depolarization_delay = exp_feature_info.polarizing_line_info[
-            "depolarizationAnnealScheduleRequiredDelay"
-        ]
+        depolarization_delay = exp_feature_info.polarizing_line_info["depolarizationAnnealScheduleRequiredDelay"]
+        polarization_change_delay = exp_feature_info.polarizing_line_info.get(
+            "polarizationChangeAnnealScheduleRequiredDelay", 0.0
+        )  # Expected standard feature from October 28 2026, best practice regardless.
         if len(x_polarizing_schedule) < 2 or any(
             len(s) != 2 for s in x_polarizing_schedule
         ):
@@ -533,6 +545,52 @@ def verify_schedules(
                         f"Polarizing schedule time {seq_time} is not an almost "
                         f"multiple of minPolarizingTimeStep={min_time_step}."
                     )
+        if x_anneal_schedules:
+
+            def _anneal_variation(a: float, b: float) -> int | None:
+                """Return the first anneal line that varies on ``[a, b]``, if any."""
+                for line, schedule in enumerate(x_anneal_schedules):
+                    value_at_a = _pwl_value(schedule, a)
+                    if not (
+                        math.isclose(
+                            _pwl_value(schedule, b),
+                            value_at_a,
+                            rel_tol=1e-9,
+                            abs_tol=1e-9,
+                        )
+                        and all(
+                            math.isclose(pt_v, value_at_a, rel_tol=1e-9, abs_tol=1e-9)
+                            for pt_t, pt_v in schedule
+                            if a - 1e-9 <= pt_t <= b + 1e-9
+                        )
+                    ):
+                        return line
+                return None
+
+            for (t0, v_prev), (t1, v) in zip(
+                x_polarizing_schedule, x_polarizing_schedule[1:]
+            ):
+                if v == v_prev:
+                    continue
+                # Anneal schedules must not vary while the polarization changes,
+                # padded by the required settling delay on either side.
+                line = _anneal_variation(
+                    t0 - polarization_change_delay, t1 + polarization_change_delay
+                )
+                if line is not None:
+                    raise ScheduleError(
+                        f"Variation on {line} within {polarization_change_delay} of "
+                        f"the polarization change over ({t0}, {t1})."
+                    )
+                # A depolarization (+/-1 -> 0) additionally requires the anneal
+                # schedules to hold through the depolarization delay.
+                if v == 0 and v_prev in (1, -1):
+                    line = _anneal_variation(t1, t1 + depolarization_delay)
+                    if line is not None:
+                        raise ScheduleError(
+                            f"Variation on {line} within {depolarization_delay} of "
+                            f"the depolarization event at time {t1}."
+                        )
 
 
 def parse_exp_feature_line_info(
@@ -1306,7 +1364,7 @@ def make_tds_x_schedule_delays(
 
     Args:
         x_anneal_schedules: The list of anneal schedules, one per line.
-        quenched_lines: Tuple or set of detector (or source) line indices.
+        quenched_lines: Iterable of detector (or source) line indices.
         target_c: Normalized control bias target value (the detector or source)
            PWL schedule yields time 0.0 at the target_c value, which is set to
            0.0 if not specified.
