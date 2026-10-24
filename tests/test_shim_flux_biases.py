@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from copy import deepcopy
 import unittest
 import unittest.mock
 import math
@@ -20,7 +21,16 @@ import dimod
 from dwave.samplers import SteepestDescentSampler
 from itertools import product
 
-from dwave.experimental.shimming import shim_flux_biases, qubit_freezeout_alpha_phi
+from dwave.experimental.multicolor_anneal import make_tds_x_schedules
+from dwave.experimental.shimming import (
+    shim_flux_biases,
+    shim_tds_flux_biases,
+    qubit_freezeout_alpha_phi,
+)
+from dwave.experimental.shimming.flux_biases import (
+    shim_linewise_flux_biases,
+    _extend_history,
+)
 from dwave.experimental.shimming.testing import ShimmingMockSampler
 
 
@@ -42,13 +52,12 @@ class FluxBiases(unittest.TestCase):
         self.assertSetEqual(set(mh.keys()), set(fbh.keys()))
         self.assertSetEqual(set(mh.keys()), set(bqm.variables))
 
-    def test_flux_params(self):
+    def test_flux_biases_params(self):
         """Check parameters in = parameters out for empty learning_schedule or convergence test"""
         nv = 10
         bqm = dimod.BinaryQuadraticModel("SPIN").from_ising(
             {i: 1 for i in range(nv)}, {}
         )
-
         sampler = ShimmingMockSampler(substitute_sampler=SteepestDescentSampler())
 
         val = 1.1
@@ -122,10 +131,11 @@ class FluxBiases(unittest.TestCase):
             shimmed_variables = [1, 2]
             sampling_params_updates = [{"num_reads": 4}, {}, {"num_reads": 1}]
             num_experiments = len(sampling_params_updates) * num_signed_experiments
+
             fb, fbh, mh = shim_flux_biases(
                 bqm,
                 sampler,
-                sampling_params=sampling_params,
+                sampling_params=deepcopy(sampling_params),
                 learning_schedule=learning_schedule,
                 shimmed_variables=shimmed_variables,
                 sampling_params_updates=sampling_params_updates,
@@ -136,6 +146,34 @@ class FluxBiases(unittest.TestCase):
             self.assertEqual(
                 len(learning_schedule) * num_experiments,
                 len(mh[1]),
+            )
+            exp_weights_per_update = {
+                v: [1 / num_experiments] * num_experiments for v in shimmed_variables
+            }
+            fb2, fbh2, mh2 = shim_flux_biases(
+                bqm,
+                sampler,
+                sampling_params=deepcopy(sampling_params),
+                learning_schedule=learning_schedule,
+                shimmed_variables=shimmed_variables,
+                sampling_params_updates=sampling_params_updates,
+                symmetrize_experiments=symmetrize_experiments,
+                exp_weights_per_update=exp_weights_per_update,
+            )
+            self.assertTrue(all(math.isclose(a, b) for a, b in zip(fb, fb2)))
+            self.assertTrue(
+                all(
+                    math.isclose(fbh[v][i], fbh2[v][i])
+                    for v in fbh
+                    for i in range(len(fbh[v]))
+                )
+            )
+            self.assertTrue(
+                all(
+                    math.isclose(mh[v][i], mh2[v][i])
+                    for v in mh
+                    for i in range(len(mh[v]))
+                )
             )
         # Check num_steps:
         for num_steps in [0, 4]:
@@ -265,3 +303,430 @@ class FluxBiases(unittest.TestCase):
         y = qubit_freezeout_alpha_phi(2, 1, 1, 1)
         self.assertNotEqual(x, y)
         self.assertEqual(1, y)
+
+    def _tds_setup(self):
+        """Return a (sampler, bqm, target_lines, detector_lines,
+        line_assignments, sampling_params) tuple for exercising
+        :func:`shim_tds_flux_biases`."""
+        sampler = ShimmingMockSampler(substitute_sampler=SteepestDescentSampler())
+        edge = sampler.edgelist[0]
+        bqm = dimod.BinaryQuadraticModel.from_ising({}, {edge: -1})
+
+        # Replace assignment by get_properties(qpu) when client available.
+        target_c = 0.37
+        n_lines = 3
+        polarizing_line_info = {
+            "minPolarizingTimeStep": 0.02,
+            "depolarizationAnnealScheduleRequiredDelay": 2.0,
+        }
+        exp_feature_line_info = [
+            {
+                "annealingLine": i,
+                "minAnnealingTimeStep": 0.01,
+                "holdOvershootFor": 0.02,
+                "minCOvershoot": -7.0,
+                "maxCOvershoot": 8.0,
+                "maxC": 3.0,
+                "minC": -2.0,
+                "scheduleDelayStep": 1e-06,
+                "qubits": [edge[0]] if i == 0 else [edge[1]] if i == 1 else [],
+            }
+            for i in range(n_lines)
+        ]
+        exp_feature_info = [polarizing_line_info, exp_feature_line_info]
+
+        line_assignments = {
+            q: l
+            for l, efi_l in enumerate(exp_feature_line_info)
+            for q in efi_l["qubits"]
+        }
+        target_lines = {line_assignments[edge[0]]}
+        detector_lines = {line_assignments[edge[1]]}
+        x_anneal_schedules, x_polarizing_schedule = make_tds_x_schedules(
+            exp_feature_info=exp_feature_info,
+            target_lines=target_lines,
+            target_c=target_c,
+            detector_lines=detector_lines,
+            source_lines=set(),
+        )
+        sampling_params = {
+            "num_reads": 16,
+            "x_anneal_schedules": x_anneal_schedules,
+            "x_polarizing_schedule": x_polarizing_schedule,
+            "x_schedule_delays": [0.0] * n_lines,
+        }
+        return (
+            sampler,
+            bqm,
+            target_lines,
+            detector_lines,
+            line_assignments,
+            sampling_params,
+            exp_feature_line_info,  # line info part.
+            target_c,
+        )
+
+    def test_shim_tds_flux_biases_basic_functionality(self):
+        # See examples/ for more practical use case.
+
+        # sampler can be replaced by DWaveSampler() when client available
+        (
+            sampler,
+            bqm,
+            target_lines,
+            detector_lines,
+            line_assignments,
+            sampling_params,
+            exp_feature_line_info,
+            target_c,
+        ) = self._tds_setup()
+
+        cases = [
+            ("explicit_sampling_params", sampling_params),
+            ("default_sampling_params", None),
+        ]
+        for case_name, sp in cases:
+            with self.subTest(case=case_name):
+                flux_biases, fb_history, mag_history = shim_tds_flux_biases(
+                    bqm,
+                    sampler,
+                    target_lines,
+                    detector_lines,
+                    exp_feature_line_info,
+                    sampling_params=sp,
+                    num_steps=2,
+                    symmetrize_experiments=False,
+                    target_c=target_c,
+                )
+
+                self.assertIsInstance(flux_biases, list)
+                self.assertEqual(len(flux_biases), sampler.properties["num_qubits"])
+                self.assertSetEqual(set(fb_history.keys()), set(bqm.variables))
+                self.assertSetEqual(set(mag_history.keys()), set(bqm.variables))
+                # ``use_target_variables`` is True: two experiments per step.
+                self.assertTrue(all(len(fb_history[v]) == 3 for v in bqm.variables))
+                self.assertTrue(all(len(mag_history[v]) == 4 for v in bqm.variables))
+
+    def test_shim_tds_flux_biases_detector_only(self):
+        """When only detector variables are shimmed, no target/detector
+        alternation is performed and a single experiment runs per step."""
+        (
+            sampler,
+            bqm,
+            target_lines,
+            detector_lines,
+            line_assignments,
+            sampling_params,
+            exp_feature_line_info,
+            target_c,
+        ) = self._tds_setup()
+        shimmed_variables = {
+            v for v in bqm.variables if line_assignments[v] in detector_lines
+        }
+
+        _, fb_history, mag_history = shim_tds_flux_biases(
+            bqm,
+            sampler,
+            target_lines,
+            detector_lines,
+            exp_feature_line_info,
+            sampling_params=sampling_params,
+            num_steps=2,
+            symmetrize_experiments=False,
+            shimmed_variables=shimmed_variables,
+        )
+
+        self.assertSetEqual(set(fb_history.keys()), shimmed_variables)
+        # Single experiment per step: fb_history len == num_steps + 1,
+        # mag_history len == num_steps.
+        self.assertTrue(all(len(fb_history[v]) == 3 for v in shimmed_variables))
+        self.assertTrue(all(len(mag_history[v]) == 2 for v in bqm.variables))
+
+    def test_shim_tds_flux_biases_detector_only_explicit(self):
+        """td_shim_type='detector_only' shims only detector-line variables with
+        a single experiment per step."""
+        (
+            sampler,
+            bqm,
+            target_lines,
+            detector_lines,
+            line_assignments,
+            sampling_params,
+            exp_feature_line_info,
+            target_c,
+        ) = self._tds_setup()
+
+        _, fb_history, mag_history = shim_tds_flux_biases(
+            bqm,
+            sampler,
+            target_lines,
+            detector_lines,
+            exp_feature_line_info,
+            sampling_params=sampling_params,
+            num_steps=2,
+            symmetrize_experiments=False,
+            td_shim_type="detector_only",
+        )
+        detector_vars = {
+            v for v in bqm.variables if line_assignments[v] in detector_lines
+        }
+        self.assertSetEqual(set(fb_history.keys()), detector_vars)
+        self.assertTrue(all(len(fb_history[v]) == 3 for v in detector_vars))
+        self.assertTrue(all(len(mag_history[v]) == 2 for v in bqm.variables))
+
+    def test_shim_tds_flux_biases_by_line_quench(self):
+        """td_shim_type='by_line_quench' shims every occupied line independently
+        via :func:`shim_linewise_flux_biases`."""
+        (
+            sampler,
+            bqm,
+            target_lines,
+            detector_lines,
+            line_assignments,
+            sampling_params,
+            exp_feature_line_info,
+            target_c,
+        ) = self._tds_setup()
+
+        flux_biases, fb_history, mag_history = shim_tds_flux_biases(
+            bqm,
+            sampler,
+            target_lines,
+            detector_lines,
+            exp_feature_line_info,
+            sampling_params=sampling_params,
+            symmetrize_experiments=False,
+            td_shim_type="by_line_quench",
+        )
+        self.assertIsInstance(flux_biases, list)
+        self.assertEqual(len(flux_biases), sampler.properties["num_qubits"])
+        self.assertSetEqual(set(fb_history.keys()), set(bqm.variables))
+        self.assertSetEqual(set(mag_history.keys()), set(bqm.variables))
+        for v in bqm.variables:
+            # One extra flux-bias entry (initial condition) vs magnetizations.
+            self.assertEqual(len(fb_history[v]), len(mag_history[v]) + 1)
+
+    def test_shim_tds_flux_biases_sequential(self):
+        """td_shim_type='sequential' runs a line-wise quench followed by a
+        detector-only shim, extending the detector-variable histories."""
+        (
+            sampler,
+            bqm,
+            target_lines,
+            detector_lines,
+            line_assignments,
+            sampling_params,
+            exp_feature_line_info,
+            target_c,
+        ) = self._tds_setup()
+
+        _, fb_history, mag_history = shim_tds_flux_biases(
+            bqm,
+            sampler,
+            target_lines,
+            detector_lines,
+            exp_feature_line_info,
+            sampling_params=sampling_params,
+            num_steps=2,
+            symmetrize_experiments=False,
+            td_shim_type="sequential",
+        )
+        self.assertSetEqual(set(fb_history.keys()), set(bqm.variables))
+        detector_vars = {
+            v for v in bqm.variables if line_assignments[v] in detector_lines
+        }
+        target_vars = {v for v in bqm.variables if line_assignments[v] in target_lines}
+        # Detector variables are shimmed line-wise AND in the detector-only
+        # stage, so their histories are longer than target-only histories.
+        for dv in detector_vars:
+            for tv in target_vars:
+                self.assertGreater(len(fb_history[dv]), len(fb_history[tv]))
+
+    def test_shim_tds_flux_biases_invalid_td_shim_type(self):
+        (
+            sampler,
+            bqm,
+            target_lines,
+            detector_lines,
+            line_assignments,
+            sampling_params,
+            exp_feature_line_info,
+            target_c,
+        ) = self._tds_setup()
+        with self.assertRaises(ValueError):
+            shim_tds_flux_biases(
+                bqm,
+                sampler,
+                target_lines,
+                detector_lines,
+                exp_feature_line_info,
+                sampling_params=sampling_params,
+                td_shim_type="not_a_real_mode",
+            )
+
+    def test_shim_linewise_flux_biases(self):
+        (
+            sampler,
+            bqm,
+            target_lines,
+            detector_lines,
+            line_assignments,
+            sampling_params,
+            exp_feature_line_info,
+            target_c,
+        ) = self._tds_setup()
+        num_steps = 2
+        flux_biases, fb_history, mag_history = shim_linewise_flux_biases(
+            bqm,
+            sampler,
+            exp_feature_line_info,
+            sampling_params=sampling_params,
+            num_steps=num_steps,
+        )
+        self.assertIsInstance(flux_biases, list)
+        self.assertEqual(len(flux_biases), sampler.properties["num_qubits"])
+        # Each variable is shimmed once, on the line it is assigned to.
+        self.assertSetEqual(set(fb_history.keys()), set(bqm.variables))
+        self.assertSetEqual(set(mag_history.keys()), set(bqm.variables))
+        for v in bqm.variables:
+            self.assertEqual(len(fb_history[v]), num_steps + 1)
+            self.assertEqual(len(mag_history[v]), num_steps)
+
+    def test_extend_history(self):
+        target = {"a": [1, 2], "b": [3]}
+        source = {"a": [9], "c": [7, 8]}
+        _extend_history(target, source)
+        self.assertEqual(target["a"], [1, 2, 9])  # existing key extended
+        self.assertEqual(target["b"], [3])  # untouched
+        self.assertEqual(target["c"], [7, 8])  # new key added
+
+    def test_shim_flux_biases_input_validation(self):
+        sampler = ShimmingMockSampler(substitute_sampler=SteepestDescentSampler())
+        nq = sampler.properties["num_qubits"]
+        bqm = dimod.BinaryQuadraticModel("SPIN").from_ising(
+            {0: 0, 1: 0}, {}
+        )
+
+        with self.subTest(case="flux_biases_wrong_length"):
+            with self.assertRaises(ValueError):
+                shim_flux_biases(
+                    bqm, sampler, sampling_params={"flux_biases": [0] * (nq - 1)}
+                )
+
+        with self.subTest(case="empty_shimmed_variables"):
+            with self.assertRaises(ValueError):
+                shim_flux_biases(bqm, sampler, shimmed_variables=[])
+
+        with self.subTest(case="invalid_shimmed_variables"):
+            with self.assertRaises(ValueError):
+                shim_flux_biases(bqm, sampler, shimmed_variables=[nq + 1])
+
+        with self.subTest(case="flux_biases_in_updates"):
+            with self.assertRaises(ValueError):
+                shim_flux_biases(
+                    bqm,
+                    sampler,
+                    sampling_params_updates=[{"flux_biases": [0] * nq}],
+                )
+
+        with self.subTest(case="beta_out_of_range"):
+            with self.assertRaises(ValueError):
+                shim_flux_biases(bqm, sampler, beta_hypergradient=1.5)
+
+        with self.subTest(case="alpha_non_positive"):
+            with self.assertRaises(ValueError):
+                shim_flux_biases(bqm, sampler, alpha=-1.0)
+
+        with self.subTest(case="exp_weights_key_mismatch"):
+            with self.assertRaises(ValueError):
+                shim_flux_biases(
+                    bqm,
+                    sampler,
+                    shimmed_variables=[0, 1],
+                    exp_weights_per_update={0: [1.0], 2: [1.0]},
+                )
+
+        with self.subTest(case="exp_weights_length_mismatch"):
+            # With symmetrize off and no updates there is a single experiment,
+            # so weight sequences of length two are rejected.
+            with self.assertRaises(ValueError):
+                shim_flux_biases(
+                    bqm,
+                    sampler,
+                    symmetrize_experiments=False,
+                    shimmed_variables=[0, 1],
+                    exp_weights_per_update={0: [1.0, 1.0], 1: [1.0, 1.0]},
+                )
+
+    def test_shim_tds_flux_biases_input_validation(self):
+        (
+            sampler,
+            bqm,
+            target_lines,
+            detector_lines,
+            line_assignments,
+            sampling_params,
+            exp_feature_line_info,
+            target_c,
+        ) = self._tds_setup()
+
+        with self.subTest(case="empty_detector_lines"):
+            with self.assertRaises(ValueError):
+                shim_tds_flux_biases(
+                    bqm,
+                    sampler,
+                    target_lines,
+                    set(),
+                    exp_feature_line_info,
+                    sampling_params=sampling_params,
+                )
+
+        with self.subTest(case="target_detector_not_disjoint"):
+            with self.assertRaises(ValueError):
+                shim_tds_flux_biases(
+                    bqm,
+                    sampler,
+                    target_lines,
+                    target_lines,
+                    exp_feature_line_info,
+                    sampling_params=sampling_params,
+                )
+
+        with self.subTest(case="shimmed_variables_not_subset"):
+            with self.assertRaises(ValueError):
+                shim_tds_flux_biases(
+                    bqm,
+                    sampler,
+                    target_lines,
+                    detector_lines,
+                    exp_feature_line_info,
+                    sampling_params=sampling_params,
+                    td_shim_type="detector_only",
+                    shimmed_variables={sampler.properties["num_qubits"] + 1},
+                )
+
+    def test_shim_linewise_flux_biases_default_sampling_params(self):
+        """``sampling_params=None`` falls back to internally built defaults."""
+        (
+            sampler,
+            bqm,
+            target_lines,
+            detector_lines,
+            line_assignments,
+            sampling_params,
+            exp_feature_line_info,
+            target_c,
+        ) = self._tds_setup()
+        num_steps = 1
+
+        flux_biases, fb_history, mag_history = shim_linewise_flux_biases(
+            bqm,
+            sampler,
+            exp_feature_line_info,
+            num_steps=num_steps,
+        )
+        self.assertIsInstance(flux_biases, list)
+        self.assertEqual(len(flux_biases), sampler.properties["num_qubits"])
+        self.assertSetEqual(set(fb_history.keys()), set(bqm.variables))
+        for v in bqm.variables:
+            self.assertEqual(len(fb_history[v]), num_steps + 1)
