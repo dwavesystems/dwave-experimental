@@ -39,11 +39,11 @@ __all__ = [
     "verify_schedules",
 ]
 
-Interval = tuple[float, float]
-LineFeatureInfo = dict[str, Any]
-ExpFeatureInfo = tuple[dict[str, Any], list[LineFeatureInfo]]
-AnnealSchedule = list[list[float]]
-XAnnealSchedules = list[AnnealSchedule]
+Interval: TypeAlias = tuple[float, float]
+LineFeatureInfo: TypeAlias = dict[str, Any]
+ExpFeatureInfo: TypeAlias = tuple[dict[str, Any], list[LineFeatureInfo]]
+AnnealSchedule: TypeAlias = list[list[float]]
+XAnnealSchedules: TypeAlias = list[AnnealSchedule]
 
 
 class ScheduleError(ValueError):
@@ -56,7 +56,7 @@ def _round_sigfigs(
     """Round a value up or down to a fixed number of significant figures.
 
     This addresses an issue in the client, whereby some inbound properties
-    have more significant figures than the client can reliably use.
+    have more significant figures than the D-Wave Solver API client can reliably use.
 
     Args:
         value: The value to round.
@@ -73,7 +73,7 @@ def _round_sigfigs(
     if mode not in ("up", "down"):
         raise ValueError("mode must be 'up' or 'down'")
     # Use Decimal to avoid binary floating-point artifacts when rounding.
-    d = Decimal(repr(value))
+    d = Decimal(value)
     exp = d.adjusted() - (sigfigs - 1)
     rounding = ROUND_CEILING if mode == "up" else ROUND_FLOOR
     return float(d.quantize(Decimal(1).scaleb(exp), rounding=rounding))
@@ -173,8 +173,8 @@ def line_assignments_from_feature_info(
 
 def make_tds_graph(
     target_graph: nx.Graph,
-    detected_nodes: Iterable[int] | None = None,
-    sourced_nodes: Iterable[int] | None = None,
+    detected_nodes: Collection[int] | None = None,
+    sourced_nodes: Collection[int] | None = None,
 ) -> tuple[nx.Graph, dict]:
     """Decorate a target graph with detectors and sources.
 
