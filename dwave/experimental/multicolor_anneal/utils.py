@@ -16,7 +16,7 @@ import math
 from collections.abc import Collection, Iterable, Sequence
 from copy import deepcopy
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
-from typing import Any, Literal, TypeAlias
+from typing import Any, Literal, NamedTuple, TypeAlias
 from warnings import warn
 
 import networkx as nx
@@ -26,6 +26,7 @@ from dwave.graphs import zephyr_coordinates
 
 __all__ = [
     "ScheduleError",
+    "ExpFeatureInfo",
     "qubit_to_Advantage2_annealing_line",
     "line_assignments_from_feature_info",
     "make_tds_graph",
@@ -41,9 +42,21 @@ __all__ = [
 
 Interval: TypeAlias = tuple[float, float]
 LineFeatureInfo: TypeAlias = dict[str, Any]
-ExpFeatureInfo: TypeAlias = tuple[dict[str, Any], list[LineFeatureInfo]]
 AnnealSchedule: TypeAlias = list[list[float]]
 XAnnealSchedules: TypeAlias = list[AnnealSchedule]
+
+
+class ExpFeatureInfo(NamedTuple):
+    """Multicolor-annealing properties, as returned by :func:`get_properties`.
+
+    Attributes:
+        polarizing_line_info: Annealing-line-independent polarizing properties.
+        annealing_line_info: Per-annealing-line properties, in ascending order
+            of annealing-line index.
+    """
+
+    polarizing_line_info: dict[str, Any]
+    annealing_line_info: list[LineFeatureInfo]
 
 
 class ScheduleError(ValueError):
@@ -170,9 +183,10 @@ def line_assignments_from_feature_info(
         ...     exp_feature_info
         ... )            # doctest: +SKIP
     """
+    exp_feature_info = ExpFeatureInfo._make(exp_feature_info)
     return {
         n: al_idx
-        for al_idx, al in enumerate(exp_feature_info[1])
+        for al_idx, al in enumerate(exp_feature_info.annealing_line_info)
         for n in al["qubits"]
     }
 
@@ -390,14 +404,10 @@ def verify_schedules(
         ScheduleError: If schedules are malformed or incompatible with
             sequencing, endpoints, or minimum time-step constraints.
     """
-    if len(exp_feature_info) != 2:
-        raise ValueError(
-            "exp_feature_info must be a two-element list "
-            "[polarizing_line_info, annealing_line_info], as returned by get_properties."
-        )
+    exp_feature_info = ExpFeatureInfo._make(exp_feature_info)
 
     if x_anneal_schedules:
-        exp_feature_line_info = exp_feature_info[1]
+        exp_feature_line_info = exp_feature_info.annealing_line_info
         min_time_steps = {
             line: exp_feature_line_info[line]["minAnnealingTimeStep"]
             for line in range(len(exp_feature_line_info))
@@ -452,9 +462,9 @@ def verify_schedules(
             term_time = x_anneal_schedules[line][-1][0]
 
     if x_polarizing_schedule:
-        min_time_step = exp_feature_info[0]["minPolarizingTimeStep"]
+        min_time_step = exp_feature_info.polarizing_line_info["minPolarizingTimeStep"]
         # NotYetImplemented: a check that annealing_schedules do not change in this interval:
-        depolarization_delay = exp_feature_info[0][
+        depolarization_delay = exp_feature_info.polarizing_line_info[
             "depolarizationAnnealScheduleRequiredDelay"
         ]
         if len(x_polarizing_schedule) < 2 or any(
@@ -1173,6 +1183,7 @@ def make_tds_x_schedules(
         ScheduleError: If generated schedules fail sequencing or rounding
             validation checks.
     """
+    exp_feature_info = ExpFeatureInfo._make(exp_feature_info)
     (
         polarization_interval,
         polarized_preparation_interval,
@@ -1185,7 +1196,7 @@ def make_tds_x_schedules(
         skip_explicit_polarization=skip_explicit_polarization,
     )
     x_anneal_schedules = make_tds_x_anneal_schedules(
-        exp_feature_line_info=exp_feature_info[1],
+        exp_feature_line_info=exp_feature_info.annealing_line_info,
         target_lines=target_lines,
         depolarized_preparation_interval=depolarized_preparation_interval,
         detector_lines=detector_lines,

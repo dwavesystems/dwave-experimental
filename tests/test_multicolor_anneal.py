@@ -20,6 +20,7 @@ import networkx as nx
 
 from dwave.experimental.multicolor_anneal import (
     SOLVER_FILTER,
+    ExpFeatureInfo,
     get_properties,
     get_solver_name,
     line_assignments_from_feature_info,
@@ -50,7 +51,7 @@ class PropertiesCheckMixin:
     ]
 
     def validate_exp_feature_info(self, data):
-        self.assertIsInstance(data, list)
+        self.assertIsInstance(data, ExpFeatureInfo)
         self.assertEqual(len(data), 2)
         polarizing_line_info, annealing_line_info = data
         self.assertIsInstance(polarizing_line_info, dict)
