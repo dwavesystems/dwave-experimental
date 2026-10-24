@@ -948,19 +948,15 @@ def make_tds_x_anneal_schedules(
     for line in source_lines:
         if use_overshoot_source:
             if holdOvershootFors[line] > 2 * min_time_steps[line]:
+                # Clamp the pre-quench overshoot start to the preparation
+                # interval end so support points never step backwards in time.
+                overshoot_start = max(
+                    source_quench_time - holdOvershootFors[line],
+                    polarized_preparation_interval[1],
+                )
                 anneal_schedules[line] += [
-                    [
-                        source_quench_time
-                        - holdOvershootFors[line]
-                        + min_time_steps[line],
-                        maxCs[line],
-                    ],
-                    [
-                        source_quench_time
-                        - holdOvershootFors[line]
-                        + 2 * min_time_steps[line],
-                        maxCOvershoots[line],
-                    ],
+                    [overshoot_start + min_time_steps[line], maxCs[line]],
+                    [overshoot_start + 2 * min_time_steps[line], maxCOvershoots[line]],
                     [source_quench_time, maxCOvershoots[line]],
                     [source_quench_time + min_time_steps[line], minCOvershoots[line]],
                     [
@@ -1003,19 +999,13 @@ def make_tds_x_anneal_schedules(
     for line in detector_lines:
         if use_overshoot_detector:
             if holdOvershootFors[line] > 2 * min_time_steps[line]:
+                overshoot_start = max(
+                    detector_quench_time - holdOvershootFors[line],
+                    polarized_preparation_interval[1],
+                )
                 anneal_schedules[line] += [
-                    [
-                        detector_quench_time
-                        - holdOvershootFors[line]
-                        + min_time_steps[line],
-                        minCs[line],
-                    ],
-                    [
-                        detector_quench_time
-                        - holdOvershootFors[line]
-                        + 2 * min_time_steps[line],
-                        minCOvershoots[line],
-                    ],
+                    [overshoot_start + min_time_steps[line], minCs[line]],
+                    [overshoot_start + 2 * min_time_steps[line], minCOvershoots[line]],
                     [detector_quench_time, minCOvershoots[line]],
                     [detector_quench_time + min_time_steps[line], maxCOvershoots[line]],
                     [
