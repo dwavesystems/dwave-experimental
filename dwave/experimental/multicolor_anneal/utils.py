@@ -69,7 +69,7 @@ def _round_sigfigs(
     """Round a value up or down to a fixed number of significant figures.
 
     This addresses an issue in the client, whereby some inbound properties
-    have more significant figures than the D-Wave Solver API client can reliably use.
+    have more significant figures than the D-Wave Solver API can reliably use.
 
     Args:
         value: The value to round.
@@ -183,7 +183,7 @@ def line_assignments_from_feature_info(
         ...     exp_feature_info
         ... )            # doctest: +SKIP
     """
-    exp_feature_info = ExpFeatureInfo._make(exp_feature_info)
+    exp_feature_info = ExpFeatureInfo(exp_feature_info)
     return {
         n: al_idx
         for al_idx, al in enumerate(exp_feature_info.annealing_line_info)
@@ -446,7 +446,7 @@ def verify_schedules(
         ScheduleError: If schedules are malformed or incompatible with
             sequencing, endpoints, or minimum time-step constraints.
     """
-    exp_feature_info = ExpFeatureInfo._make(exp_feature_info)
+    exp_feature_info = ExpFeatureInfo(exp_feature_info)
 
     if x_anneal_schedules:
         exp_feature_line_info = exp_feature_info.annealing_line_info
@@ -869,7 +869,7 @@ def make_tds_x_anneal_schedules(
         >>> from dwave.system import DWaveSampler
         >>> import dwave.experimental.multicolor_anneal as mca
         >>> exp_feature_info = mca.get_properties(DWaveSampler())        # doctest: +SKIP
-        >>> annealing_line_info = exp_feature_info[1]                    # doctest: +SKIP
+        >>> annealing_line_info = exp_feature_info.annealing_line_info                    # doctest: +SKIP
         >>> x_anneal_schedules = mca.make_tds_x_anneal_schedules(
         ...     exp_feature_line_info=annealing_line_info,
         ...     target_lines={0},
@@ -1138,7 +1138,7 @@ def make_tds_x_polarizing_schedule(
         ...     make_tds_x_polarizing_schedule,
         ... )
         >>> exp_feature_info = get_properties(DWaveSampler())   # doctest: +SKIP
-        >>> delay = exp_feature_info[0][
+        >>> delay = exp_feature_info.polarizing_line_info[
         ...     'depolarizationAnnealScheduleRequiredDelay'
         ... ]            # doctest: +SKIP
         >>> _, _, depolarization_interval, _, _ = make_tds_intervals(
@@ -1261,7 +1261,7 @@ def make_tds_x_schedules(
         ScheduleError: If generated schedules fail sequencing or rounding
             validation checks.
     """
-    exp_feature_info = ExpFeatureInfo._make(exp_feature_info)
+    exp_feature_info = ExpFeatureInfo(exp_feature_info)
     (
         polarization_interval,
         polarized_preparation_interval,

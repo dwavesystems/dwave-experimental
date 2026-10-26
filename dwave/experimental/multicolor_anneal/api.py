@@ -80,6 +80,6 @@ def get_properties(sampler: DWaveSampler | Solver | str | None = None
 
     result = computation.result()
     try:
-        return ExpFeatureInfo._make(result['x_get_multicolor_annealing_exp_feature_info'])
+        return ExpFeatureInfo(result['x_get_multicolor_annealing_exp_feature_info'])
     except KeyError:
         raise ValueError(f'Selected sampler ({solver.name}) does not support multicolor annealing')
