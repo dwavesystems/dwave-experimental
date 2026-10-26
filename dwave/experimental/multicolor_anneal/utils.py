@@ -168,9 +168,9 @@ def line_assignments_from_feature_info(
     Args:
         exp_feature_info: Multicolor-annealing properties, as returned by
             :func:`~dwave.experimental.multicolor_anneal.api.get_properties`.
-            The second element is a list of per-annealing-line dictionaries in
-            ascending order of annealing-line index, each with a ``qubits``
-            entry.
+            An :class:`ExpFeatureInfo` named tuple whose ``annealing_line_info``
+            field is a list of per-annealing-line dictionaries in ascending
+            order of annealing-line index, each with a ``qubits`` entry.
 
     Returns:
         A dictionary mapping each qubit label to its annealing-line index.
@@ -183,7 +183,7 @@ def line_assignments_from_feature_info(
         ...     exp_feature_info
         ... )            # doctest: +SKIP
     """
-    exp_feature_info = ExpFeatureInfo(exp_feature_info)
+    exp_feature_info = ExpFeatureInfo(*exp_feature_info)
     return {
         n: al_idx
         for al_idx, al in enumerate(exp_feature_info.annealing_line_info)
@@ -429,10 +429,12 @@ def verify_schedules(
     It does not exhaustively check all requirements. See Documentation.
 
     Args:
-        exp_feature_info: Two-element list ``[polarizing_line_info, annealing_line_info]``,
-            as returned by :func:`~dwave.experimental.multicolor_anneal.api.get_properties`.
-            The first element is a dictionary describing the polarizing line; the second
-            element is a list of per-annealing-line dictionaries.
+        exp_feature_info: Multicolor-annealing properties, as returned by
+            :func:`~dwave.experimental.multicolor_anneal.api.get_properties`.
+            An :class:`ExpFeatureInfo` named tuple whose ``polarizing_line_info``
+            field is a dictionary describing the polarizing line and whose
+            ``annealing_line_info`` field is a list of per-annealing-line
+            dictionaries.
         x_anneal_schedules: List of anneal schedules, as might be
             returned by :func:`make_tds_x_anneal_schedules`.
         x_polarizing_schedule: Anneal schedule, as might be returned by
@@ -446,7 +448,7 @@ def verify_schedules(
         ScheduleError: If schedules are malformed or incompatible with
             sequencing, endpoints, or minimum time-step constraints.
     """
-    exp_feature_info = ExpFeatureInfo(exp_feature_info)
+    exp_feature_info = ExpFeatureInfo(*exp_feature_info)
 
     if x_anneal_schedules:
         exp_feature_line_info = exp_feature_info.annealing_line_info
@@ -620,7 +622,8 @@ def parse_exp_feature_line_info(
 
     Args:
         exp_feature_line_info: List of per-annealing-line experimental feature
-            dictionaries. Typically the second element of the structure returned
+            dictionaries. Typically the ``annealing_line_info`` field of the
+            structure returned
             by :func:`~dwave.experimental.multicolor_anneal.api.get_properties`.
         use_common_bounds: When True, replace per-line bounds with values that
             are jointly valid across all lines. This applies to time
@@ -803,7 +806,8 @@ def make_tds_x_anneal_schedules(
 
     Args:
         exp_feature_line_info: List of per-annealing-line experimental feature
-            dictionaries. Typically the second element of the structure returned
+            dictionaries. Typically the ``annealing_line_info`` field of the
+            structure returned
             by :func:`~dwave.experimental.multicolor_anneal.api.get_properties`.
         target_lines: Iterable of target line indices.
         detector_lines: Iterable of detector line indices.
@@ -1210,10 +1214,12 @@ def make_tds_x_schedules(
     verification into a single call.
 
     Args:
-        exp_feature_info: Two-element list ``[polarizing_line_info, annealing_line_info]``,
-            as returned by :func:`~dwave.experimental.multicolor_anneal.api.get_properties`.
-            The first element is a dictionary describing the polarizing line; the second
-            element is a list of per-annealing-line dictionaries.
+        exp_feature_info: Multicolor-annealing properties, as returned by
+            :func:`~dwave.experimental.multicolor_anneal.api.get_properties`.
+            An :class:`ExpFeatureInfo` named tuple whose ``polarizing_line_info``
+            field is a dictionary describing the polarizing line and whose
+            ``annealing_line_info`` field is a list of per-annealing-line
+            dictionaries.
         target_lines: Iterable of target line indices.
         detector_lines: Iterable of detector line indices.
         source_lines: Iterable of source line indices.
@@ -1261,7 +1267,7 @@ def make_tds_x_schedules(
         ScheduleError: If generated schedules fail sequencing or rounding
             validation checks.
     """
-    exp_feature_info = ExpFeatureInfo(exp_feature_info)
+    exp_feature_info = ExpFeatureInfo(*exp_feature_info)
     (
         polarization_interval,
         polarized_preparation_interval,

@@ -9,3 +9,13 @@ features:
     ``make_tds_x_schedule_delays`` and ``standardize_schedule_endpoints``.
     A ``ScheduleError`` exception is raised when generated schedules are
     incompatible with sequencing constraints.
+    ``verify_schedules`` checks that schedules satisfy sequencing and
+    minimum-time-step constraints, and ``line_assignments_from_feature_info``
+    and ``parse_exp_feature_line_info`` extract per-line assignments and
+    properties from the structure returned by ``get_properties``.
+    See `#67 <https://github.com/dwavesystems/dwave-experimental/pull/67>`_.
+  - |
+    Return multicolor-annealing properties from ``get_properties`` as an
+    ``ExpFeatureInfo`` named tuple, separating the annealing-line-independent
+    ``polarizing_line_info`` from the per-annealing-line ``annealing_line_info``.
+    See `#61 <https://github.com/dwavesystems/dwave-experimental/issues/61>`_.
