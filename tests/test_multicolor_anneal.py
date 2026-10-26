@@ -777,6 +777,20 @@ class UtilsTestWithoutClient(unittest.TestCase):
         with self.assertRaises(ValueError):
             make_tds_graph(target_graph, sourced_nodes=[5])
 
+    def test_make_tds_graph_single_pass_iterables(self):
+        # A single-pass iterable (generator) must not be exhausted by internal
+        # validation before the decorator edges are built.
+        target_graph = nx.from_edgelist([(0, 1)])
+        tds_graph, node_to_tds = make_tds_graph(
+            target_graph,
+            detected_nodes=(n for n in [0, 1]),
+            sourced_nodes=(n for n in [0, 1]),
+        )
+        self.assertIn(("detector", 0), tds_graph)
+        self.assertIn(("source", 1), tds_graph)
+        self.assertEqual(node_to_tds[("detector", 0)], "detector")
+        self.assertEqual(node_to_tds[("source", 1)], "source")
+
     def test_make_tds_x_polarizing_schedule_variants(self):
         # Zero sign produces a flat zero schedule retaining the interval pattern.
         schedule_zero = make_tds_x_polarizing_schedule(
@@ -973,6 +987,36 @@ class UtilsTestWithoutClient(unittest.TestCase):
         # A compliant schedule passes.
         good = [[[0.0, 0.0], [0.5, 1.0], [1.0, 1.0]]]
         verify_schedules(info, x_anneal_schedules=good, check_rounding=False)
+
+    def test_verify_schedules_unsynchronized_endpoints(self):
+        info = [
+            {"minPolarizingTimeStep": 0.02},
+            [{"minAnnealingTimeStep": 0.01}, {"minAnnealingTimeStep": 0.01}],
+        ]
+        # Anneal lines ending at different times are rejected.
+        bad = [[[0.0, 0.0], [1.0, 1.0]], [[0.0, 0.0], [2.0, 1.0]]]
+        with self.assertRaises(ScheduleError):
+            verify_schedules(info, x_anneal_schedules=bad, check_rounding=False)
+        # A polarizing schedule ending at a different time is rejected.
+        # Anneal lines hold flat across the depolarization window so only the
+        # endpoint mismatch is exercised.
+        anneal = [[[0.0, 0.0], [0.5, 1.0], [2.0, 1.0]], [[0.0, 0.0], [0.5, 1.0], [2.0, 1.0]]]
+        polarizing = [[0.0, 1], [1.0, 1], [1.5, 0]]
+        with self.assertRaises(ScheduleError):
+            verify_schedules(
+                info,
+                x_anneal_schedules=anneal,
+                x_polarizing_schedule=polarizing,
+                check_rounding=False,
+            )
+        # Synchronized endpoints pass.
+        polarizing_sync = [[0.0, 1], [1.0, 1], [1.5, 0], [2.0, 0]]
+        verify_schedules(
+            info,
+            x_anneal_schedules=anneal,
+            x_polarizing_schedule=polarizing_sync,
+            check_rounding=False,
+        )
 
     def test_verify_schedules_depolarization_constancy(self):
         info = [
