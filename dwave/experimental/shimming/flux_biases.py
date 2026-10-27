@@ -17,7 +17,8 @@ from __future__ import annotations
 from copy import deepcopy
 import math
 from copy import deepcopy
-from typing import Any, Callable, Collection, Iterable, Literal, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
+from typing import Any, Literal
 
 import dimod
 import numpy as np
@@ -116,7 +117,7 @@ def shim_flux_biases(
     learning_schedule: Sequence[float] | None = None,
     convergence_test: Callable[[dict, dict], bool] | None = None,
     symmetrize_experiments: bool = True,
-    sampling_params_updates: Collection[dict[str, Any]] | None = None,
+    sampling_params_updates: Sequence[dict[str, Any]] | None = None,
     beta_hypergradient: float = 0.4,
     num_steps: int = 10,
     alpha: float | None = None,
@@ -442,10 +443,7 @@ def shim_flux_biases(
 def _extend_history(target: dict, source: dict) -> None:
     """Append ``source`` list values onto existing ``target`` entries."""
     for k, v in source.items():
-        if k in target:
-            target[k] = target[k] + list(v)
-        else:
-            target[k] = v
+        target.setdefault(k, []).extend(v)
 
 
 def shim_linewise_flux_biases(
