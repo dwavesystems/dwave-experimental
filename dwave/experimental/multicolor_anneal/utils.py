@@ -27,6 +27,10 @@ from dwave.graphs import zephyr_coordinates
 __all__ = [
     "ScheduleError",
     "ExpFeatureInfo",
+    "Interval",
+    "LineFeatureInfo",
+    "AnnealSchedule",
+    "XAnnealSchedules",
     "qubit_to_Advantage2_annealing_line",
     "line_assignments_from_feature_info",
     "make_tds_graph",
@@ -335,10 +339,12 @@ def standardize_schedule_endpoints(
 ) -> tuple[XAnnealSchedules, AnnealSchedule | None]:
     """Adapt anneal schedules to accommodate a common end point.
 
-    All schedule lengths (max time) are reset to accommodate the largest
-    support time plus a delay. The final time is rounded up to the nearest
-    microsecond. Terminating the PWL schedules with a flat signal on the order
-    of microseconds ensures smoother termination of the realized signals.
+    All schedule lengths (max time) are reset to a single common endpoint: the
+    largest support time across ``x_anneal_schedules`` and
+    ``x_polarizing_schedule``, extended by at least ``end_buffer`` (and by
+    ``post_pwl_delay`` if larger) and rounded up to the nearest microsecond.
+    Terminating every PWL schedule with this shared flat hold ensures a common
+    endpoint and smoother termination of the realized signals.
 
     Args:
         x_anneal_schedules: List of anneal schedules, as might be
@@ -351,11 +357,11 @@ def standardize_schedule_endpoints(
             interfering with waveform completion.
         decimals: Decimals to which the end point is rounded up. By default
             to the nearest microsecond.
-        end_buffer: Minimum terminal hold, in microseconds, required for a
-            schedule to be considered already standardized. When every schedule
-            already holds its final value for at least this long, the schedules
-            are returned unchanged, keeping repeated calls idempotent. Any
-            non-negative value, including 0, is accepted.
+        end_buffer: Minimum terminal hold, in microseconds, that every schedule
+            holds its final value for at the common endpoint. Schedules that
+            already share the common endpoint and satisfy this hold are returned
+            unchanged, keeping repeated calls idempotent. Any non-negative
+            value, including 0, is accepted.
 
     Returns:
         tuple consisting of adapted anneal and polarizing schedules
@@ -371,6 +377,8 @@ def standardize_schedule_endpoints(
     if polarizing_schedule:
         schedules.append(polarizing_schedule)
 
+    max_final = max(pwl[-1][0] for pwl in schedules)
+
     def has_end_buffer(pwl: AnnealSchedule) -> bool:
         return (
             len(pwl) >= 2
@@ -378,12 +386,20 @@ def standardize_schedule_endpoints(
             and pwl[-1][0] - pwl[-2][0] >= end_buffer - 1e-9
         )
 
-    # Already-buffered schedules need no change; this makes repeated calls
-    # (e.g. the internal standardization in make_tds_x_schedules) idempotent.
-    if all(has_end_buffer(pwl) for pwl in schedules):
+    # No change needed only when every schedule already shares the common
+    # endpoint and holds its final value for at least end_buffer; this keeps
+    # repeated calls (e.g. the internal standardization in
+    # make_tds_x_schedules) idempotent.
+    if all(
+        has_end_buffer(pwl) and math.isclose(pwl[-1][0], max_final, abs_tol=1e-9)
+        for pwl in schedules
+    ):
         return anneal_schedules, polarizing_schedule
 
-    completion_time = max(pwl[-1][0] for pwl in schedules) + post_pwl_delay
+    # Common endpoint: the latest support time extended by the requested delay,
+    # but by at least end_buffer so every schedule gets a terminal hold, then
+    # rounded up so all schedules share the same final support value.
+    completion_time = max_final + max(post_pwl_delay, end_buffer)
     if decimals is not None:
         scale = 10**decimals
         completion_time = math.ceil(completion_time * scale) / scale
@@ -430,7 +446,8 @@ def verify_schedules(
 
     This routine checks that the schedules are compatible with sequencing
     and min time steps. It checks terminal values of the polarizing schedules
-    match those of anneal_schedules, and all schedules begin at time 0.
+    match those of anneal_schedules, that all schedules begin at time 0, and
+    that all schedules share a common (almost equal) endpoint.
 
     It does not exhaustively check all requirements. See Documentation.
 
@@ -455,6 +472,19 @@ def verify_schedules(
             sequencing, endpoints, or minimum time-step constraints.
     """
     exp_feature_info = ExpFeatureInfo(*exp_feature_info)
+
+    # All provided schedules must share a common endpoint, as produced by
+    # standardize_schedule_endpoints.
+    endpoints = [schedule[-1][0] for schedule in (x_anneal_schedules or []) if schedule]
+    if x_polarizing_schedule:
+        endpoints.append(x_polarizing_schedule[-1][0])
+    if endpoints and any(
+        not math.isclose(t, endpoints[0], rel_tol=1e-9, abs_tol=1e-9)
+        for t in endpoints
+    ):
+        raise ScheduleError(
+            f"Schedule endpoints are not synchronized: {endpoints}."
+        )
 
     if x_anneal_schedules:
         exp_feature_line_info = exp_feature_info.annealing_line_info
