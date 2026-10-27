@@ -9,13 +9,7 @@ def run_anneal_offsets(ctx):
     num_anneal_offset_iterations = ctx.num_anneal_offset_iterations
     n_embs = ctx.n_embs
     schedule_fn = ctx.schedule_fn
-    target_Aminus = ctx.target_Aminus
     target_A = ctx.target_A
-    target_Aplus = ctx.target_Aplus
-    preparation_orientation = ctx.preparation_orientation
-    num_reads = ctx.num_reads
-    T2 = ctx.T2
-    nyquist_frequency = ctx.nyquist_frequency
     cache_str = ctx.cache_str
     online = ctx.online
     sampler = ctx.sampler
@@ -34,7 +28,6 @@ def run_anneal_offsets(ctx):
     cumsum_by_line = ctx.cumsum_by_line
     dAdc = ctx.dAdc
     save_figures = ctx.save_figures
-    show_artificial_timeseries = ctx.show_artificial_timeseries
 
     print()
     print_once = (
@@ -45,119 +38,6 @@ def run_anneal_offsets(ctx):
         "collecting data at higher sampling rates, but this power spectral density method is "
         "sufficient to resolve some discrepancies on typical Advantage2 research processors."
     )
-    if show_artificial_timeseries:
-        print(print_once)
-        print_once = "Artificial data (already described) now applied to real data"
-        print(
-            f"Stage {stage_idx+1}: Target frequency refinement via target anneal_offsets"
-        )
-        print("(artificial data comparison point).")
-        print(
-            "In figures, ideal error-free high density data is shown as dashed lines, with (coarsely) sampled "
-            "data intended to mimic some practical experimental limitations."
-        )
-        delay_max_art = T2
-        delay_min_art = 0.0
-        delays_art = np.linspace(
-            delay_min_art,
-            delay_max_art,
-            round((delay_max_art - delay_min_art) * (2 * nyquist_frequency)) + 1,
-            endpoint=True,
-        )
-        dt_art = delays_art[1] - delays_art[0]  # Rounding
-
-        dt_hd = 0.00001  # 0.01 nanoseconds, close to practical limit.
-        high_density_delays = np.linspace(
-            delay_min_art,
-            delay_max_art,
-            round((delay_max_art - delay_min_art) / dt_hd),
-            endpoint=False,
-        )
-        dt_hd = high_density_delays[1] - high_density_delays[0]  # Rounding
-
-        # theta_s = theta_d = pi/2, other parameters are pertured (should revisit for completeness).
-        # note that the random delay, and random phi_s-phi_d deviations are qualitatively
-        # captured by a single time delay.
-        for A in [target_Aminus, target_A, target_Aplus]:
-            delay_perturbation = 1 / (A * 1000) * np.random.random()
-            T2_perturbed = 0.0101 * (1 + 0.1 * np.random.random())
-            label = f"A={A:.3g}"
-            theta_s = np.pi / 2 * preparation_orientation
-            signal = artificial_data(
-                delays_art + delay_perturbation,
-                A * 1000,
-                num_independent_samples=num_reads,
-                theta_s=theta_s,
-                T2=T2_perturbed,
-            )
-            ideal_high_density_signal = artificial_data(
-                high_density_delays + delay_perturbation,
-                A * 1000,
-                num_independent_samples=float("Inf"),  # No noise
-                theta_s=theta_s,
-            )
-            fig = plt.figure("artificial_timeseries")
-            next_color = fig.gca()._get_lines.get_next_color()
-            plt.title("y=cos(2pi A t)exp(-t/T)+sampling error")
-            plt.plot(
-                (delays_art + delay_perturbation) * 1000,
-                signal,
-                label=label,
-                marker=".",
-                linestyle=None,
-                color=next_color,
-            )
-            plt.plot(
-                (high_density_delays + delay_perturbation) * 1000,
-                ideal_high_density_signal,
-                linestyle="dotted",
-                color=next_color,
-            )
-            plt.xlabel("Time, nanoseconds")
-            plt.ylabel(r"Magnetization, $\langle y \rangle_{detector}$")
-            plt.legend()
-
-            plt.figure("artificial_psd")
-            psd_title = "Approximate Lorentzian PSD ~ A/((f-A)^2 + A^2)"
-            plt.title(psd_title)
-            frequencies = (
-                np.arange(len(delays_art) // 2) / dt_art / len(delays_art) / 1000
-            )
-            psd = np.abs(np.fft.fft(signal)) ** 2 / len(signal) ** 2
-            frequencies_hd = (
-                np.arange(len(high_density_delays) // 2)
-                / dt_hd
-                / len(high_density_delays)
-                / 1000
-            )
-            psd_hd = (
-                np.abs(np.fft.fft(ideal_high_density_signal)) ** 2
-                / len(ideal_high_density_signal) ** 2
-            )
-            plt.plot(
-                frequencies,
-                psd[: len(psd) // 2],
-                label=label,
-                marker=".",
-                linestyle=None,
-                color=next_color,
-            )
-            plt.plot(
-                frequencies_hd,
-                psd_hd[: len(psd_hd) // 2],
-                linestyle="dotted",
-                color=next_color,
-            )
-            plt.ylabel(r"Power Spectral Density, $|\langle {\hat y}\rangle(\omega)|^2$")
-            plt.xlabel(r"Frequency ($\omega$), GHz")
-            plt.xlim([0, frequencies[-1]])
-            plt.legend()
-
-        if save_figures:
-            _save_open_figures("figures/", cache_str)
-        print("Close figures to proceed to next (experimental) stages.")
-        _apply_tight_layout()
-        plt.show()
 
     stage_idx += 1
     print(

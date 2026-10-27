@@ -22,8 +22,6 @@ def run_schedule(ctx, *, dtarget_c=0.01):
     target_c = ctx.target_c
     target_B = ctx.target_B
     dAdc = ctx.dAdc
-    target_Aminus = ctx.target_Aminus
-    target_Aplus = ctx.target_Aplus
 
     if schedule_fn is None:
         if target_A is None or target_c is None or dAdc is None:
@@ -126,6 +124,4 @@ def run_schedule(ctx, *, dtarget_c=0.01):
     ctx.target_A = target_A
     ctx.target_B = target_B
     ctx.dAdc = dAdc
-    ctx.target_Aminus = target_Aminus
-    ctx.target_Aplus = target_Aplus
     return ctx

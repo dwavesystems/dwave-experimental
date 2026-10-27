@@ -92,11 +92,6 @@ __all__ = [
     "_apply_tight_layout",
     "_save_open_figures",
     "_calc_anneal_offsets",
-    "make_yC",
-    "make_yE",
-    "make_y",
-    "dyC_dt0",
-    "artificial_data",
     "run_parallel_experiment",
     "plot_shim",
     "_plot_tds_schedules",
@@ -190,201 +185,6 @@ def _calc_anneal_offsets(
         mu = target_A
     dcs = (mean_A_est - mu) / dAdc
     return dcs
-
-
-def make_yC(
-    delays: np.ndarray,
-    A: float,
-    *,
-    T2: float = 0.0101,
-    phi_s: float = 0.0,
-    phi_d: float = 0.0,
-) -> np.ndarray:
-    """Make a noise-free model signal for computational basis preparation and detection.
-
-    Eq 6. from arXiv 2603.15534 at theta_d = theta_s = pi/2
-    Note that this model assumes decoupling from the source, and ideally
-    controlled flux biases (in particular note phi_q=0 on the target).
-    The source polarization is assumed to be instantaneously removed at delay t=0,
-    with measurement performed at delay t.
-
-    y(t) = cos(2* pi * A * t + phi_s - phi_d) exp(-t/T2)
-
-    Args:
-        delays: Measurement times (microseconds)
-        A: frequency
-        T2: exponential envelope time scale. Defaulted as
-            from T_phi = 12ns and T1 = 32ns, typical of Advantage2 research.
-        phi_s: Bloch sphere rotation (azimuthal angle) for the source.
-        phi_d: Bloch sphere rotation (azimuthal angle) for the detector.
-    Returns:
-        A model signal
-    """
-    return np.exp(-delays / T2) * np.cos(2 * np.pi * A * delays + phi_s - phi_d)
-
-
-def make_yE(
-    delays: np.ndarray, *, T1: float = 0.032, theta_s: float = np.pi / 2
-) -> np.ndarray:
-    """Make a noise-free model signal for energy basis preparation and detection.
-
-    Eq 6. from arXiv 2603.15534 at theta_d = 0, with theta_s = pi/2 by default.
-    Note that this model assumes decoupling from the source, and ideally
-    controlled flux biases (in particular note phi_q=0 on the target, and the
-    flux bias on the detector must be small compared to the polarizing signal).
-    The source polarization is assumed to be instantaneously removed.
-
-    y(t) = 1 - exp(-t / T1) * (1 - cos(theta_s))
-
-    Args:
-        delays: Measurement times (microseconds)
-        T1: Exponential envelope time scale (microseconds). Defaulted to a value
-            typical of Advantage2 research systems.
-        theta_s: Bloch sphere rotation (polar angle) for the source (default: pi/2).
-    Returns:
-        A model signal
-    """
-    return 1 - np.exp(-delays / T1) * (1 - np.cos(theta_s))
-
-
-def make_y(
-    delays: np.ndarray,
-    A: float,
-    *,
-    T1: float = 0.032,
-    T2: float = 0.0101,
-    theta_d: float = np.pi / 2,
-    theta_s: float = np.pi / 2,
-    phi_d: float = 0.0,
-    phi_s: float = 0.0,
-    t0: float = 0.0,
-) -> np.ndarray:
-    """Make a noise-free model signal for arbitrary basis preparation and detection.
-
-    The source polarization holds the detector state until decoupling at t0:
-    y(t) = sign(sin(theta_s)) for t <= t0 (held by the source polarization), and
-    y(t) = cos(theta_d) yE(t) + sin(theta_d) sin(theta_s) yC(t) for t > t0,
-
-    where yE and yC are the energy- and computational-basis terms of Eq. 6 of
-    arXiv:2603.15534 (see make_yE and make_yC).
-
-    Assume that the pinning magnetic field from the target ~|Ip(s_tar) Jtd| is large
-    compared to the fb_d whilst the source is coupled (the target is pinned), so that
-    the detector energetically prefers a state aligned with the target (thence the source)
-    during the coupled phase. The source decoupling is approximated as instantaneous.
-
-    Args:
-        delays: Measurement times (microseconds)
-        A: frequency
-        T1: assumed coherence time (microseconds)
-        T2: assumed coherence time (microseconds)
-        theta_d: detection basis angle
-        theta_s: source basis angle
-        phi_d: detection phase
-        phi_s: source phase
-        t0: Source decoupling time (default: 0.0)
-    Returns:
-        A model signal assuming ideal detection and instantaneous source decoupling.
-
-    """
-    preparation_orientation = np.sign(np.sin(theta_s))
-    rd = delays - t0
-    return preparation_orientation * (rd <= 0) + (rd > 0) * (
-        np.cos(theta_d) * make_yE(rd, T1=T1, theta_s=theta_s)
-        + np.sin(theta_d)
-        * np.sin(theta_s)
-        * make_yC(rd, A=A, T2=T2, phi_d=phi_d, phi_s=phi_s)
-    )
-
-
-def dyC_dt0(
-    delays: np.ndarray, A: float, T2: float = 0.0101, sign_Jts_fbs: int = 1
-) -> np.ndarray:
-    """Calculate derivative of signal model with respect to time delay.
-
-    Computes the derivative of the model signal produced by ``make_y`` with
-    respect to the time delay. For ``t > 0`` the underlying signal is
-    ``sign_Jts_fbs * exp(-t/T2) * cos(2*pi*A*t)``; for ``t < 0`` it is
-    constant so the derivative is zero.
-
-    Args:
-        delays: Time delays at which to evaluate the derivative (microseconds).
-        A: Frequency (GHz).
-        T2: Exponential envelope time scale (microseconds).
-        sign_Jts_fbs: Sign convention for the Josephson coupling term (default: 1).
-
-    Returns:
-        Array of derivatives evaluated at each delay.
-    """
-    y0 = np.clip(np.exp(-delays / T2), a_min=0, a_max=1)
-    dy0_dt0 = -y0 / T2 * (delays > 0)  # Only contributes when not clipped
-    y1 = np.cos(2 * np.pi * A * delays)
-    dy1_dt0 = -2 * np.pi * A * np.sin(2 * np.pi * A * delays)
-
-    return sign_Jts_fbs * (dy0_dt0 * y1 + y0 * dy1_dt0)
-
-
-def artificial_data(
-    delays: np.ndarray,
-    A: float,
-    *,
-    T1: float = 0.032,
-    T2: float = 0.0101,
-    theta_d: float = np.pi / 2,
-    theta_s: float = np.pi / 2,
-    phi_d: float = 0.0,
-    phi_s: float = 0.0,
-    t0: float = 0.0,
-    num_independent_samples: float = float("Inf"),
-    prng: np.random.Generator | int | None = None,
-) -> np.ndarray:
-    """Create an artificial data set
-
-    y(t) = ideal signal produced by ``make_y``
-    with variance of (1 - y(t)^2) in the measured state. Given independent
-    and identically distributed samples we can model noise as normally
-    distributed. The signal is clipped so that the value is always physical
-    within the range [-1, 1] (only impacts small num_independent_samples).
-
-    Args:
-        delays: Time of measurement (microseconds).
-        A: Frequency (GHz).
-        T1: Assumed coherence time (microseconds).
-        T2: Exponential envelope time scale (microseconds).
-        theta_d: Detection basis angle (default: pi/2).
-        theta_s: Source basis angle (default: pi/2).
-        phi_d: Detection phase (default: 0.0).
-        phi_s: Source phase (default: 0.0).
-        t0: Reference time for the start of the measurement (default: 0.0).
-        num_independent_samples: Number of samples to model.
-        prng: Pseudo random number generator or seed.
-
-    Returns:
-        A model signal with sampling noise.
-    """
-
-    y = make_y(
-        delays,
-        A,
-        T1=T1,
-        T2=T2,
-        theta_d=theta_d,
-        theta_s=theta_s,
-        phi_d=phi_d,
-        phi_s=phi_s,
-        t0=t0,
-    )
-
-    if num_independent_samples != float("Inf"):
-        prng = np.random.default_rng(prng)
-        return np.clip(
-            y
-            + np.sqrt((1 - y**2) / num_independent_samples) * prng.normal(size=len(y)),
-            a_min=-1,
-            a_max=1,
-        )
-    else:
-        return y
 
 
 def run_parallel_experiment(
@@ -621,6 +421,9 @@ def plot_shim(
 def _plot_tds_schedules(
     x_polarizing_schedule: list[list[float]],
     x_anneal_schedules: list[list[list[float]]],
+    detector_lines: Collection[int] | None = None,
+    source_lines: Collection[int] | None = None,
+    target_lines: Collection[int] | None = None,
     plt_show_block: None | bool = None,
 ) -> None:
     """Plots the piecewise linear schedules used
@@ -628,15 +431,37 @@ def _plot_tds_schedules(
     Args:
         x_polarizing_schedule: The polarization signal.
         x_anneal_schedules: The list of anneal schedules, one per line.
+        detector_lines: Indices of detector lines, used to annotate the legend.
+        source_lines: Indices of source lines, used to annotate the legend.
+        target_lines: Indices of target lines, used to annotate the legend.
+            Lines in none of the above are labelled as unused. When none of the
+            line collections are provided, lines are labelled by number only.
         plt_show_block: If not None (default), then execute
             :code:`plt.show(block=plt_show_block)` to display the figure.
     """
+    detector_set = set(detector_lines or ())
+    source_set = set(source_lines or ())
+    target_set = set(target_lines or ())
+    annotate_type = any(
+        lines is not None for lines in (detector_lines, source_lines, target_lines)
+    )
+
+    def _line_type(line: int) -> str:
+        if line in detector_set:
+            return "detector"
+        if line in source_set:
+            return "source"
+        if line in target_set:
+            return "target"
+        return "unused"
+
     plt.figure("PWL multi-color annealing schedules")
-    plt.title("PWL schedules")
+    plt.title("x anneal and polarizing schedules")
     for line, schedule in enumerate(x_anneal_schedules):
-        plt.plot(
-            [x for x, _ in schedule], [y for _, y in schedule], label=f"Line {line}"
-        )
+        label = f"Line {line}"
+        if annotate_type:
+            label += f" ({_line_type(line)})"
+        plt.plot([x for x, _ in schedule], [y for _, y in schedule], label=label)
     plt.plot(
         [x for x, _ in x_polarizing_schedule],
         [y for _, y in x_polarizing_schedule],
@@ -645,7 +470,7 @@ def _plot_tds_schedules(
         color="black",
     )
     plt.xlabel("Time (microseconds)")
-    plt.ylabel("Schedule value")
+    plt.ylabel(r"Normalized $\phi_{cjj}$")
     plt.legend()
     _apply_tight_layout()
     if plt_show_block is not None:
@@ -1154,7 +979,6 @@ def compute_delay_grid(
         round((delay_max - delay_min) * nyquist_frequency * rel_sampling_rate) + 1,
     )
 
-    ctx.nyquist_frequency = nyquist_frequency
     ctx.delay_min = delay_min
     ctx.delay_max = delay_max
     ctx.delay_min_fit = delay_min_fit
@@ -1196,7 +1020,6 @@ class MCAContext:
         "use_common_c_bounds",
         "use_overshoot",
         "save_figures",
-        "T2",
         "Jtd",
         "Jts",
         "Jtt",
@@ -1205,7 +1028,6 @@ class MCAContext:
         "colormap_type",
         "refine_delays",
         "dt_dc",
-        "show_artificial_timeseries",
         "fit_window",
         "loop_delay_range",
         # runtime / computed state
@@ -1220,8 +1042,6 @@ class MCAContext:
         "anneal_offsets",
         "flux_biases",
         "sampling_params",
-        "target_Aminus",
-        "target_Aplus",
         "T",
         "Tnode_to_tds",
         "S",
@@ -1236,7 +1056,6 @@ class MCAContext:
         "n_embs",
         "sampler",
         "bqm",
-        "nyquist_frequency",
         "delay_min",
         "delay_max",
         "delay_min_fit",

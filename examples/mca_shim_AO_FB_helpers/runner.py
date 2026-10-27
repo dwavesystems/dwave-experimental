@@ -53,7 +53,6 @@ def main(
     colormap_type: Literal["divergent", "default"] = "divergent",
     refine_delays: bool = True,
     dt_dc: float = 2.3e-3,
-    show_artificial_timeseries: bool = False,
     fit_window: float | None = None,
     loop_delay_range: float | None = None,
 ) -> None:
@@ -177,9 +176,6 @@ def main(
             overshoot waveform on Advantage2 processors dt_dc ~ 2.3ns.
             A correction is applied using dt_dc = 2.3ns, data recollected, and the final
             anneal offset applied using a corrected model.
-        show_artificial_timeseries: When True, display an illustrative artificial
-            (model) timeseries and power-spectral-density demonstration before the
-            experimental target-frequency stage. Defaults to False.
         fit_window: Width of the delay data window (measured from the decoupling
             time ``delay_min``, spanning ``[delay_min, delay_min + fit_window]``)
             used to establish the power-spectral density. Values much larger than
@@ -262,7 +258,6 @@ def main(
         use_common_c_bounds=use_common_c_bounds,
         use_overshoot=use_overshoot,
         save_figures=save_figures,
-        T2=T2,
         Jtd=Jtd,
         Jts=Jts,
         Jtt=Jtt,
@@ -271,7 +266,6 @@ def main(
         colormap_type=colormap_type,
         refine_delays=refine_delays,
         dt_dc=dt_dc,
-        show_artificial_timeseries=show_artificial_timeseries,
         fit_window=fit_window,
         loop_delay_range=loop_delay_range,
     )

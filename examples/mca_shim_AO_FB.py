@@ -212,15 +212,6 @@ if __name__ == "__main__":
         "This is then applied to synchronize detector/sources on a per qubit basis.",
     )
     parser.add_argument(
-        "--show-artificial-timeseries",
-        dest="show_artificial_timeseries",
-        action="store_true",
-        default=False,
-        help="Display an illustrative artificial (model) timeseries and power-spectral-density "
-        "demonstration before the experimental target-frequency stage.",
-    )
-
-    parser.add_argument(
         "--fit-window",
         dest="fit_window",
         type=float,
@@ -269,7 +260,6 @@ if __name__ == "__main__":
         loop_length=args.loop_length,
         max_num_embeddings=args.max_num_embeddings,
         refine_delays=args.refine_delays,
-        show_artificial_timeseries=args.show_artificial_timeseries,
         fit_window=args.fit_window,
         loop_delay_range=args.loop_delay_range,
     )

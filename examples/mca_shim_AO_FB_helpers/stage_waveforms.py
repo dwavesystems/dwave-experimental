@@ -99,6 +99,9 @@ def run_waveforms(ctx):
     _plot_tds_schedules(
         x_polarizing_schedule,
         x_anneal_schedules,
+        detector_lines=detector_lines,
+        source_lines=source_lines,
+        target_lines=target_lines,
     )
     if save_figures:
         _save_open_figures("figures/", cache_str)
