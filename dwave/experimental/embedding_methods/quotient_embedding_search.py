@@ -96,8 +96,7 @@ def _validate_graph_inputs(source: nx.Graph, target: nx.Graph) -> None:
 def _extract_graph_properties(
     source: nx.Graph, target: nx.Graph
 ) -> tuple[int, int, int]:
-    """Extract and validate graph properties, returning ``(rows, tile count, and target
-    tile count)``.
+    """Extract and validate the row/tile metadata shared by source and target.
 
     Each graph must contain required metadata fields: 'rows' (number of rows) and
     'tile' (tile count). All metadata values must be positive integers. The source
@@ -243,29 +242,31 @@ def _normalize_coordinate(
     graph_labels: Literal["coordinate", "int", "nice"] | None = None,
     graph_shape: tuple | None = None
 ) -> tuple[nx.Graph, Callable[[tuple], Hashable]]:
-    """Transform to a coordinated dwave.graph compatible family for processing.
+    """Rebuild ``graph`` as a coordinate-labelled dwave.graphs graph for processing.
 
-    This function maps graphs to the family-appropriate coordinate-labeled class
-    without node vacancies, required by some mehods.
+    This function maps graphs to the family-appropriate coordinate-labelled class
+    without node vacancies, as required by some methods.
 
     Args:
-        graph: NetworkX graph, either linear or coordinate labelled.
+        graph: NetworkX graph, either linear- or coordinate-labelled.
         m: Number of rows (must be consistent with ``graph``).
-        t: Source tile count (must be consistent with ``graph``).
+        t: Tile count for ``graph`` (must be consistent with ``graph``).
         add_singleton_nodes: If ``True``, add any missing nodes in the
             coordinate-labelled source graph as singleton nodes.
         graph_family: Optional graph family. If not provided, it is inferred from
             the graph metadata.
-        graph_labels: graph node type (int or coordinate).
+        graph_labels: Node label type (``'int'``, ``'coordinate'`` or ``'nice'``).
             If not provided, it is inferred from the graph metadata.
-        graph_shape: Optional graph shape. If not provided, it is inferred from the graph metadata.
+        graph_shape: Optional graph shape. If not provided, it is inferred from
+            the graph metadata.
 
     Returns:
-        coordinate-labelled (tuple) source graph and a callable that maps
-        coordinate nodes back to the original source labelling space
+        A ``(graph, inverse)`` pair: the coordinate-labelled (tuple) graph and a
+        callable that maps coordinate nodes back to the original label space.
 
     Raises:
-        ValueError: If source labels are unsupported.
+        ValueError: If the graph family is unknown, or (for Pegasus single-rail
+            search) the source contains odd ``k`` indices.
     """
     if graph_family is None:
         graph_family = graph.graph.get("family", None)
@@ -881,9 +882,9 @@ def greedy_quotient_sublattice_mapping(
     It is designed for defective targets where a direct identity map may lose
     nodes or edges. Since a greedy method is used for embedding search, it is possible it fails to
     find a 1:1 embedding where one is viable. A complete method such as
-    :code:``minorminer.subgraph.find_subgraph`` may be more appropriate in a scenario such as this,
+    ``minorminer.subgraph.find_subgraph`` may be more appropriate in a scenario such as this,
     especially with customization of parameters to the target families. Similarly, when defect rates
-    are high direct use of the :code:``minorminer.find_embedding`` heuristic may be a more efficient
+    are high direct use of the ``minorminer.find_embedding`` heuristic may be a more efficient
     strategy (it will typically return a 1-to-many embedding in such cases).
 
     The quotient construction and greedy update rules in this implementation are based on Zephyr,
@@ -904,7 +905,7 @@ def greedy_quotient_sublattice_mapping(
     each quotient node block :math:`(u,w,j,z)` is optimized by choosing target candidates with the
     same :math:`(u,w,j,z)` and selecting the highest-yield proposals; (2) rail-level mode
     (``search_strategy='by_quotient_rail'``): optimise each quotient rail block :math:`(u,w,:)` by
-    selecting rails :math:`(u,w_t,k_t)` that maximise yield.; and (3) hybrid mode
+    selecting rails :math:`(u,w_t,k_t)` that maximise yield; and (3) hybrid mode
     (``search_strategy='by_rail_then_node'``): rail search followed by node refinement.
 
     Family-specific support status:
@@ -986,7 +987,7 @@ def greedy_quotient_sublattice_mapping(
                 target_mp.graph.update(family="zephyr", rows=mp, tile=target.graph["tile"],
                                        labels="coordinate")
 
-                emb_mp, metadata = search_strategy(source, target_mp)
+                emb_mp, metadata = greedy_quotient_sublattice_mapping(source, target_mp)
 
                 # Map the final embedding back to the original target labels.
                 emb_in_original_target = {
@@ -995,7 +996,7 @@ def greedy_quotient_sublattice_mapping(
                 }
 
         If you want to refine a non-full-yield result with an external solver, run
-        :func:`search_strategy` first and only call the refinement routine when
+        :func:`greedy_quotient_sublattice_mapping` first and only call the refinement routine when
         ``metadata.final_num_yielded < metadata.max_num_yielded``.
 
         .. code-block:: python

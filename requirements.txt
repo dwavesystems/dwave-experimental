@@ -4,7 +4,7 @@ dwave-system==1.34.0    # first to support 3.14
 matplotlib==3.10.5      # first to support 3.14
 # TEMPORARY: labeled_subgraph (minorminer.utils.labeled_subgraph) is unreleased; pin the commit
 # until it lands in a published minorminer>=0.2.22 release, then restore: minorminer>=0.2.22,<0.3
-minorminer @ git+https://github.com/dwavesystems/minorminer.git@158acc0dbf200b6982a1a4d2c19c1ffdc66e0daa
+minorminer @ git+https://github.com/dwavesystems/minorminer.git@158acc0dbf200b6982a1a4d2c19c1ffdc66e0daa # pip install --force-reinstall --no-deps "minorminer @ git+https://github.com/dwavesystems/minorminer.git@158acc0dbf200b6982a1a4d2c19c1ffdc66e0daa"
 # dev requirements
 reno==4.1.0
 dwave-graphs==1.0.0
