@@ -13,4 +13,3 @@
 # limitations under the License.
 
 from dwave.experimental.embedding_methods.quotient_embedding_search import *
-from dwave.experimental.embedding_methods.labeled_subgraph import *

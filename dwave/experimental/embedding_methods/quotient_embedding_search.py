@@ -24,7 +24,7 @@ from dwave.graphs import (
     pegasus_graph,
     chimera_graph,
 )
-from dwave.experimental.embedding_methods.labeled_subgraph import (
+from minorminer.utils.labeled_subgraph import (
     get_graph_shape,
     graph_label_mapping)
 

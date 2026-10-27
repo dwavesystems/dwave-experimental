@@ -23,10 +23,9 @@ import numpy as np
 from minorminer import find_embedding
 from minorminer.utils.parallel_embeddings import find_sublattice_embeddings
 
-from dwave.experimental.embedding_methods import (
-    greedy_quotient_sublattice_mapping,
-    find_labeled_subgraph,
-)
+from minorminer.utils.labeled_subgraph import find_labeled_subgraph
+
+from dwave.experimental.embedding_methods import greedy_quotient_sublattice_mapping
 from dwave.experimental.embedding_methods.quotient_embedding_search import _rail_nodes
 
 
