@@ -367,22 +367,6 @@ class TestSaveLoadResults(unittest.TestCase):
 
 
 class TestMakeBqm(unittest.TestCase):
-    def test_make_bqm_no_embeddings(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            chain = lattice.Chain(dimensions=(4,), periodic=(False,), data_root=tmpdir)
-            sampler = MockDWaveSampler()
-            exp = experiment.Experiment(
-                lattice=chain,
-                sampler=sampler,
-                config=experiment.ExperimentConfig(signed_energy_scale=0.5),
-            )
-            sc = experiment.SamplerCall(run_index=0)
-            sc.logical_bqms = [chain.make_bqm()]
-            sc.shim_data = {"total_iterations": 0}
-            bqm = exp._make_bqm(sc)
-            for u, v in chain.edge_list:
-                self.assertAlmostEqual(bqm.quadratic[(u, v)], 0.5)
-
     def test_make_bqm_with_embeddings(self):
         """Physical biases = logical_bias * relative_coupler_strength * signed_energy_scale."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -435,22 +419,6 @@ class TestRunIteration(unittest.TestCase):
             self.assertIn("shim_data", data)
             self.assertEqual(data["shim_data"]["total_iterations"], 1)
 
-    def test_run_iteration_returns_true_when_finished(self):
-        """run_iteration() returns True when max_iterations already reached."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            chain = lattice.Chain(dimensions=(4,), periodic=(False,), data_root=tmpdir)
-            exp = experiment.Experiment(
-                lattice=chain,
-                sampler=MockDWaveSampler(),
-                config=experiment.ExperimentConfig(),
-                max_iterations=0,
-            )
-            chain._load_embeddings = mock.MagicMock()
-            finished = exp.run_iteration([{"signed_energy_scale": 1.0, "anneal_time": 1.0}])
-
-            self.assertTrue(finished)
-            self.assertEqual(list(exp.data_path.glob("iter*.pkl.lzma")), [])
-
 
 class TestFastAnnealExperiment(unittest.TestCase):
     def test_default_params(self):
@@ -461,6 +429,38 @@ class TestFastAnnealExperiment(unittest.TestCase):
             exp = experiment.Experiment(lattice=chain, sampler=sampler, config=config)
             self.assertTrue(exp.param.get("fast_anneal"))
             self.assertEqual(exp.param["num_reads"], 100)
+
+
+class TestSpinGlassExperiment(unittest.TestCase):
+    def test_seeds_cycle_per_embedding(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            glass = lattice.DimerizedCubicSpinGlass(
+                dimensions=(2, 2, 2), data_root=tmpdir, precision=256
+            )
+            glass.embedding_list = np.array(
+                [
+                    np.arange(glass.num_spins),
+                    np.arange(glass.num_spins, 2 * glass.num_spins),
+                ]
+            )
+            exp = experiment.SpinGlassExperiment(
+                lattice=glass,
+                sampler=MockDWaveSampler(),
+                config=experiment.ExperimentConfig(num_random_instances=3),
+            )
+
+            for run_index, seeds in (
+                (0, (0, 1)),
+                (1, (2, 3)),
+                (2, (4, 5)),
+                (3, (0, 1)),
+            ):
+                with self.subTest(run_index=run_index):
+                    exp.run_index = run_index
+                    bqms = exp._make_logical_bqms()
+                    self.assertEqual(len(bqms), 2)
+                    for bqm, seed in zip(bqms, seeds):
+                        self.assertEqual(bqm, glass.make_bqm(seed=seed))
 
 
 if __name__ == "__main__":

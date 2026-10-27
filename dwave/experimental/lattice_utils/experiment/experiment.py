@@ -24,7 +24,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import dimod
 import numpy as np
@@ -215,10 +215,9 @@ class Experiment:
         if progress and tqdm is None:
             raise ImportError("Progress reporting requires the optional 'tqdm' dependency.")
 
-        try:
-            self.lattice._load_embeddings(self.sampler)
-        except FileNotFoundError as e:
-            raise FileNotFoundError("No Embedding Found: ", e) from e
+        embeddings = getattr(self.lattice, "embedding_list", None)
+        if embeddings is None or len(embeddings) == 0:
+            raise RuntimeError("Call lattice.embed_lattice(sampler) before running.")
 
         if progress:
             tqdm.write(
@@ -308,19 +307,16 @@ class Experiment:
         """Parse a sampler response into per-embedding observable results.
 
         Args:
-            call: Sampler call metadata, inluding the logical BQMs
+            call: Sampler call metadata, including the logical BQMs
             response: Raw sample set returned by the sampler.
 
         Returns:
             Dictionary mapping observable names to their evaluated results across
             embeddings.
         """
-        if hasattr(self.lattice, "embedding_list"):
-            embedding_list = self.lattice.embedding_list
-            myarr = response.samples(sorted_by=None)
-            sample_arrays = [myarr[:, emb].copy() for emb in embedding_list]
-        else:
-            sample_arrays = [response.samples(sorted_by=None)[:, np.arange(self.lattice.num_spins)]]
+        embedding_list = self.lattice.embedding_list
+        myarr = response.samples(sorted_by=None)
+        sample_arrays = [myarr[:, emb].copy() for emb in embedding_list]
 
         sample_set = {}
         for iemb, sample_array in enumerate(sample_arrays):
@@ -827,27 +823,13 @@ class Experiment:
     def _make_bqm(self, sampler_call: SamplerCall) -> dimod.BQM:
         """Construct a BQM for the current sampler call."""
         signed_energy_scale = self.param["signed_energy_scale"]
-        bqm = dimod.BQM(vartype="SPIN")
-        if not hasattr(self.lattice, "embedding_list"):
-            logical_bqm = sampler_call.logical_bqms[0]
-
-            for v in range(self.lattice.num_spins):
-                # Make sure variables appear in the correct order when dealing with software solvers
-                bqm.add_variable(v)
-                if v in logical_bqm.variables:
-                    bqm.add_linear(v, logical_bqm.linear[v])
-
-            for u, v in self.lattice.edge_list:
-                bqm.add_quadratic(u, v, logical_bqm.quadratic[u, v] * signed_energy_scale)
-
-            return bqm
-
         relative_coupler_strength = sampler_call.shim_data["relative_coupler_strength"]
+        bqm = dimod.BQM(vartype="SPIN")
+
         for iemb, emb in enumerate(self.lattice.embedding_list):
             logical_bqm = sampler_call.logical_bqms[iemb].copy()
 
             for v in range(self.lattice.num_spins):
-                # Don't touch degree-zero spins.  Relevant to partial yield.
                 if logical_bqm.degree(v) > 0:
                     bqm.add_linear(emb[v], logical_bqm.linear[v])
 

@@ -156,7 +156,7 @@ class TestLattice(unittest.TestCase):
             embeddings = np.array([[0, 1, 2, 3]])
             chain._save_embeddings(sampler, embeddings)
 
-            chain.embed_lattice(sampler, try_to_load=True, data_root=tmpdir)
+            chain.embed_lattice(sampler, try_to_load=True)
             np.testing.assert_array_equal(chain.embedding_list, embeddings)
 
     def test_embed_find_and_save(self):
@@ -169,10 +169,84 @@ class TestLattice(unittest.TestCase):
                 "dwave.experimental.lattice_utils.lattice.lattice.find_multiple_embeddings",
                 return_value=[emb_dict],
             ):
-                chain.embed_lattice(sampler, try_to_load=False, timeout=1, data_root=tmpdir)
+                chain.embed_lattice(sampler, try_to_load=False, timeout=1)
             # Verify embedding was found and saved
             emb_path = chain._get_path("embedding", sampler_name="MockDWaveSampler")
             self.assertTrue(emb_path.exists())
+
+    def test_embed_excluded_qubits_reuses_filtered_unrestricted_cache(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = lattice.Chain(dimensions=(4,), data_root=tmpdir)
+            sampler = MockDWaveSampler()
+            chain._save_embeddings(sampler, np.array([[0, 1, 2, 3], [4, 5, 6, 7]]))
+
+            with mock.patch(
+                "dwave.experimental.lattice_utils.lattice.lattice.find_multiple_embeddings"
+            ) as search:
+                chain.embed_lattice(sampler, exclude_qubits=[1])
+
+            search.assert_not_called()
+            np.testing.assert_array_equal(chain.embedding_list, [[4, 5, 6, 7]])
+
+    def test_embed_excluded_qubits_saves_and_loads_separate_cache(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = lattice.Chain(dimensions=(4,), data_root=tmpdir)
+            sampler = MockDWaveSampler()
+            unrestricted = np.array([[0, 1, 2, 3]])
+            restricted = np.array([[10, 11, 12, 13]])
+            chain._save_embeddings(sampler, unrestricted)
+
+            with (
+                mock.patch(
+                    "dwave.experimental.lattice_utils.lattice.lattice.find_multiple_embeddings",
+                    return_value=[dict(enumerate(restricted[0]))],
+                ) as search,
+                self.assertWarns(UserWarning),
+            ):
+                chain.embed_lattice(sampler, exclude_qubits=[3, 1, 3])
+
+            search.assert_called_once()
+            np.testing.assert_array_equal(chain.embedding_list, restricted)
+            np.testing.assert_array_equal(
+                np.atleast_2d(np.loadtxt(chain._embedding_cache_filename(sampler), dtype=int)),
+                unrestricted,
+            )
+            specific_cache = chain._embedding_cache_filename(sampler, [1, 3])
+            self.assertTrue(specific_cache.exists())
+            self.assertNotEqual(specific_cache, chain._embedding_cache_filename(sampler))
+
+            another_chain = lattice.Chain(dimensions=(4,), data_root=tmpdir)
+            with mock.patch(
+                "dwave.experimental.lattice_utils.lattice.lattice.find_multiple_embeddings"
+            ) as search:
+                another_chain.embed_lattice(sampler, exclude_qubits=[1, 3])
+
+            search.assert_not_called()
+            np.testing.assert_array_equal(another_chain.embedding_list, restricted)
+
+    def test_embed_minimum_checked_after_filtering(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = lattice.Chain(dimensions=(4,), data_root=tmpdir)
+            sampler = MockDWaveSampler()
+            chain._save_embeddings(sampler, np.array([[0, 1, 2, 3], [4, 5, 6, 7]]))
+            found = [dict(enumerate(row)) for row in ([8, 9, 10, 11], [12, 13, 14, 15])]
+
+            with (
+                mock.patch(
+                    "dwave.experimental.lattice_utils.lattice.lattice.find_multiple_embeddings",
+                    return_value=found,
+                ) as search,
+                self.assertWarns(UserWarning),
+            ):
+                chain.embed_lattice(
+                    sampler,
+                    exclude_qubits=[1],
+                    min_number_of_embeddings=2,
+                    max_number_of_embeddings=2,
+                )
+
+            search.assert_called_once()
+            np.testing.assert_array_equal(chain.embedding_list, [[8, 9, 10, 11], [12, 13, 14, 15]])
 
 
 class TestLatticeOptimize(unittest.TestCase):
@@ -316,6 +390,103 @@ class TestDimerizedTriangular(unittest.TestCase):
             for args, expected in cases:
                 with self.subTest(args=args):
                     self.assertEqual(dt.get_chain_connectivity(*args), expected)
+
+
+class TestCubic(unittest.TestCase):
+    def test_open_edges(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cube = lattice.Cubic(
+                dimensions=(2, 2, 3),
+                periodic=(False, False, False),
+                data_root=tmpdir,
+            )
+            self.assertEqual(cube.num_spins, 12)
+            self.assertEqual(cube.num_edges, 20)
+            self.assertNotIn((8, 0), cube.edge_list)
+
+    def test_default_z_periodic_edges(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cube = lattice.Cubic(dimensions=(2, 2, 3), data_root=tmpdir)
+            self.assertEqual(cube.num_spins, 12)
+            self.assertEqual(cube.num_edges, 24)
+            self.assertIn((8, 0), cube.edge_list)
+            self.assertEqual(len({frozenset(edge) for edge in cube.edge_list}), cube.num_edges)
+
+
+class TestCubicSpinGlass(unittest.TestCase):
+    def test_seeded_couplings(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for precision in (1, 4, 256):
+                with self.subTest(precision=precision):
+                    glass = lattice.CubicSpinGlass(
+                        dimensions=(2, 2, 3),
+                        data_root=tmpdir,
+                        precision=precision,
+                    )
+                    bqm = glass.make_bqm(seed=7)
+                    couplings = np.array([bqm.quadratic[edge] for edge in glass.edge_list])
+
+                    self.assertEqual(bqm, glass.make_bqm(seed=7))
+                    self.assertNotEqual(bqm, glass.make_bqm(seed=8))
+                    self.assertEqual(bqm.vartype, dimod.SPIN)
+                    self.assertEqual(set(bqm.variables), set(range(glass.num_spins)))
+                    self.assertEqual(len(bqm.quadratic), glass.num_edges)
+                    self.assertTrue(all(bias == 0 for bias in bqm.linear.values()))
+
+                    if precision == 1:
+                        self.assertTrue(set(couplings).issubset({-1, 1}))
+                    else:
+                        half = precision // 2
+                        self.assertTrue(np.all(np.abs(couplings) > 0))
+                        self.assertTrue(np.all(np.abs(couplings) <= 1))
+                        np.testing.assert_allclose(
+                            np.abs(couplings) * half,
+                            np.rint(np.abs(couplings) * half),
+                        )
+
+    def test_invalid_precision(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for precision in (0, 3, -2):
+                with self.subTest(precision=precision), self.assertRaises(ValueError):
+                    lattice.CubicSpinGlass(
+                        dimensions=(2, 2, 2),
+                        data_root=tmpdir,
+                        precision=precision,
+                    )
+            for precision in (True, 2.5):
+                with self.subTest(precision=precision), self.assertRaises(TypeError):
+                    lattice.CubicSpinGlass(
+                        dimensions=(2, 2, 2),
+                        data_root=tmpdir,
+                        precision=precision,
+                    )
+
+
+class TestDimerizedCubicSpinGlass(unittest.TestCase):
+    def test_physical_bqm_preserves_logical_couplings(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            glass = lattice.DimerizedCubicSpinGlass(
+                dimensions=(2, 2, 2),
+                periodic=(False, False, False),
+                data_root=tmpdir,
+                precision=4,
+                chain_strength=2,
+            )
+            logical = glass.logical_lattice.make_bqm(seed=7)
+            physical = glass.make_bqm(seed=7)
+
+            self.assertEqual(glass.num_spins, 16)
+            self.assertEqual(glass.num_edges, 24)  # 8 chains + 4 x + 4 y + 8 z
+            self.assertEqual(
+                {frozenset(edge) for edge in physical.quadratic},
+                {frozenset(edge) for edge in glass.edge_list},
+            )
+            self.assertEqual(physical.quadratic[0, 8], -2)  # chain
+            self.assertEqual(physical.quadratic[0, 1], logical.quadratic[0, 1])  # x
+            self.assertEqual(physical.quadratic[8, 10], logical.quadratic[0, 2])  # y
+            for edge in ((0, 12), (8, 4)):  # two halves of the z coupling
+                self.assertEqual(physical.quadratic[edge], logical.quadratic[0, 4] / 2)
+            self.assertEqual(physical, glass.make_bqm(seed=7))
 
 
 class TestEmbeddedLattice(unittest.TestCase):

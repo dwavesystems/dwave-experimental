@@ -38,7 +38,8 @@ class Triangular(Lattice):
         periodic: Two-element tuple indicating whether the lattice is periodic
             in the y and x dimensions.
         data_root: A string or Path to the root directory for storing lattice
-            data. orbit_type: Method for determining qubit and coupler orbits.
+            data.
+        orbit_type: Method for determining qubit and coupler orbits.
             Must be one of "global", "standard", "singleton", or "explicit". See
             ``initialize_orbits`` for details.
         qubit_orbits: Explicit qubit orbit labels, used only when
@@ -230,9 +231,7 @@ class DimerizedTriangular(EmbeddedLattice):
                 dimensions=dimensions,
                 periodic=periodic,
                 data_root=data_root,
-                orbit_type=orbit_type,
-                qubit_orbits=qubit_orbits,
-                coupler_orbits=coupler_orbits,
+                orbit_type="singleton",
                 halve_boundary_couplers=halve_boundary_couplers,
             )
 
@@ -267,13 +266,10 @@ class DimerizedTriangular(EmbeddedLattice):
             within the same chain. For a logical edge (u != v), this will return
             pairs of indices between the two chains.
         """
-        if u == v or v is None:
-            # Interior chain connectivity.
-            # Generic version: add all possible edges.
+        if u == v or v is None:  # Interior chain connectivity
             return ((0, 1),)
 
         # Connectivity between two edges.
-        # Triangular version
         uy, ux = self.logical_lattice.coordinates(u)
         vy, vx = self.logical_lattice.coordinates(v)
 
@@ -283,7 +279,7 @@ class DimerizedTriangular(EmbeddedLattice):
             return ((1, 0),)
 
         # x-edge, i.e. tilted.
-        if ux == vx - 1 or vx == 0:  # (ux == self.dimensions[1] - 1 and self.periodic[1]):
+        if ux == vx - 1 or vx == 0:
             if uy == vy:
                 return ((1, 0),)
             return ((0, 1),)

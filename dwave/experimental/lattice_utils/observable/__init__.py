@@ -14,4 +14,5 @@
 
 from dwave.experimental.lattice_utils.observable.kinks import *
 from dwave.experimental.lattice_utils.observable.observable import *
+from dwave.experimental.lattice_utils.observable.spin_glass import *
 from dwave.experimental.lattice_utils.observable.triangular import *
