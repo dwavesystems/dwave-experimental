@@ -131,7 +131,8 @@ def qubit_to_Advantage2_annealing_line(
         >>> from dwave.system import DWaveSampler
         >>> import dwave.experimental.multicolor_anneal as mca
         >>> qpu = DWaveSampler()            # doctest: +SKIP
-        >>> annealing_lines = mca.get_properties(qpu)            # doctest: +SKIP
+        >>> exp_feature_info = mca.get_properties(qpu)            # doctest: +SKIP
+        >>> annealing_lines = exp_feature_info.annealing_line_info   # doctest: +SKIP
         >>> shape = qpu.properties['topology']['shape']          # doctest: +SKIP
         >>> num_lines = len(annealing_lines)            # doctest: +SKIP
         >>> assert all(            # doctest: +SKIP
@@ -488,15 +489,16 @@ def verify_schedules(
 
     if x_anneal_schedules:
         exp_feature_line_info = exp_feature_info.annealing_line_info
+        if len(x_anneal_schedules) != len(exp_feature_line_info):
+            raise ScheduleError(
+                f"Expected {len(exp_feature_line_info)} anneal schedules "
+                f"(one per line); got {len(x_anneal_schedules)}."
+            )
         min_time_steps = {
             line: exp_feature_line_info[line]["minAnnealingTimeStep"]
             for line in range(len(exp_feature_line_info))
         }
         for line, min_time_step in min_time_steps.items():
-            seq_times = [
-                t - min_time_step * idx
-                for idx, (t, _) in enumerate(x_anneal_schedules[line])
-            ]
             if len(x_anneal_schedules[line]) < 2 or any(
                 len(s) != 2 for s in x_anneal_schedules[line]
             ):
@@ -504,6 +506,10 @@ def verify_schedules(
                     f"Anneal schedule on line {line} must contain at least "
                     "two [time, value] points."
                 )
+            seq_times = [
+                t - min_time_step * idx
+                for idx, (t, _) in enumerate(x_anneal_schedules[line])
+            ]
             if not math.isclose(seq_times[0], 0, abs_tol=1e-9):
                 raise ScheduleError(
                     f"Anneal schedule on line {line} must start at time 0; got {seq_times[0]}."
@@ -622,9 +628,10 @@ def verify_schedules(
                         f"Variation on {line} within {polarization_change_delay} of "
                         f"the polarization change over ({t0}, {t1})."
                     )
-                # A depolarization (+/-1 -> 0) additionally requires the anneal
-                # schedules to hold through the depolarization delay.
-                if v == 0 and v_prev in (1, -1):
+                # Reaching 0 from any nonzero value is a depolarization and
+                # additionally requires the anneal schedules to hold through the
+                # depolarization delay, including multi-segment/non-unit ramps.
+                if v == 0 and v_prev != 0:
                     line = _anneal_variation(t1, t1 + depolarization_delay)
                     if line is not None:
                         raise ScheduleError(
@@ -713,8 +720,10 @@ def parse_exp_feature_line_info(
         holdOvershootFors = {line: holdOvershootFor for line in range(num_lines)}
 
     if standard_01_c_range:
-        maxCs = maxCOvershoots = {line: 1.0 for line in range(num_lines)}
-        minCs = minCOvershoots = {line: 0.0 for line in range(num_lines)}
+        maxCs = {line: 1.0 for line in range(num_lines)}
+        maxCOvershoots = {line: 1.0 for line in range(num_lines)}
+        minCs = {line: 0.0 for line in range(num_lines)}
+        minCOvershoots = {line: 0.0 for line in range(num_lines)}
     else:
         maxCs = {
             line: _round_sigfigs(efi["maxC"], sigfigs=sigfigs, mode="down")
@@ -797,6 +806,80 @@ def parse_exp_feature_line_info(
         min_time_steps,
         holdOvershootFors,
     )
+
+
+def _quench_segments(
+    quench_time: float,
+    step: float,
+    hold: float,
+    prep_end: float,
+    start_value: float,
+    end_value: float,
+    start_overshoot: float | None,
+    end_overshoot: float,
+    use_overshoot: bool,
+    include_start_overshoot: bool = True,
+) -> list[list[float]]:
+    """Return the PWL support points for a single line's quench.
+
+    Produces the mirror-symmetric waveform shared by the source, detector, and
+    detected-target quenches: an optional overshoot past ``end_value`` on the
+    settling side (and past ``start_value`` on the approach side), with a
+    ``hold``-microsecond plateau when ``hold`` exceeds twice the time ``step``.
+
+    Args:
+        quench_time: Time at which the quench occurs.
+        step: Minimum time step for the line.
+        hold: Overshoot hold duration (``holdOvershootFor``).
+        prep_end: Preparation-interval end, used to clamp the pre-quench
+            overshoot start so support points never step backwards in time.
+        start_value: Value held before the quench.
+        end_value: Value settled to after the quench.
+        start_overshoot: Overshoot value on the approach side; ignored when
+            ``include_start_overshoot`` is False.
+        end_overshoot: Overshoot value on the settling side.
+        use_overshoot: Whether to overshoot the endpoints.
+        include_start_overshoot: Whether to drive through ``start_overshoot``
+            before the quench. False for lines already held at an arbitrary
+            value (detected targets) that overshoot only on the settling side.
+    """
+    if not use_overshoot:
+        if include_start_overshoot:
+            return [
+                [quench_time, start_value],
+                [quench_time + step, end_value],
+            ]
+        return [[quench_time + step, end_value]]
+
+    if not include_start_overshoot:
+        if hold > 2 * step:
+            return [
+                [quench_time + step, end_overshoot],
+                [quench_time + hold - step, end_overshoot],
+                [quench_time + hold, end_value],
+            ]
+        return [
+            [quench_time + step, end_overshoot],
+            [quench_time + 2 * step, end_value],
+        ]
+
+    assert start_overshoot is not None  # guaranteed by include_start_overshoot
+    if hold > 2 * step:
+        overshoot_start = max(quench_time - hold, prep_end)
+        return [
+            [overshoot_start + step, start_value],
+            [overshoot_start + 2 * step, start_overshoot],
+            [quench_time, start_overshoot],
+            [quench_time + step, end_overshoot],
+            [quench_time + hold - step, end_overshoot],
+            [quench_time + hold, end_value],
+        ]
+    return [
+        [quench_time - step, start_value],
+        [quench_time, start_overshoot],
+        [quench_time + step, end_overshoot],
+        [quench_time + 2 * step, end_value],
+    ]
 
 
 def make_tds_x_anneal_schedules(
@@ -932,7 +1015,11 @@ def make_tds_x_anneal_schedules(
     if depolarized_preparation_interval is None:
         depolarized_preparation_interval = depolarized_preparation_interval0
     if detector_quench_time is None:
-        detector_quench_time = quench_time0
+        # Derive the quench from the (possibly caller-supplied) preparation end so
+        # custom intervals compose, rather than always using the all-default quench.
+        detector_quench_time = depolarized_preparation_interval[1] + (
+            quench_time0 - depolarized_preparation_interval0[1]
+        )
     if isinstance(use_overshoot, bool):
         use_overshoot_source = use_overshoot_detector = use_overshoot
     else:
@@ -979,7 +1066,7 @@ def make_tds_x_anneal_schedules(
     non_target_lines = all_lines - target_lines
     if non_target_lines and polarized_preparation_interval[
         1
-    ] - polarized_preparation_interval[0] < min(
+    ] - polarized_preparation_interval[0] < max(
         min_time_steps[l] for l in non_target_lines
     ):
         raise ValueError(
@@ -990,7 +1077,7 @@ def make_tds_x_anneal_schedules(
 
     if len(target_lines) > 0 and depolarized_preparation_interval[
         1
-    ] - depolarized_preparation_interval[0] < min(
+    ] - depolarized_preparation_interval[0] < max(
         min_time_steps[l] for l in target_lines
     ):
         raise ValueError(
@@ -1046,88 +1133,49 @@ def make_tds_x_anneal_schedules(
         min_time_steps = {**min_time_steps, **quench_step_sizes}
 
     for line in source_lines:
-        if use_overshoot_source:
-            if holdOvershootFors[line] > 2 * min_time_steps[line]:
-                # Clamp the pre-quench overshoot start to the preparation
-                # interval end so support points never step backwards in time.
-                overshoot_start = max(
-                    source_quench_time - holdOvershootFors[line],
-                    polarized_preparation_interval[1],
-                )
-                anneal_schedules[line] += [
-                    [overshoot_start + min_time_steps[line], maxCs[line]],
-                    [overshoot_start + 2 * min_time_steps[line], maxCOvershoots[line]],
-                    [source_quench_time, maxCOvershoots[line]],
-                    [source_quench_time + min_time_steps[line], minCOvershoots[line]],
-                    [
-                        source_quench_time
-                        + holdOvershootFors[line]
-                        - min_time_steps[line],
-                        minCOvershoots[line],
-                    ],
-                    [source_quench_time + holdOvershootFors[line], minCs[line]],
-                ]
-            else:
-                anneal_schedules[line] += [
-                    [source_quench_time - min_time_steps[line], maxCs[line]],
-                    [source_quench_time, maxCOvershoots[line]],
-                    [source_quench_time + min_time_steps[line], minCOvershoots[line]],
-                    [source_quench_time + 2 * min_time_steps[line], minCs[line]],
-                ]
-        else:
-            anneal_schedules[line] += [
-                [source_quench_time, maxCs[line]],
-                [source_quench_time + min_time_steps[line], minCs[line]],
-            ]
+        anneal_schedules[line] += _quench_segments(
+            quench_time=source_quench_time,
+            step=min_time_steps[line],
+            hold=holdOvershootFors[line],
+            prep_end=polarized_preparation_interval[1],
+            start_value=maxCs[line],
+            end_value=minCs[line],
+            start_overshoot=maxCOvershoots[line],
+            end_overshoot=minCOvershoots[line],
+            use_overshoot=use_overshoot_source,
+        )
     for line in detected_target_lines:
-        # Prepare like a target line, read out like a detector
+        # Prepare like a target line, read out like a detector.
         anneal_schedules[line] = [
             [depolarized_preparation_interval[0], 0.0],
             [depolarized_preparation_interval[1], target_c[line]],
-            [detector_quench_time, target_c[line]]
+            [detector_quench_time, target_c[line]],
         ]
-        if use_overshoot_detector:
-            anneal_schedules[line] += [
-                [detector_quench_time + min_time_steps[line], maxCOvershoots[line]],
-                [detector_quench_time + 2 * min_time_steps[line], maxCs[line]],
-            ]
-        else:
-            anneal_schedules[line] += [
-                [detector_quench_time + min_time_steps[line], maxCs[line]],
-            ]
+        anneal_schedules[line] += _quench_segments(
+            quench_time=detector_quench_time,
+            step=min_time_steps[line],
+            hold=holdOvershootFors[line],
+            prep_end=depolarized_preparation_interval[1],
+            start_value=target_c[line],
+            end_value=maxCs[line],
+            start_overshoot=None,
+            end_overshoot=maxCOvershoots[line],
+            use_overshoot=use_overshoot_detector,
+            include_start_overshoot=False,
+        )
 
     for line in detector_lines:
-        if use_overshoot_detector:
-            if holdOvershootFors[line] > 2 * min_time_steps[line]:
-                overshoot_start = max(
-                    detector_quench_time - holdOvershootFors[line],
-                    polarized_preparation_interval[1],
-                )
-                anneal_schedules[line] += [
-                    [overshoot_start + min_time_steps[line], minCs[line]],
-                    [overshoot_start + 2 * min_time_steps[line], minCOvershoots[line]],
-                    [detector_quench_time, minCOvershoots[line]],
-                    [detector_quench_time + min_time_steps[line], maxCOvershoots[line]],
-                    [
-                        detector_quench_time
-                        + holdOvershootFors[line]
-                        - min_time_steps[line],
-                        maxCOvershoots[line],
-                    ],
-                    [detector_quench_time + holdOvershootFors[line], maxCs[line]],
-                ]
-            else:
-                anneal_schedules[line] += [
-                    [detector_quench_time - min_time_steps[line], minCs[line]],
-                    [detector_quench_time, minCOvershoots[line]],
-                    [detector_quench_time + min_time_steps[line], maxCOvershoots[line]],
-                    [detector_quench_time + 2 * min_time_steps[line], maxCs[line]],
-                ]
-        else:
-            anneal_schedules[line] += [
-                [detector_quench_time, minCs[line]],
-                [detector_quench_time + min_time_steps[line], maxCs[line]],
-            ]
+        anneal_schedules[line] += _quench_segments(
+            quench_time=detector_quench_time,
+            step=min_time_steps[line],
+            hold=holdOvershootFors[line],
+            prep_end=polarized_preparation_interval[1],
+            start_value=minCs[line],
+            end_value=maxCs[line],
+            start_overshoot=minCOvershoots[line],
+            end_overshoot=maxCOvershoots[line],
+            use_overshoot=use_overshoot_detector,
+        )
 
     # Set initial point to time 0 for all schedules.
     for line in all_lines:
