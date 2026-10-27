@@ -965,11 +965,11 @@ def compute_delay_grid(
 
     # Nyquist frequency in MHz, resolving up to 2*target_A.
     nyquist_frequency = target_A * 1000 * 2
-    delay_min_fit = delay_min = (
+    delay_min = (
         rel_start
         * dt_dc  # For reasonable confidence source is fully decoupled (c < 0).
     )
-    delay_max_fit = delay_max = delay_min + delay_range
+    delay_max = delay_min + delay_range
     # Collecting regularly spaced data on [delay_min, delay_min + delay_range],
     # post source decoupling, is not optimal for inference of calibration
     # errors, but (IMO) allows intuitive estimators and data series.
@@ -981,8 +981,6 @@ def compute_delay_grid(
 
     ctx.delay_min = delay_min
     ctx.delay_max = delay_max
-    ctx.delay_min_fit = delay_min_fit
-    ctx.delay_max_fit = delay_max_fit
     ctx.delays = delays
     ctx.dt = delays[1] - delays[0]
     return ctx
@@ -1058,14 +1056,11 @@ class MCAContext:
         "bqm",
         "delay_min",
         "delay_max",
-        "delay_min_fit",
-        "delay_max_fit",
         "delays",
         "dt",
         "mean_Z_detector",
         "first",
         "last",
-        "ld",
         "frequencies",
         "psd",
         "anneal_offsets_target",

@@ -17,8 +17,8 @@ def run_anneal_offsets(ctx):
     sampling_params = ctx.sampling_params
     detector_lines = ctx.detector_lines
     delays = ctx.delays
-    delay_min_fit = ctx.delay_min_fit
-    delay_max_fit = ctx.delay_max_fit
+    delay_min = ctx.delay_min
+    delay_max = ctx.delay_max
     dt = ctx.dt
     embs = ctx.embs
     line_assignments = line_assignments_from_feature_info(ctx.exp_feature_info)
@@ -59,8 +59,8 @@ def run_anneal_offsets(ctx):
         if cache_str:
             np.save(fn_cache, mean_Z_detector)
 
-    first = np.argmax(delays >= delay_min_fit)
-    last = np.argmax(delays >= delay_max_fit) + 1
+    first = np.argmax(delays >= delay_min)
+    last = np.argmax(delays >= delay_max) + 1
     ld = last - first
     if ld < 1:
         raise ValueError("Fit window is empty: t-fit range too small for target_A")
@@ -172,7 +172,6 @@ def run_anneal_offsets(ctx):
     ctx.mean_Z_detector = mean_Z_detector
     ctx.first = first
     ctx.last = last
-    ctx.ld = ld
     ctx.frequencies = frequencies
     ctx.psd = psd
     ctx.anneal_offsets_target = anneal_offsets_target
@@ -195,7 +194,7 @@ def run_verification(ctx):
     delays = ctx.delays
     first = ctx.first
     last = ctx.last
-    ld = ctx.ld
+    ld = last - first
     frequencies = ctx.frequencies
     dAdc = ctx.dAdc
     target_A = ctx.target_A

@@ -188,11 +188,10 @@ def main(
             resolve pulse propagation and synchronization limitations. When None,
             defaults to ``T2 / 4``.
     Raises:
-        ValueError: If the fit window (``delay_min_fit``, ``delay_max_fit``)
-            is incompatible with the data window (``delay_min``, ``delay_max``)
-            or empty; if neither or both of ``target_c`` and ``target_A`` are
-            specified; if ``exp_feature_info`` has an unexpected (legacy)
-            format; or if the fit window contains fewer than one sample.
+        ValueError: If the delay/fit window is empty (too small for
+            ``target_A``); if neither or both of ``target_c`` and ``target_A``
+            are specified; or if ``exp_feature_info`` has an unexpected (legacy)
+            format.
         FileNotFoundError: If the QPU is offline and the fallback pickle
             caches for solver properties or experimental feature info are
             missing.
