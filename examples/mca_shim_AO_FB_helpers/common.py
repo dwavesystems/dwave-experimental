@@ -470,7 +470,7 @@ def _plot_tds_schedules(
         color="black",
     )
     plt.xlabel("Time (microseconds)")
-    plt.ylabel(r"Normalized $\phi_{cjj}$")
+    plt.ylabel("Normalized CJJ control bias, c")
     plt.legend()
     _apply_tight_layout()
     if plt_show_block is not None:

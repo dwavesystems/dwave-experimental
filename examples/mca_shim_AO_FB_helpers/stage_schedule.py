@@ -108,10 +108,20 @@ def run_schedule(ctx, *, dtarget_c=0.01):
             linestyle="dotted",
             color="black",
         )
-        plt.xlabel("Normalized control bias, c")
+        plt.xlabel("Normalized CJJ control bias, c")
         plt.ylabel("Energy scale, GHz")
         plt.ylim([0, 2 * max(target_A, target_B)])
         plt.xlim([0, 1])
+        plt.gca().text(
+            0.97,
+            0.03,
+            f"dA/dc={dAdc:.3g} can be used to infer anneal\n"
+            "offsets for frequency synchronization",
+            transform=plt.gca().transAxes,
+            ha="right",
+            va="bottom",
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+        )
         plt.legend()
         print(
             f"target_c = {target_c:.3g} ",
