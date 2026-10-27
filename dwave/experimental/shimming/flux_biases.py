@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 import math
 from copy import deepcopy
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
@@ -25,9 +24,9 @@ import numpy as np
 from dimod.typing import Bias, Variable
 
 from dwave.experimental.multicolor_anneal import (
-    make_tds_x_anneal_schedules,
     LineFeatureInfo,
     XAnnealSchedules,
+    make_tds_x_anneal_schedules,
 )
 
 __all__ = [
@@ -184,7 +183,7 @@ def shim_flux_biases(
             parameter, if provided, is assumed to be specified according to the
             Ising model convention (:math:`\pm 1`, and :math:`-3` for inactive).
         shimmed_variables: A collection of variables to shim; by default the shimmed variables
-            are inferred from `exp_weights_per_update` or set to all elements
+            are inferred from ``exp_weights_per_update`` or set to all elements
             in :attr:`~dimod.binary.BinaryQuadraticModel.variables`.
         learning_schedule: A sequence of gradient-descent prefactors. When not
             provided, prefactors are determined by a hypergradient-descent
@@ -516,7 +515,7 @@ def shim_linewise_flux_biases(
     viable_lines = {
         line_assignments[q] for q in bqm.variables if q in line_assignments
     }
-    for line in set(lines).intersection(viable_lines):
+    for line in sorted(viable_lines.intersection(lines)):
         line_shimmed_variables = [
             v for v in shimmed_variables if line_assignments.get(v) == line
         ]
@@ -832,9 +831,8 @@ def shim_tds_flux_biases(
                 for detector_line in detector_lines:
                     if flux_biases is not None:
                         sampling_params["flux_biases"] = flux_biases
-                    dt_lines = {target_line, detector_line}
                     shimmed_variables_dt = set(
-                        v for v in shimmed_variables if line_assignments[v] in dt_lines
+                        v for v in shimmed_variables if line_assignments[v] in {target_line, detector_line}
                     )
                     flux_biases, dict_fb, dict_mag = shim_tds_flux_biases(
                         bqm=bqm,

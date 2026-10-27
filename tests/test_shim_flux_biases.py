@@ -18,6 +18,7 @@ import unittest.mock
 from copy import deepcopy
 from itertools import product
 
+import dimod
 from dwave.experimental.multicolor_anneal import make_tds_x_schedules
 from dwave.experimental.shimming import (
     shim_flux_biases,

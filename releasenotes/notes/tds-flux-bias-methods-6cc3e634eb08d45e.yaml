@@ -13,3 +13,11 @@ features:
     :func:`~dwave.experimental.shimming.shim_flux_biases` so the per-variable
     update can be a weighted sum of per-experiment magnetizations instead of a
     plain mean.
+upgrade:
+  - |
+    The per-variable flux-bias update in
+    :func:`~dwave.experimental.shimming.shim_flux_biases` now uses the mean of
+    the per-experiment magnetizations instead of their sum. When averaging over
+    multiple experiments (via ``sampling_params_updates``), the effective update
+    magnitude is reduced by a factor equal to the number of experiments; adjust
+    ``alpha`` or the ``learning_schedule`` accordingly.
