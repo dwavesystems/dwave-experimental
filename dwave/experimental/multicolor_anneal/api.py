@@ -14,18 +14,17 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from dwave.cloud import Client, Solver
 from dwave.system import DWaveSampler
 
 from dwave.experimental.fast_reverse_anneal.api import SOLVER_FILTER, get_solver_name
+from dwave.experimental.multicolor_anneal.utils import ExpFeatureInfo
 
 __all__ = ['SOLVER_FILTER', 'get_solver_name', 'get_properties']
 
 
 def get_properties(sampler: DWaveSampler | Solver | str | None = None
-                   ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+                   ) -> ExpFeatureInfo:
     """Return multicolor-annealing properties
 
     Args:
@@ -37,10 +36,13 @@ def get_properties(sampler: DWaveSampler | Solver | str | None = None
             an MCA-enabled solver.
 
     Returns:
-        A tuple containing two elements:
-        1. A dictionary of annealing-line independent properties.
-        2. Annealing-line specific properties for all available annealing lines,
-        formatted as list of dicts in ascending order of annealing-line index.
+        An :class:`~dwave.experimental.multicolor_anneal.utils.ExpFeatureInfo`
+        named tuple with two fields:
+        1. ``polarizing_line_info``: a dictionary of annealing-line independent
+        properties.
+        2. ``annealing_line_info``: annealing-line specific properties for all
+        available annealing lines, formatted as a list of dicts in ascending
+        order of annealing-line index.
 
     Examples:
         Retrieve MCA properties for the annealing lines of a default solver, and
@@ -78,6 +80,9 @@ def get_properties(sampler: DWaveSampler | Solver | str | None = None
 
     result = computation.result()
     try:
-        return result['x_get_multicolor_annealing_exp_feature_info']
+        payload = result['x_get_multicolor_annealing_exp_feature_info']
     except KeyError:
         raise ValueError(f'Selected sampler ({solver.name}) does not support multicolor annealing')
+    # Build from the leading fields so a future payload extension does not break
+    # construction, and so the KeyError guard only covers the property lookup.
+    return ExpFeatureInfo(*payload[:len(ExpFeatureInfo._fields)])
