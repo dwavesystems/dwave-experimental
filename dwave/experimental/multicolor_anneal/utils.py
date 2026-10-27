@@ -46,6 +46,7 @@ __all__ = [
 
 Interval: TypeAlias = tuple[float, float]
 LineFeatureInfo: TypeAlias = dict[str, Any]
+# A list of [time, value] support points; may be a partial or full schedule.
 AnnealSchedule: TypeAlias = list[list[float]]
 XAnnealSchedules: TypeAlias = list[AnnealSchedule]
 
@@ -819,7 +820,7 @@ def _quench_segments(
     end_overshoot: float,
     use_overshoot: bool,
     include_start_overshoot: bool = True,
-) -> list[list[float]]:
+) -> AnnealSchedule:
     """Return the PWL support points for a single line's quench.
 
     Produces the mirror-symmetric waveform shared by the source, detector, and
