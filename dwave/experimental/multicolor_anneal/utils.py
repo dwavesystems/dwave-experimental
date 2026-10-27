@@ -253,7 +253,7 @@ def make_tds_intervals(
     post_preparation_delay: float = 20.0,
     buffering_time_scale: float = 2.0,
     *,
-    depolarizing_time_scale: float | None= None,
+    depolarizing_time_scale: float | None = None,
     anneal_preparation_time_scale: float | None = None,
     skip_explicit_polarization: bool = True,
 ) -> tuple[Interval, Interval, Interval, Interval, float]:
@@ -709,7 +709,7 @@ def parse_exp_feature_line_info(
         for line, efi in enumerate(exp_feature_line_info)
     }
     holdOvershootFors = {
-        line: efi.get("holdOvershootFor", 0)
+        line: efi.get("holdOvershootFor", 0.0)
         for line, efi in enumerate(exp_feature_line_info)
     }
     if use_common_bounds:
@@ -842,6 +842,9 @@ def _quench_segments(
         include_start_overshoot: Whether to drive through ``start_overshoot``
             before the quench. False for lines already held at an arbitrary
             value (detected targets) that overshoot only on the settling side.
+
+    Returns:
+        The ``[time, value]`` support points to append after the held value.
     """
     if not use_overshoot:
         if include_start_overshoot:
@@ -1067,7 +1070,7 @@ def make_tds_x_anneal_schedules(
     if non_target_lines and polarized_preparation_interval[
         1
     ] - polarized_preparation_interval[0] < max(
-        min_time_steps[l] for l in non_target_lines
+        min_time_steps[line] for line in non_target_lines
     ):
         raise ValueError(
             "polarized_preparation_interval must have duration compatible with min step."
@@ -1078,7 +1081,7 @@ def make_tds_x_anneal_schedules(
     if len(target_lines) > 0 and depolarized_preparation_interval[
         1
     ] - depolarized_preparation_interval[0] < max(
-        min_time_steps[l] for l in target_lines
+        min_time_steps[line] for line in target_lines
     ):
         raise ValueError(
             "depolarized_preparation_interval must have duration compatible with min step."
@@ -1119,7 +1122,6 @@ def make_tds_x_anneal_schedules(
             [depolarized_preparation_interval[0], 0.0],
             [depolarized_preparation_interval[1], target_c[line]],
         ]
-
 
     if quench_step_sizes is not None:
         if not isinstance(quench_step_sizes, dict):
@@ -1188,6 +1190,7 @@ def make_tds_x_anneal_schedules(
     )
 
     return anneal_schedules
+
 
 def make_tds_x_polarizing_schedule(
     polarization_interval: Interval | None = None,
@@ -1458,7 +1461,7 @@ def make_tds_x_schedule_delays(
     target_c: float | None = None,
     x_schedule_delays: Sequence[float] | None = None,
     decimal_places: int | None = None,
-) -> Sequence:
+) -> Sequence[float]:
     """Update delays so that ``target_c`` is achieved at time 0.
 
     Normalized anneal offsets quench from a min
