@@ -80,6 +80,9 @@ def get_properties(sampler: DWaveSampler | Solver | str | None = None
 
     result = computation.result()
     try:
-        return ExpFeatureInfo(*result['x_get_multicolor_annealing_exp_feature_info'])
+        payload = result['x_get_multicolor_annealing_exp_feature_info']
     except KeyError:
         raise ValueError(f'Selected sampler ({solver.name}) does not support multicolor annealing')
+    # Build from the leading fields so a future payload extension does not break
+    # construction, and so the KeyError guard only covers the property lookup.
+    return ExpFeatureInfo(*payload[:len(ExpFeatureInfo._fields)])

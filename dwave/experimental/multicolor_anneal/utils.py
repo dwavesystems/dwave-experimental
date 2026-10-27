@@ -13,14 +13,13 @@
 # limitations under the License.
 
 import math
-from collections.abc import Collection, Iterable, Sequence
+from collections.abc import Collection, Iterable
 from copy import deepcopy
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from typing import Any, Literal, NamedTuple, TypeAlias
 from warnings import warn
 
 import networkx as nx
-import numpy as np
 
 from dwave.graphs import zephyr_coordinates
 
@@ -38,7 +37,6 @@ __all__ = [
     "make_tds_x_anneal_schedules",
     "make_tds_x_polarizing_schedule",
     "make_tds_x_schedules",
-    "make_tds_x_schedule_delays",
     "parse_exp_feature_line_info",
     "standardize_schedule_endpoints",
     "verify_schedules",
@@ -90,8 +88,9 @@ def _round_sigfigs(
         raise ValueError("sigfigs must be positive")
     if mode not in ("up", "down"):
         raise ValueError("mode must be 'up' or 'down'")
-    # Use Decimal to avoid binary floating-point artifacts when rounding.
-    d = Decimal(value)
+    # Round from the decimal string so binary-float representation artifacts do
+    # not perturb values already at the requested precision (Decimal(0.1) would).
+    d = Decimal(str(value))
     exp = d.adjusted() - (sigfigs - 1)
     rounding = ROUND_CEILING if mode == "up" else ROUND_FLOOR
     return float(d.quantize(Decimal(1).scaleb(exp), rounding=rounding))
@@ -632,6 +631,9 @@ def verify_schedules(
                 # Reaching 0 from any nonzero value is a depolarization and
                 # additionally requires the anneal schedules to hold through the
                 # depolarization delay, including multi-segment/non-unit ramps.
+                # By design this required delay applies only on the window after
+                # the depolarization event; the pre-event side is governed by the
+                # separate polarization-change delay above, not by this one.
                 if v == 0 and v_prev != 0:
                     line = _anneal_variation(t1, t1 + depolarization_delay)
                     if line is not None:
@@ -826,7 +828,11 @@ def _quench_segments(
     Produces the mirror-symmetric waveform shared by the source, detector, and
     detected-target quenches: an optional overshoot past ``end_value`` on the
     settling side (and past ``start_value`` on the approach side), with a
-    ``hold``-microsecond plateau when ``hold`` exceeds twice the time ``step``.
+    ``hold``-microsecond plateau at the overshoot value when ``hold`` is at
+    least three times the time ``step``. A narrower ``hold`` cannot carry two
+    plateau support points spaced by ``step`` (they would be ``hold - 2 * step``
+    apart), so it falls back to a single overshoot point, keeping every support
+    time at least ``step`` apart as required by the sequencing checks.
 
     Args:
         quench_time: Time at which the quench occurs.
@@ -856,7 +862,7 @@ def _quench_segments(
         return [[quench_time + step, end_value]]
 
     if not include_start_overshoot:
-        if hold > 2 * step:
+        if hold >= 3 * step:
             return [
                 [quench_time + step, end_overshoot],
                 [quench_time + hold - step, end_overshoot],
@@ -868,7 +874,7 @@ def _quench_segments(
         ]
 
     assert start_overshoot is not None  # guaranteed by include_start_overshoot
-    if hold > 2 * step:
+    if hold >= 3 * step:
         overshoot_start = max(quench_time - hold, prep_end)
         return [
             [overshoot_start + step, start_value],
@@ -938,8 +944,9 @@ def make_tds_x_anneal_schedules(
         detector_lines: Iterable of detector line indices.
         target_c: Schedule value at which the target is held. This must be specified
             if target_lines is not empty. If a dictionary format is provided, the
-            held value can vary by line - it should be keyed by line number. If it is
-            not specified lines are prepared to Cmin.
+            held value can vary by line - it should be keyed by line number, and must
+            provide an entry for every target line and every detected target line. If
+            it is not specified lines are prepared to Cmin.
         polarized_preparation_interval: Tuple ``(start, end)`` giving the
             interval during which a polarizing signal is present. During this
             interval, unused and detector lines are set to ``minC`` whereas
@@ -1417,118 +1424,3 @@ def make_tds_x_schedules(
     )
 
     return x_anneal_schedules, x_polarizing_schedule
-
-
-def _target_c_time(
-    C1: float = 0.0,
-    C2: float = 1.0,
-    quench_time: float = 1.0,
-    target_c: float = 0.0,
-    decimal_places: int | None = None,
-) -> float:
-    """Calculate time at which target_c is realized assuming a linear quench.
-
-    Over the range C1~0 to C2~1 the quench can be well approximated as linear,
-    whereas for faster quenches it typically deviates. The rate specified in the
-    PWL is typically an overestimate to the rate physically realized through the
-    dynamically relevant [0,1] interval and requires measurement.
-    Small delays to target_c can be realized on a per line basis with
-    x_schedule_delays, or on a per qubit basis with anneal offsets.
-
-    Args:
-        C1: Initial control bias value.
-        C2: Final control bias value.
-        quench_time: Total time for the quench from C1 to C2.
-        target_c: Target control bias value for which to calculate the time.
-        decimal_places: Optional number of decimal places to round the result to.
-
-    Returns:
-        Time at which the target_c is realized under a linear quench.
-
-    Raises:
-        ValueError: If ``C1`` equals ``C2`` (the quench has no extent).
-    """
-    if C1 == C2:
-        raise ValueError("C1 and C2 must differ to define a linear quench.")
-    result = (target_c - C1) / (C2 - C1) * quench_time
-    if decimal_places is not None:
-        result = round(result, decimal_places)
-    return result
-
-
-def make_tds_x_schedule_delays(
-    x_anneal_schedules: XAnnealSchedules,
-    quenched_lines: Iterable[int],
-    target_c: float | None = None,
-    x_schedule_delays: Sequence[float] | None = None,
-    decimal_places: int | None = None,
-) -> Sequence[float]:
-    """Update delays so that ``target_c`` is achieved at time 0.
-
-    Normalized anneal offsets quench from a min
-    to a max value for a detector, and vice versa for a source.
-    Delays are adjusted so that sources and targets quench
-    through ``target_c`` at equal time under the piece-wise-linear
-    schedule. Since the piecewise linear schedule is subject to
-    filtering and non-idealities, the predicted delays may require
-    adjustment particularly in the context of schedules exploiting
-    overshoot ranges.
-
-    Args:
-        x_anneal_schedules: The list of anneal schedules, one per line.
-        quenched_lines: Iterable of detector (or source) line indices.
-        target_c: Normalized control bias target value (the detector or source)
-           PWL schedule yields time 0.0 at the target_c value, which is set to
-           0.0 if not specified.
-        x_schedule_delays: Optional initial schedule delays. If None, initialized to zeros.
-        decimal_places: Optional number of decimal places to round each
-            computed delay to.
-
-    Returns:
-        Updated schedule delays array adjusted for target_c.
-
-    Examples:
-        Compute per-line delays from anneal schedules synthesized for a
-        solver, aligning detector and source quenches to ``target_c``:
-
-        >>> from dwave.system import DWaveSampler
-        >>> import dwave.experimental.multicolor_anneal as mca
-        >>> exp_feature_info = mca.get_properties(DWaveSampler())   # doctest: +SKIP
-        >>> target_lines, detector_lines, source_lines = {0}, {1}, {2}
-        >>> x_anneal_schedules, _ = mca.make_tds_x_schedules(
-        ...     exp_feature_info=exp_feature_info,
-        ...     target_lines=target_lines,
-        ...     target_c=0.5,
-        ...     detector_lines=detector_lines,
-        ...     source_lines=source_lines,
-        ... )            # doctest: +SKIP
-        >>> x_schedule_delays = mca.make_tds_x_schedule_delays(
-        ...     x_anneal_schedules=x_anneal_schedules,
-        ...     quenched_lines=detector_lines | source_lines,
-        ...     target_c=0.5,
-        ... )            # doctest: +SKIP
-    """
-    if target_c is None:
-        target_c = 0.0
-    if x_schedule_delays is None:
-        x_schedule_delays = [0.0] * len(x_anneal_schedules)
-    else:
-        x_schedule_delays = list(x_schedule_delays)
-    for line in quenched_lines:
-        cvals = [c for _, c in x_anneal_schedules[line]]
-        idx = np.argmax(
-            np.abs(np.diff(cvals))
-        )  # Index for start of quench. assumed unique.
-        C1 = x_anneal_schedules[line][idx][1]
-        C2 = x_anneal_schedules[line][idx + 1][1]
-        quench_time = (
-            x_anneal_schedules[line][idx + 1][0] - x_anneal_schedules[line][idx][0]
-        )
-        x_schedule_delays[line] = -_target_c_time(
-            C1=C1,
-            C2=C2,
-            quench_time=quench_time,
-            target_c=target_c,
-            decimal_places=decimal_places,
-        )
-    return x_schedule_delays
