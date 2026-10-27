@@ -217,19 +217,13 @@ def make_tds_graph(
 
     if detected_nodes is None:
         detected_nodes = target_graph.nodes()
-    else:
-        # Materialize once so a single-pass iterable is not exhausted by the
-        # validation below, leaving the edge construction silently empty.
-        detected_nodes = set(detected_nodes)
-        if not detected_nodes.issubset(target_graph.nodes()):
-            raise ValueError("detected_nodes are not compatible with the target graph")
+    elif not set(detected_nodes).issubset(target_graph.nodes()):
+        raise ValueError("detected_nodes are not compatible with the target graph")
 
     if sourced_nodes is None:
         sourced_nodes = target_graph.nodes()
-    else:
-        sourced_nodes = set(sourced_nodes)
-        if not sourced_nodes.issubset(target_graph.nodes()):
-            raise ValueError("sourced_nodes are not compatible with the target graph")
+    elif not set(sourced_nodes).issubset(target_graph.nodes()):
+        raise ValueError("sourced_nodes are not compatible with the target graph")
 
     node_to_tds = (
         {n: "target" for n in target_graph.nodes()}
@@ -513,9 +507,7 @@ def verify_schedules(
 
     if x_polarizing_schedule:
         min_time_step = exp_feature_info.polarizing_line_info["minPolarizingTimeStep"]
-        depolarization_delay = exp_feature_info.polarizing_line_info.get(
-            "depolarizationAnnealScheduleRequiredDelay", 0.0
-        )  # Unreported delay cannot be enforced; 0.0 imposes no extra constraint.
+        depolarization_delay = exp_feature_info.polarizing_line_info["depolarizationAnnealScheduleRequiredDelay"]
         polarization_change_delay = exp_feature_info.polarizing_line_info.get(
             "polarizationChangeAnnealScheduleRequiredDelay", 0.0
         )  # Expected standard feature from October 28 2026, best practice regardless.
@@ -1221,18 +1213,6 @@ def make_tds_x_schedules(
     polarizing schedule generation, endpoint alignment, and schedule
     verification into a single call.
 
-    .. note::
-        Schedule support times are derived from the chosen time scales (such as
-        ``post_preparation_delay`` and ``depolarization_time_scale``) and each
-        line's ``minAnnealingTimeStep``. The final verification requires every
-        support time to be an (almost) integer multiple of the relevant
-        ``minAnnealingTimeStep``, so the time scales must be commensurate with
-        every line's minimum time step. For a solver whose ``minAnnealingTimeStep``
-        does not divide the default time scales, supply commensurate values (for
-        example a ``depolarization_time_scale`` that is an integer multiple of
-        the step); otherwise a :class:`ScheduleError` is raised deliberately to
-        avoid submitting an unrealizable program.
-
     Args:
         exp_feature_info: Multicolor-annealing properties, as returned by
             :func:`~dwave.experimental.multicolor_anneal.api.get_properties`.
@@ -1319,10 +1299,6 @@ def make_tds_x_schedules(
         depolarization_interval=depolarization_interval,
         sign_polarization=sign_polarization,
     )
-    # make_tds_x_anneal_schedules already standardized the anneal schedules;
-    # this call brings the polarizing schedule onto the same common endpoint.
-    # standardize_schedule_endpoints is idempotent and moves terminal holds in
-    # place, so re-standardizing adds no redundant breakpoints.
     x_anneal_schedules, x_polarizing_schedule = standardize_schedule_endpoints(
         x_anneal_schedules,
         x_polarizing_schedule,
