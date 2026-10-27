@@ -819,15 +819,16 @@ class UtilsTestWithoutClient(unittest.TestCase):
 
     def test_standardize_schedule_endpoints_decimals(self):
         # ``decimals`` rounds the common endpoint up to the given precision.
+        # ``end_buffer=0`` isolates the rounding from the terminal-hold guarantee.
         x_anneal = [[[0.0, 0.0], [2.33, 1.0]]]
 
         anneal_std, _ = standardize_schedule_endpoints(
-            x_anneal, post_pwl_delay=0.0, decimals=1
+            x_anneal, post_pwl_delay=0.0, decimals=1, end_buffer=0.0
         )
         self.assertEqual(anneal_std[0][-1], [2.4, 1.0])
 
         anneal_std, _ = standardize_schedule_endpoints(
-            x_anneal, post_pwl_delay=0.0, decimals=0
+            x_anneal, post_pwl_delay=0.0, decimals=0, end_buffer=0.0
         )
         self.assertEqual(anneal_std[0][-1], [3.0, 1.0])
 
