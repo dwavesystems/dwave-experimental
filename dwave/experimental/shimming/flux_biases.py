@@ -116,6 +116,7 @@ def shim_flux_biases(
     learning_schedule: Sequence[float] | None = None,
     convergence_test: Callable[[dict, dict], bool] | None = None,
     symmetrize_experiments: bool = True,
+    flux_biases_break_symmetry: Literal[True, False] = False,
     sampling_params_updates: Sequence[dict[str, Any]] | None = None,
     beta_hypergradient: float = 0.4,
     num_steps: int = 10,
@@ -196,11 +197,19 @@ def shim_flux_biases(
         symmetrize_experiments: If True, performs a test to determine symmetry
             breaking in the experiment: a non-zero
             :ref:`parameter_qpu_initial_state` for reverse anneal, non-zero
-            :math:`h`, or non-zero :ref:`parameter_qpu_flux_biases` (on some
-            shimmed variables). If any of these are present, magnetization is
+            :math:`h`, or non-zero :ref:`parameter_qpu_flux_biases` when
+            ``flux_biases_break_symmetry`` is True. If any of these are present,
+            magnetization is
             inferred by averaging over two experiments with symmetry-breaking
             elements inverted. The shim averages the symmetrically related
             experiments to achieve zero magnetization.
+        flux_biases_break_symmetry: If True, non-zero flux biases on variables
+            outside ``shimmed_variables`` trigger symmetrized experiments.
+            Defaults to False, in which case flux biases do not trigger
+            symmetrization. If flux_biases outside of the shimmed_variables set
+            are being used for calibration refinement, this value should be True.
+            If flux_biases are being used to intentionally apply symmetry breaking
+            fields the value should be False.
         sampling_params_updates: Where you require averaging across many
             experiments, you can specify a list of updates. Each element in your
             list is a dictionary that updates the ``sampling_params`` argument.
@@ -307,7 +316,10 @@ def shim_flux_biases(
 
     if symmetrize_experiments:
         unshimmed_variables = set(bqm.variables).difference(shimmed_variables)
-        fbnonzero = any(flux_biases[v] != 0 for v in shimmed_variables)
+        if flux_biases_break_symmetry:
+            fbnonzero = any(flux_biases[v] != 0 for v in unshimmed_variables)
+        else:
+            fbnonzero = False
         if bqm.vartype is dimod.BINARY:
             bqm = bqm.change_vartype(dimod.SPIN, inplace=False)
         hnonzero = any(bqm.linear.values())
@@ -398,8 +410,11 @@ def shim_flux_biases(
             # This can be included as part of the test evaluation (if required)
             break
         if exp_weights_per_update is None:
+            # Switching this to np.mean has been considered, but it makes only a
+            # superficial difference when the other hyperparameters (e.g. alpha,
+            # learning_schedule) are properly tuned or defaulted.
             exp_av_mags = {
-                v: np.mean(mag_history[v][-num_experiments:]) for v in shimmed_variables
+                v: np.sum(mag_history[v][-num_experiments:]) for v in shimmed_variables
             }
         else:
             exp_av_mags = {

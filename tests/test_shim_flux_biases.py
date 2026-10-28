@@ -277,8 +277,8 @@ class FluxBiases(unittest.TestCase):
             symmetrize_experiments=True,
         )
         self.assertTrue(
-            len(fbh[0]) - 1 == len(mh[0]) // 2 == 1,
-            "Should detect asymmetry, 2 experiment per iteration",
+            len(fbh[0]) - 1 == len(mh[0]) == 1,
+            "Flux biases do not trigger symmetrization by default",
         )
 
         sampling_params = {
@@ -296,6 +296,72 @@ class FluxBiases(unittest.TestCase):
             len(fbh[0]) - 1 == len(mh[0]) // 2 == 1,
             "Should detect asymmetry, 2 experiment per iteration",
         )
+
+    def test_flux_bias_symmetry_detection(self):
+        sampler = ShimmingMockSampler(substitute_sampler=SteepestDescentSampler())
+        shimmed = sampler.nodelist[0]
+        unshimmed = sampler.nodelist[1]
+        bqm = dimod.BinaryQuadraticModel("SPIN").from_ising(
+            {shimmed: 0, unshimmed: 0}, {}
+        )
+        flux_biases = [0] * sampler.properties["num_qubits"]
+        flux_biases[shimmed] = 0.2
+        flux_biases[unshimmed] = 0.3
+        sampling_params = {
+            "flux_biases": flux_biases,
+            "x_polarizing_schedule": [[0.0, 0.0], [1.0, 0.0]],
+        }
+
+        original_sample = sampler.sample
+        sampled_flux_biases = []
+
+        def record_sample(*args, **kwargs):
+            sampled_flux_biases.append(kwargs["flux_biases"].copy())
+            return original_sample(*args, **kwargs)
+
+        with unittest.mock.patch.object(sampler, "sample", side_effect=record_sample):
+            shim_flux_biases(
+                bqm,
+                sampler,
+                sampling_params=deepcopy(sampling_params),
+                shimmed_variables={shimmed},
+                learning_schedule=[0],
+                flux_biases_break_symmetry=True,
+            )
+
+        self.assertEqual(len(sampled_flux_biases), 2)
+        self.assertEqual(
+            [sample[unshimmed] for sample in sampled_flux_biases], [-0.3, 0.3]
+        )
+        self.assertEqual([sample[shimmed] for sample in sampled_flux_biases], [0.2, 0.2])
+
+        sampled_flux_biases.clear()
+        with unittest.mock.patch.object(sampler, "sample", side_effect=record_sample):
+            shim_flux_biases(
+                bqm,
+                sampler,
+                sampling_params=deepcopy(sampling_params),
+                shimmed_variables={shimmed},
+                learning_schedule=[0],
+            )
+
+        self.assertEqual(len(sampled_flux_biases), 1)
+        self.assertEqual(sampled_flux_biases[0][unshimmed], 0.3)
+
+        flux_biases[unshimmed] = 0
+        sampled_flux_biases.clear()
+        sampling_params["flux_biases"] = flux_biases
+        with unittest.mock.patch.object(sampler, "sample", side_effect=record_sample):
+            shim_flux_biases(
+                bqm,
+                sampler,
+                sampling_params=deepcopy(sampling_params),
+                shimmed_variables={shimmed},
+                learning_schedule=[0],
+                flux_biases_break_symmetry=True,
+            )
+
+        self.assertEqual(len(sampled_flux_biases), 1)
 
     def test_qubit_freezeout_alpha_phi(self):
         x = qubit_freezeout_alpha_phi()
