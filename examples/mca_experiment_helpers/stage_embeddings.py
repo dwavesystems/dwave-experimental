@@ -179,7 +179,7 @@ def run_embeddings(
         ]
         plt.figure(f"Parallel embedding of {len(embs_experiment)} T-D-S systems")
         draw_parallel_embeddings(
-            T, embeddings=embs_experiment, S=S_experiment, node_color=node_color
+            T, embeddings=embs_experiment, S=S_experiment, node_color=node_color, cmap=None
         )
         if save_figures:
             _save_open_figures("figures/", cache_str)

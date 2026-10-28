@@ -35,12 +35,13 @@ def run_detect_delays(ctx: MCAContext) -> MCAContext:
     source_lines = ctx.source_lines
     by_det_src_pair = ctx.by_det_src_pair
     save_figures = ctx.save_figures
+    online = ctx.online
 
     if t_decoupled is None:
         stage_idx += 1
         print()
         print(
-            f"Stage {stage_idx}: Detect delay for source decoupling (for bulk of {n_embs} parallel embeddings)"
+            f"Stage {stage_idx}: Compensate for source-detector decoupling timing (with x_schedule_delays, for bulk of {n_embs} parallel embeddings)."
         )
         print(
             "Whilst the source is coupled a polarized signal is detected. "
@@ -53,6 +54,8 @@ def run_detect_delays(ctx: MCAContext) -> MCAContext:
             with open(fn_cache, "rb") as f:
                 t_decoupled, t_mags, t_decoupled_by_qubit = pickle.load(f)
         else:
+            if not online:
+                raise RuntimeError("QPU not available, and no cached data found.")
             t_decoupled, t_mags, t_decoupled_by_qubit = estimate_decoupling_timescale(
                 sampler=sampler,
                 bqm=bqm,
@@ -206,6 +209,7 @@ def run_refine_delays(
     by_det_src_pair = ctx.by_det_src_pair
     embs = ctx.embs
     dt_dc = ctx.dt_dc
+    online = ctx.online
 
     # Repeat the source-decoupling detection; the outcome differs because
     # of the updated anneal_offsets on the targets.
@@ -218,6 +222,9 @@ def run_refine_delays(
         "We first reestablish decoupling time to high accuracy (now subject"
         " to some improved target frequency alignment on a plurality of qubits)."
     )
+
+    if not online:
+        raise RuntimeError("QPU not available, and no cached data found.")
 
     fn_cache = f"cache/source_decoupling_refined_{cache_str}.pkl"
     if cache_str and os.path.isfile(fn_cache):

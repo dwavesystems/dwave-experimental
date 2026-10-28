@@ -47,7 +47,7 @@ def main(
     # Couplings.
     Jtd: float = 1.0,
     Jts: float = 1.0,
-    Jtt: float = 0.1,
+    Jtt: float = -0.1,
     # Decoupling-delay and anneal-offset tuning.
     t_decoupled: float | None = None,
     by_det_src_pair: bool = True,

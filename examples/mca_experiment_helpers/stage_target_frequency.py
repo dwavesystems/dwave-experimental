@@ -56,7 +56,7 @@ def run_anneal_offsets(ctx: MCAContext) -> MCAContext:
 
     stage_idx += 1
     print(
-        f"Stage {stage_idx}: Estimate anneal offsets required to achieve the target frequency {target_A:.3g}GHz (for all {n_embs} parallel embeddings)."
+        f"Stage {stage_idx}: Compensate for per-qubit target-frequency variation to reach {target_A:.3g}GHz (with anneal_offsets, for all {n_embs} parallel embeddings)."
     )
     print(print_once)
     print(f"1-step anneal offset correction, parameterized by {schedule_fn}. ")
@@ -241,7 +241,7 @@ def run_verification(ctx: MCAContext) -> MCAContext:
     stage_idx += 1
     print()
     print(
-        f"Stage {stage_idx}: Verification (before and after anneal_offset adjustments)."
+        f"Stage {stage_idx}: Verify and refine the target-frequency alignment (with anneal_offsets, before and after adjustments)."
     )
     fn_cache = f"cache/AO_It1_{cache_str}.npy"
     if cache_str and os.path.isfile(fn_cache):

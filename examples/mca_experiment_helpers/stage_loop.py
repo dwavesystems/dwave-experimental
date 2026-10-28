@@ -39,6 +39,7 @@ def run_loop(ctx: MCAContext, *, dt_div_A_final: float = 0.25) -> MCAContext:
     dt = ctx.dt
     colormap_type = ctx.colormap_type
     save_figures = ctx.save_figures
+    online = ctx.online
 
     stage_idx += 1
     print()
@@ -98,6 +99,8 @@ def run_loop(ctx: MCAContext, *, dt_div_A_final: float = 0.25) -> MCAContext:
     if cache_str and os.path.isfile(fn_cache):
         mean_Z_detector = np.load(fn_cache)
     else:
+        if not online:
+            raise RuntimeError("QPU not available, and no cached data found.")
         mean_Z_detector = run_parallel_experiment(
             sampler_experiment,
             bqm_experiment,
