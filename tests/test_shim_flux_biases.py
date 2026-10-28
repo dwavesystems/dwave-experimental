@@ -507,6 +507,39 @@ class FluxBiases(unittest.TestCase):
         self.assertTrue(all(len(fb_history[v]) == 3 for v in shimmed_variables))
         self.assertTrue(all(len(mag_history[v]) == 2 for v in bqm.variables))
 
+    def test_shim_tds_flux_biases_alternating_skips_empty_line_pairs(self):
+        (
+            sampler,
+            bqm,
+            target_lines,
+            detector_lines,
+            line_assignments,
+            sampling_params,
+            exp_feature_line_info,
+            _,
+        ) = self._tds_setup()
+        target_lines.add(2)
+        shimmed_variables = {next(v for v, line in line_assignments.items() if line == 0)}
+
+        flux_biases, fb_history, mag_history = shim_tds_flux_biases(
+            bqm,
+            sampler,
+            target_lines,
+            detector_lines,
+            exp_feature_line_info,
+            sampling_params=sampling_params,
+            num_steps=1,
+            symmetrize_experiments=False,
+            shimmed_variables=shimmed_variables,
+            td_shim_type="alternating",
+            by_line_pair=True,
+        )
+
+        self.assertIsInstance(flux_biases, list)
+        self.assertSetEqual(set(fb_history), shimmed_variables)
+        self.assertSetEqual(set(mag_history), shimmed_variables)
+        self.assertEqual(len(fb_history[next(iter(shimmed_variables))]), 2)
+
     def test_shim_tds_flux_biases_detector_only_explicit(self):
         """td_shim_type='detector_only' shims only detector-line variables with
         a single experiment per step."""

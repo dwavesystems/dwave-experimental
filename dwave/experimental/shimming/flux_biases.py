@@ -847,8 +847,12 @@ def shim_tds_flux_biases(
                     if flux_biases is not None:
                         sampling_params["flux_biases"] = flux_biases
                     shimmed_variables_dt = set(
-                        v for v in shimmed_variables if line_assignments[v] in {target_line, detector_line}
+                        v
+                        for v in shimmed_variables
+                        if line_assignments[v] in {target_line, detector_line}
                     )
+                    if not shimmed_variables_dt:
+                        continue
                     flux_biases, dict_fb, dict_mag = shim_tds_flux_biases(
                         bqm=bqm,
                         sampler=sampler,
