@@ -7,14 +7,20 @@ x_schedule_delay refinements.
 from .common import *
 
 
-def run_schedule(ctx, *, dtarget_c=0.01):
+def run_schedule(
+    ctx: MCAContext, *, dtarget_c: float = 0.01, create_plot: bool = True
+) -> MCAContext:
     """Estimate target_A, target_c and dA/dc from the QPU schedule.
 
+    Note that the schedule is an approximation, these can be
+    refined by experimental measurement.
+    
     Args:
         dtarget_c: Half-width (in normalized control bias c) of the symmetric
             finite difference used to estimate ``dAdc`` from the schedule file,
             i.e. ``dAdc = (A(target_c + dtarget_c) - A(target_c - dtarget_c)) /
             (2 * dtarget_c)``. Ignored when ``dAdc`` is supplied.
+        create_plot: When ``True``, create the default schedule plot.
     """
     stage_idx = ctx.stage_idx
     schedule_fn = ctx.schedule_fn
@@ -43,11 +49,12 @@ def run_schedule(ctx, *, dtarget_c=0.01):
             schedule_fn, sheet_name="Fast-Annealing Schedule"
         )
 
-        plt.figure("Schedule")
-        plt.title("Annealing Schedule")
         delta_vs_s = qpu_anneal_schedule[::-1]
-        plt.plot(delta_vs_s["s"], delta_vs_s["A(s) (GHz)"], label="A(s)")
-        plt.plot(delta_vs_s["s"], delta_vs_s["B(s) (GHz)"], label="B(s)")
+        if create_plot:
+            plt.figure("Schedule")
+            plt.title("Annealing Schedule")
+            plt.plot(delta_vs_s["s"], delta_vs_s["A(s) (GHz)"], label="A(s)")
+            plt.plot(delta_vs_s["s"], delta_vs_s["B(s) (GHz)"], label="B(s)")
         if target_c is None:
             if target_A is None:
                 target_c = np.interp(
@@ -79,50 +86,51 @@ def run_schedule(ctx, *, dtarget_c=0.01):
         )
         if dAdc is None:
             dAdc = (target_Aplus - target_Aminus) / (2 * dtarget_c)
-        plt.plot(
-            [target_c, target_c],
-            [0, np.max(delta_vs_s["A(s) (GHz)"])],
-            label=f"c={target_c:.3g}",
-        )
-        plt.plot(
-            [0, target_c - dtarget_c],
-            [target_Aminus, target_Aminus],
-            linestyle="dotted",
-            color="black",
-        )
-        plt.plot(
-            [target_c - dtarget_c, target_c - dtarget_c],
-            [0, target_Aminus],
-            linestyle="dotted",
-            color="black",
-        )
-        plt.plot(
-            [0, target_c + dtarget_c],
-            [target_Aplus, target_Aplus],
-            linestyle="dotted",
-            color="black",
-        )
-        plt.plot(
-            [target_c + dtarget_c, target_c + dtarget_c],
-            [0, target_Aplus],
-            linestyle="dotted",
-            color="black",
-        )
-        plt.xlabel("Normalized CJJ control bias, c")
-        plt.ylabel("Energy scale, GHz")
-        plt.ylim([0, 2 * max(target_A, target_B)])
-        plt.xlim([0, 1])
-        plt.gca().text(
-            0.97,
-            0.03,
-            f"dA/dc={dAdc:.3g} can be used to infer anneal\n"
-            "offsets for frequency synchronization",
-            transform=plt.gca().transAxes,
-            ha="right",
-            va="bottom",
-            bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
-        )
-        plt.legend()
+        if create_plot:
+            plt.plot(
+                [target_c, target_c],
+                [0, np.max(delta_vs_s["A(s) (GHz)"])],
+                label=f"c={target_c:.3g}",
+            )
+            plt.plot(
+                [0, target_c - dtarget_c],
+                [target_Aminus, target_Aminus],
+                linestyle="dotted",
+                color="black",
+            )
+            plt.plot(
+                [target_c - dtarget_c, target_c - dtarget_c],
+                [0, target_Aminus],
+                linestyle="dotted",
+                color="black",
+            )
+            plt.plot(
+                [0, target_c + dtarget_c],
+                [target_Aplus, target_Aplus],
+                linestyle="dotted",
+                color="black",
+            )
+            plt.plot(
+                [target_c + dtarget_c, target_c + dtarget_c],
+                [0, target_Aplus],
+                linestyle="dotted",
+                color="black",
+            )
+            plt.xlabel("Normalized CJJ control bias, c")
+            plt.ylabel("Energy scale, GHz")
+            plt.ylim([0, 2 * max(target_A, target_B)])
+            plt.xlim([0, 1])
+            plt.gca().text(
+                0.97,
+                0.03,
+                f"dA/dc~{dAdc:.3g} can be used to infer anneal\n"
+                "offsets for frequency synchronization",
+                transform=plt.gca().transAxes,
+                ha="right",
+                va="bottom",
+                bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+            )
+            plt.legend()
         print(
             f"target_c = {target_c:.3g} ",
             f"A(target_c) = {target_A:.3g} GHz ",

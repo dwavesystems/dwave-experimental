@@ -33,7 +33,7 @@ import hashlib
 import json
 import os
 import re
-from typing import Collection, Iterable, Literal, Sequence
+from typing import Any, Collection, Iterable, Literal, Sequence
 
 import pickle
 import pandas as pd
@@ -49,6 +49,7 @@ from dwave.system import DWaveSampler
 from dwave.system.testing import MockDWaveSampler
 from dwave.system.composites import ParallelEmbeddingComposite
 from minorminer.utils.parallel_embeddings import find_multiple_embeddings
+from dwave.graphs import draw_parallel_embeddings
 from dwave.experimental.multicolor_anneal import (
     get_properties,
     line_assignments_from_feature_info,
@@ -81,6 +82,7 @@ __all__ = [
     "MockDWaveSampler",
     "ParallelEmbeddingComposite",
     "find_multiple_embeddings",
+    "draw_parallel_embeddings",
     "get_properties",
     "line_assignments_from_feature_info",
     "make_tds_graph",
@@ -117,7 +119,11 @@ def _figure_path(
 def _apply_tight_layout() -> None:
     """Apply tight_layout to all open figures so axis labels are not truncated."""
     for fig_num in plt.get_fignums():
-        plt.figure(fig_num).tight_layout()
+        fig = plt.figure(fig_num)
+        # Skip figures already using a layout engine (e.g. constrained) to avoid
+        # the "figure layout has changed to tight" warning.
+        if fig.get_layout_engine() is None:
+            fig.tight_layout()
 
 
 def _save_open_figures(figures_dir: str, cache_str: str | None = None) -> None:
@@ -193,7 +199,7 @@ def run_parallel_experiment(
     sampling_params: dict,
     detector_lines: Iterable[int],
     *,
-    delays: np.ndarray | list = (0.0,),
+    delays: np.ndarray | Sequence[float] = (0.0,),
     detected_vars: None | Sequence[Variable] = None,
 ) -> np.ndarray:
     """Collect detector magnetization for a set of independent embeddings
@@ -657,7 +663,7 @@ def estimate_decoupling_timescale(
     bqm: dimod.BinaryQuadraticModel,
     sampling_params: dict,
     detector_lines: Iterable[int],
-    detected_vars: Sequence[Variable] = None,
+    detected_vars: Sequence[Variable] | None = None,
     preparation_orientation: float = 1.0,
     t_guess: float = 0.0,
     t_min: float | None = None,
@@ -711,7 +717,7 @@ def estimate_decoupling_timescale(
         threshold_cycle_av: Threshold characterizing the decoupled regime (default: 0.9).
             The half-cycle average (t and t+1/(2*target_A)) magnetization is only larger than
             the threshold, in absolute value, in the source-coupled regime.
-        verbose: Whether to print progress information (default: True).
+        verbose: Whether to print progress information (default: False).
         by_det_src_pair: When True (default), resolve a decoupling delay for each
             detector line independently, reusing sampled data across lines to
             the extent possible. When False, a single bulk delay is estimated
@@ -727,6 +733,9 @@ def estimate_decoupling_timescale(
             only one source and detector line are present, an accuracy 1. is defaulted.
             With multiple source or detector lines, a high accuracy is appropriate
             to account for line-wise desynchronizations.
+        interpolate_final_interval: When True, refine each returned delay past the
+            bisection bracket by linearly interpolating the half-cycle-averaged
+            proxy to its threshold crossing (used by the refinement stage).
 
     Returns:
         A tuple containing:
@@ -920,7 +929,7 @@ def estimate_decoupling_timescale(
     return t_decoupled, data, _per_qubit_threshold_times()
 
 
-def _to_independent_tds(embs):
+def _to_independent_tds(embs: list[dict]) -> list[dict]:
     """Convert coupled embeddings to decoupled embeddings.
 
     Assume the label scheme returned by :code:`tds_graph`:
@@ -948,8 +957,11 @@ def _to_independent_tds(embs):
 
 
 def compute_delay_grid(
-    ctx, delay_range: float, rel_sampling_rate: float = 2, rel_start: float = 1.0
-):
+    ctx: "MCAContext",
+    delay_range: float,
+    rel_sampling_rate: float = 2,
+    rel_start: float = 1.0,
+) -> "MCAContext":
     """Build the regularly spaced delay grid used by the sampling stages.
 
     Args:
@@ -958,7 +970,14 @@ def compute_delay_grid(
             (``fit_window`` for target-frequency fitting, ``loop_delay_range``
             for the loop experiment).
         rel_sampling_rate: Samples collected per Nyquist period (2 for the
-            target-frequency stage, 8 for the finer-grained loop stage).
+            target-frequency stage, 4 for the finer-grained loop stage).
+        rel_start: Offset of the window start from the decoupling time, as a
+            multiple of ``dt_dc`` (1.0 for the target-frequency stage, 0.0 for
+            the loop stage).
+
+    Returns:
+        The same ``ctx``, with ``delay_min``, ``delay_max``, ``delays`` and
+        ``dt`` populated.
     """
     target_A = ctx.target_A
     dt_dc = ctx.dt_dc
@@ -999,7 +1018,7 @@ class MCAContext:
     _FIELDS = (
         # configuration (see runner.main for documentation)
         "cache_str",
-        "solver",
+        "solver_name",
         "detector_lines",
         "source_lines",
         "target_lines",
@@ -1012,7 +1031,8 @@ class MCAContext:
         "td_shim_type",
         "t_decoupled",
         "by_det_src_pair",
-        "num_anneal_offset_iterations",
+        "refine_frequencies",
+        "verify_anneal_offsets",
         "schedule_fn",
         "num_reads",
         "use_common_c_bounds",
@@ -1078,3 +1098,11 @@ class MCAContext:
             if name not in self._FIELDS:
                 raise TypeError(f"Unexpected configuration field: {name!r}")
             setattr(self, name, value)
+
+    # The fields in ``_FIELDS`` are populated dynamically; these declarations let
+    # static type checkers accept attribute access/assignment on the context.
+    def __getattr__(self, name: str) -> Any:
+        raise AttributeError(name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        object.__setattr__(self, name, value)

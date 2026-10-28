@@ -7,7 +7,21 @@ stage additionally applies per-qubit detector anneal_offsets.
 from .common import *
 
 
-def run_detect_delays(ctx):
+def run_detect_delays(ctx: MCAContext) -> MCAContext:
+    """Detect the source-decoupling delay for the bulk of parallel embeddings.
+
+    When ``ctx.t_decoupled`` is None, estimate the delay at which the detector
+    decouples from the source (and plot the detection), otherwise apply the
+    user-provided scalar delay to every detector line. The resolved delays are
+    added to ``sampling_params['x_schedule_delays']``.
+
+    Args:
+        ctx: Shared context carrying configuration and computed state between
+            stages.
+
+    Returns:
+        The same ``ctx``, updated with the per-line decoupling delays.
+    """
     stage_idx = ctx.stage_idx
     t_decoupled = ctx.t_decoupled
     cache_str = ctx.cache_str
@@ -63,8 +77,8 @@ def run_detect_delays(ctx):
                 linestyle="None",
                 marker=".",
             )
-            plt.xlabel("Time")
-            plt.ylabel("Magnitude")
+            plt.xlabel("x_schedule_delay (microseconds)")
+            plt.ylabel(r"Detector Magnetization, $\langle \sigma^z_i \rangle$")
             plt.title("Source Decoupling Detection")
             for line, t in t_decoupled.items():
                 plt.axvline(
@@ -101,8 +115,8 @@ def run_detect_delays(ctx):
                 linestyle="None",
                 marker=".",
             )
-            ax_before.set_xlabel("Time")
-            ax_before.set_ylabel("Magnitude")
+            ax_before.set_xlabel("x_schedule_delay (microseconds)")
+            ax_before.set_ylabel(r"Detector Magnetization, $\langle \sigma^z_i \rangle$")
             ax_before.set_title("Source Decoupling Detection")
             for line, t in t_decoupled.items():
                 ax_before.axvline(
@@ -125,7 +139,9 @@ def run_detect_delays(ctx):
                 linestyle="--",
                 label="Aligned decoupling delay",
             )
-            ax_after.set_xlabel("Time (t + source_delay - detector_delay)")
+            ax_after.set_xlabel(
+                "x_schedule_delay + source_delay - detector_delay (microseconds)"
+            )
             ax_after.set_title("Source Decoupling (delay-aligned)")
             ax_after.legend()
 
@@ -139,8 +155,11 @@ def run_detect_delays(ctx):
         _apply_tight_layout()
         plt.show()
     else:
-        # A user-provided scalar delay applies to all detector lines.
+        # A user-provided scalar delay applies to all detector lines; no
+        # decoupling sweep is measured, so there is no timeseries to carry over.
         t_decoupled = {line: t_decoupled for line in detector_lines}
+        t_mags = None
+        t_decoupled_by_qubit = None
 
     for line, val in t_decoupled.items():
         sampling_params["x_schedule_delays"][line] += val
@@ -153,21 +172,27 @@ def run_detect_delays(ctx):
 
 
 def run_refine_delays(
-    ctx,
+    ctx: MCAContext,
     *,
-    refine_phase_accuracy=0.05,
-    refine_delay_t_min_factor=-2.0,
-    refine_delay_t_max_factor=4.0,
-):
+    refine_phase_accuracy: float = 0.05,
+    refine_delay_t_min_factor: float = -2.0,
+    refine_delay_t_max_factor: float = 4.0,
+) -> MCAContext:
     """Refine source and detector delays after anneal-offset refinement.
 
     Args:
+        ctx: Shared context carrying configuration and computed state between
+            stages.
         refine_phase_accuracy: Target phase accuracy (in oscillation cycles) for
             the per-qubit decoupling-delay refinement.
         refine_delay_t_min_factor: Lower bound of the refinement bisection search
             window, as a multiple of the target period ``1 / target_A``.
         refine_delay_t_max_factor: Upper bound of the refinement bisection search
             window, as a multiple of the target period ``1 / target_A``.
+
+    Returns:
+        The same ``ctx``, updated with the refined per-line and per-qubit
+        decoupling delays.
     """
     stage_idx = ctx.stage_idx
     cache_str = ctx.cache_str
@@ -238,8 +263,8 @@ def run_refine_delays(
         linestyle="None",
         marker=".",
     )
-    plt.xlabel("Time, us")
-    plt.ylabel("Magnitude")
+    plt.xlabel("x_schedule_delay (microseconds)")
+    plt.ylabel(r"Detector Magnetization, $\langle \sigma^z_i \rangle$")
     plt.title("Source Decoupling Detection")
 
     print(

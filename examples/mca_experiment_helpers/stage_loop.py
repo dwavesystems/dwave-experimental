@@ -3,13 +3,18 @@
 from .common import *
 
 
-def run_loop(ctx, *, dt_div_A_final=0.25):
+def run_loop(ctx: MCAContext, *, dt_div_A_final: float = 0.25) -> MCAContext:
     """pi/2-pulse propagation around coupled target loops.
 
     Args:
+        ctx: Shared context carrying configuration and computed state between
+            stages.
         dt_div_A_final: Sampling rate for the final (loop) experiment. Defaults
             to the value used in anneal_offset shimming (1/4); smaller values can
             be used for finer plots.
+
+    Returns:
+        The same ``ctx``, with ``stage_idx`` advanced.
     """
     # Build a loop-specific grid: a shorter window sampled 4x more finely than
     # the target-frequency stage to better resolve pi/2-pulse propagation.

@@ -3,10 +3,24 @@
 from .common import *
 
 
-def run_waveforms(ctx):
+def run_waveforms(ctx: MCAContext) -> MCAContext:
+    """Build multi-color annealing waveforms compatible with the QPU.
+
+    Connects to the solver (or a mock from cache), resolves the detector,
+    source and target lines, builds the T-D-S x-schedules and polarizing
+    schedule, plots them, and initializes the shared ``sampling_params``.
+
+    Args:
+        ctx: Shared context carrying configuration and computed state between
+            stages.
+
+    Returns:
+        The same ``ctx``, updated with the QPU sampler, line assignments,
+        schedules and ``sampling_params``.
+    """
     stage_idx = ctx.stage_idx
     cache_str = ctx.cache_str
-    solver = ctx.solver
+    solver = ctx.solver_name
     detector_lines = ctx.detector_lines
     source_lines = ctx.source_lines
     target_lines = ctx.target_lines

@@ -14,14 +14,14 @@
 """Multi-color-annealing calibration-refinement command-line entry point.
 
 The implementation is split into small per-stage modules under the
-``mca_shim_AO_FB_helpers`` package. This file defines the command-line interface
-and delegates to :func:`~mca_shim_AO_FB_helpers.runner.main`.
+``mca_experiment_helpers`` package. This file defines the command-line interface
+and delegates to :func:`~mca_experiment_helpers.runner.main`.
 """
 
 import argparse
 
-from mca_shim_AO_FB_helpers.common import SOLVER_FILTER, _get_experiment_id
-from mca_shim_AO_FB_helpers.runner import main
+from mca_experiment_helpers.common import SOLVER_FILTER, _get_experiment_id
+from mca_experiment_helpers.runner import main
 
 
 if __name__ == "__main__":
@@ -33,15 +33,66 @@ if __name__ == "__main__":
             "Higher accuracy methods are possible with experimental insight and enhanced data."
         )
     )
+    # Stage control: presence/absence of refinement stages.
     parser.add_argument(
-        "--use-cache",
-        dest="use_cache",
-        action="store_true",
-        help=(
-            "Cache and reload experiment artifacts keyed by CLI parameters. "
-            "If solver graph_id changes, cached embeddings may be invalid."
-        ),
+        "--flux-bias-method",
+        dest="td_shim_type",
+        type=str,
+        choices=[
+            "None",
+            "detector_only",
+            "alternating",
+            "sequential",
+            "by_line_quench",
+        ],
+        default="detector_only",
+        help="Flux-bias calibration refinement mode: 'None' disables calibration refinement; "
+        "'detector_only' refines detector qubit flux_biases to achieve zero measured magnetization; "
+        "'by_line_quench' refines flux biases on all lines by assuming the required correction can be determined by independent quenches on every line; "
+        "'sequential' combines by_line_quench and detector_only; "
+        "'alternating' alternates detector/target roles to refine detector and target flux_biases "
+        "(but this can cause divergence, particularly at small frequencies and "
+        "when the qubit state realized by target_c varies significantly by line or qubit).",
     )
+    parser.add_argument(
+        "--refine-frequencies",
+        dest="refine_frequencies",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Estimate and apply per-qubit anneal_offsets to synchronize target "
+        "frequencies (default). Use --no-refine-frequencies to skip the "
+        "anneal-offset frequency-refinement stage.",
+    )
+    parser.add_argument(
+        "--verify-anneal-offsets",
+        dest="verify_anneal_offsets",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Re-measure after applying anneal_offsets to verify the frequency "
+        "alignment (a second iteration is useful to verify the first). Use "
+        "--no-verify-anneal-offsets to skip verification. Has no effect when "
+        "--no-refine-frequencies is set.",
+    )
+    parser.add_argument(
+        "--no-refine-delays",
+        dest="refine_delays",
+        action="store_false",
+        default=True,
+        help="Disable repeating source-decoupling delay detection after "
+        "anneal-offset refinement (which otherwise synchronizes detectors and "
+        "sources on a per-qubit basis).",
+    )
+    parser.add_argument(
+        "--loop-length",
+        dest="loop_length",
+        type=int,
+        help="Length of the loop model (even and >=4), defaulting to 16. "
+        "T-D-S systems compatible with coupled parallel unfrustrated loops are embedded. "
+        "Specifying a value 1 results in a Larmor precession demonstration for independent "
+        "T-D-S systems with no final loop experiment stage, this allows more T-D-S embeddings.",
+        default=16,
+    )
+    # Solver and matching schedule.
     parser.add_argument(
         "--solver-name",
         dest="solver_name",
@@ -49,6 +100,14 @@ if __name__ == "__main__":
         help="QPU solver name. Default research system with fast reverse anneal.",
         default=SOLVER_FILTER,
     )
+    parser.add_argument(
+        "--schedule-fn",
+        dest="schedule_fn",
+        type=str,
+        help="Path to the annealing schedule Excel file (.xlsx). Should be matched to the solver.",
+        default="09-1323A-D_Advantage2_system4_annealing_schedule.xlsx",
+    )
+    # Embedding selection.
     parser.add_argument(
         "--detector-lines",
         dest="detector_lines",
@@ -74,18 +133,19 @@ if __name__ == "__main__":
         default=None,  # Default: all lines that are neither detector nor source lines
     )
     parser.add_argument(
-        "--seed",
-        type=int,
-        help="Random seed for embedding generation.",
-        default=None,
-    )
-    parser.add_argument(
         "--max-num-embeddings",
         dest="max_num_embeddings",
         type=int,
         help="Max embeddings to find (default: all available).",
         default=None,
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        help="Random seed for embedding generation.",
+        default=None,
+    )
+    # Target frequency.
     parser.add_argument(
         "--target-A",
         dest="target_A",
@@ -94,102 +154,7 @@ if __name__ == "__main__":
         "(default A(target_c) such that A(target_c)=B(target_c), which is approximately 2 GHz)",
         default=None,
     )
-    parser.add_argument(
-        "--schedule-fn",
-        dest="schedule_fn",
-        type=str,
-        help="Path to the annealing schedule Excel file (.xlsx). Should be matched to the solver.",
-        default="09-1323A-D_Advantage2_system4_annealing_schedule.xlsx",
-    )
-    parser.add_argument(
-        "--Jts",
-        dest="Jts",
-        type=float,
-        help="Coupling strength between target and source qubits. "
-        "The AFM value maximizing the effective quench rate is used. "
-        "Note that, an FM value (-2.0) can achieve higher quench rates still but at risk of enhanced control errors",
-        default=1.0,
-    )
-    parser.add_argument(
-        "--Jtd",
-        dest="Jtd",
-        type=float,
-        help="Coupling strength between target and detector qubits. "
-        "The AFM value maximizing the effective quench rate is used. "
-        "Note that, an FM value (-2.0) can achieve higher quench rates still but at risk of enhanced control errors",
-        default=1.0,
-    )
-    parser.add_argument(
-        "--Jtt",
-        dest="Jtt",
-        type=float,
-        help="Coupling strength between target and target qubits. The parameter is ignored unless a loop length is specified. "
-        "Note that a sufficiently weak coupling limit [B(s_target) J_tt << A(s_target)] is required for independent sourcing and detection of qubits.",
-        default=-0.1,
-    )
-    parser.add_argument(
-        "--loop-length",
-        dest="loop_length",
-        type=int,
-        help="Length of the loop model (even and >=4), defaulting to 16. "
-        "T-D-S systems compatible with coupled parallel unfrustrated loops are embedded. "
-        "Specifying a value 1 results in a Larmour precession demonstration for independent "
-        "T-D-S systems with no final loop experiment stage, this allows more T-D-S embeddings.",
-        default=16,
-    )
-    parser.add_argument(
-        "--flux-bias-method",
-        dest="td_shim_type",
-        type=str,
-        choices=[
-            "None",
-            "detector_only",
-            "alternating",
-            "sequential",
-            "by_line_quench",
-        ],
-        default="detector_only",
-        help="Flux-bias calibration refinement mode: 'None' disables calibration refinement; "
-        "'detector_only' refines detector qubit flux_biases to achieve zero measured magnetization; "
-        "'by_line_quench' refines flux biases on all lines by assuming the required correction can be determined by independent quenches on every line; "
-        "'sequential' combines by_line_quench and detector_only; "
-        "'alternating' alternates detector/target roles to refine detector and target flux_biases "
-        "(but this can cause divergence, particularly at small frequencies and "
-        "when the qubit state realized by target_c varies significantly by line or qubit).",
-    )
-    parser.add_argument(
-        "--t-decoupling",
-        dest="t_decoupled",
-        type=float,
-        default=None,
-        help="Delay required on the detector relative to the source in order that the target is decoupled.",
-    )
-    parser.add_argument(
-        "--delay-by-det-src-pair",
-        dest="by_det_src_pair",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Resolve source-decoupling delays independently per detector/source line pair "
-        "(default). Use --no-delay-by-det-src-pair to estimate a single bulk delay shared "
-        "across all lines. This setting has no impact if only "
-        "one source and one detector line is present.",
-    )
-    parser.add_argument(
-        "--num-anneal-offset-iterations",
-        dest="num_anneal_offset_iterations",
-        type=int,
-        help="Number of anneal-offset iterations to perform. Note that a second iteration is useful to verify the first iteration (thus 2 by default).",
-        default=2,
-    )
-    parser.add_argument(
-        "--common-c-bounds",
-        dest="use_common_c_bounds",
-        action="store_true",
-        default=False,
-        help="Enable common c-bounds alignment across annealing lines. "
-        "This ensures quench rates are nominally independent of the line choices."
-        "This is required by some non-default shimming methods.",
-    )
+    # Waveform option.
     parser.add_argument(
         "--no-overshoot",
         dest="use_overshoot",
@@ -197,40 +162,25 @@ if __name__ == "__main__":
         default=True,
         help="Disable overshoot transitions for the source and detector quenches.",
     )
+    # Caching and output.
     parser.add_argument(
-        "--disable-save-figures",
-        dest="save_figures",
-        action="store_false",
-        help="Disable saving figures to figures/ folder with hash-based names.",
-    )
-    parser.add_argument(
-        "--no-refine-delays",
-        dest="refine_delays",
-        action="store_false",
+        "--use-cache",
+        dest="use_cache",
+        action=argparse.BooleanOptionalAction,
         default=True,
-        help="Repeat source-decoupling delay detection after anneal-offset refinement, "
-        "This is then applied to synchronize detector/sources on a per qubit basis.",
+        help=(
+            "Cache and reload experiment artifacts keyed by CLI parameters "
+            "(default). Use --no-use-cache to disable. "
+            "If solver graph_id changes, cached embeddings may be invalid."
+        ),
     )
     parser.add_argument(
-        "--fit-window",
-        dest="fit_window",
-        type=float,
-        default=None,
-        help="Data window size used to establish the power-spectral density. "
-        "Defaults to T2 (a decoherence time typical of Advantage2 processors). "
-        "Values much larger "
-        "than T2 are noise dominated and add no value; runtime is proportional to the "
-        "fit window. The same window is overloaded to determine a bound on the delay "
-        "fitting window (by bisection search).",
-    )
-
-    parser.add_argument(
-        "--loop-delay-range",
-        dest="loop_delay_range",
-        type=float,
-        default=None,
-        help="Defaults to T2/4, but with data collected at delays 4x more finely "
-        "spaced to better resolve pi/2 pulse propagation and synchronization limitations.",
+        "--save-figures",
+        dest="save_figures",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Save generated figures to the figures/ folder with hash-based "
+        "names (default). Use --no-save-figures to disable.",
     )
 
     args = parser.parse_args()
@@ -239,27 +189,20 @@ if __name__ == "__main__":
     else:
         cache_str = None
     main(
-        cache_str=cache_str,
-        solver=args.solver_name,
+        td_shim_type=args.td_shim_type,
+        refine_frequencies=args.refine_frequencies,
+        verify_anneal_offsets=args.verify_anneal_offsets,
+        refine_delays=args.refine_delays,
+        loop_length=args.loop_length,
+        solver_name=args.solver_name,
+        schedule_fn=args.schedule_fn,
         detector_lines=args.detector_lines,
         source_lines=args.source_lines,
         target_lines=args.target_lines,
+        max_num_embeddings=args.max_num_embeddings,
         seed=args.seed,
         target_A=args.target_A,
-        schedule_fn=args.schedule_fn,
-        t_decoupled=args.t_decoupled,
-        by_det_src_pair=args.by_det_src_pair,
-        num_anneal_offset_iterations=args.num_anneal_offset_iterations,
-        td_shim_type=args.td_shim_type,
-        use_common_c_bounds=args.use_common_c_bounds,
         use_overshoot=args.use_overshoot,
         save_figures=args.save_figures,
-        Jts=args.Jts,
-        Jtd=args.Jtd,
-        Jtt=args.Jtt,
-        loop_length=args.loop_length,
-        max_num_embeddings=args.max_num_embeddings,
-        refine_delays=args.refine_delays,
-        fit_window=args.fit_window,
-        loop_delay_range=args.loop_delay_range,
+        cache_str=cache_str,
     )

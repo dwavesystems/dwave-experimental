@@ -3,11 +3,21 @@
 from .common import *
 
 
-def run_embeddings(ctx, *, embedding_timeout=60):
+def run_embeddings(
+    ctx: MCAContext, *, embedding_timeout: int = 60, create_plot: bool = True
+) -> MCAContext:
     """Find T-D-S embeddings for parallel programming.
 
     Args:
+        ctx: Shared context carrying configuration and computed state between
+            stages.
         embedding_timeout: Time budget (seconds) for the embedding search.
+        create_plot: When ``True`` (default), draw the parallel T-D-S embeddings
+            on the processor graph (see ``mca_embedding.py``).
+
+    Returns:
+        The same ``ctx``, updated with the embeddings, per-line groupings and
+        the parallel-embedding sampler.
     """
     stage_idx = ctx.stage_idx
     qpu = ctx.qpu
@@ -17,11 +27,13 @@ def run_embeddings(ctx, *, embedding_timeout=60):
     target_lines = ctx.target_lines
     loop_length = ctx.loop_length
     cache_str = ctx.cache_str
-    solver = ctx.solver
+    solver = ctx.solver_name
     max_num_embeddings = ctx.max_num_embeddings
     seed = ctx.seed
     Jtd = ctx.Jtd
     Jts = ctx.Jts
+    line_color = ctx.line_color
+    save_figures = ctx.save_figures
 
     stage_idx += 1
     print()
@@ -156,6 +168,24 @@ def run_embeddings(ctx, *, embedding_timeout=60):
         {e: Jtd for e in S.edges() if any(Snode_to_tds[v] == "detector" for v in e)}
         | {e: Jts for e in S.edges() if any(Snode_to_tds[v] == "source" for v in e)},
     )  # bqm restricted to decoupled source and target nodes
+
+    if create_plot:
+        # Colour used qubits by annealing line (as in mca_embedding.py); unused
+        # qubits are greyed out. S_experiment is the ring (loop) or single target.
+        used_nodes = {v[0] for emb in embs_experiment for v in emb.values()}
+        node_color = [
+            line_color[line_assignments[n]] if n in used_nodes else "grey"
+            for n in T.nodes()
+        ]
+        plt.figure(f"Parallel embedding of {len(embs_experiment)} T-D-S systems")
+        draw_parallel_embeddings(
+            T, embeddings=embs_experiment, S=S_experiment, node_color=node_color
+        )
+        if save_figures:
+            _save_open_figures("figures/", cache_str)
+        print("Close figures to proceed to next stages.")
+        _apply_tight_layout()
+        plt.show()
 
     ctx.stage_idx = stage_idx
     ctx.T = T

@@ -3,10 +3,25 @@
 from .common import *
 
 
-def run_anneal_offsets(ctx):
+def run_anneal_offsets(ctx: MCAContext) -> MCAContext:
+    """Estimate anneal_offsets that align target frequencies to ``target_A``.
+
+    Collects a detector-magnetization time series, estimates the power-spectral
+    density per embedding, and proposes per-qubit anneal_offsets that center the
+    PSD peak on the target frequency. Produces the time series, heatmap, PSD and
+    proposed-offset figures.
+
+    Args:
+        ctx: Shared context carrying configuration and computed state between
+            stages.
+
+    Returns:
+        The same ``ctx``, updated with the collected data, PSD and proposed
+        ``anneal_offsets_target``.
+    """
     compute_delay_grid(ctx, ctx.fit_window, rel_sampling_rate=2, rel_start=1.0)
     stage_idx = ctx.stage_idx
-    num_anneal_offset_iterations = ctx.num_anneal_offset_iterations
+    verify_anneal_offsets = ctx.verify_anneal_offsets
     n_embs = ctx.n_embs
     schedule_fn = ctx.schedule_fn
     target_A = ctx.target_A
@@ -161,7 +176,7 @@ def run_anneal_offsets(ctx):
     plt.xlabel("Proposed anneal offset")
     plt.ylabel("Cumulative distribution function")
     plt.legend()
-    if num_anneal_offset_iterations == 1:
+    if not verify_anneal_offsets:
         if save_figures:
             _save_open_figures("figures/", cache_str)
         print("Close figures to proceed to next stages.")
@@ -181,7 +196,22 @@ def run_anneal_offsets(ctx):
     return ctx
 
 
-def run_verification(ctx):
+def run_verification(ctx: MCAContext) -> MCAContext:
+    """Re-measure after applying anneal_offsets and verify the alignment.
+
+    Applies the proposed ``anneal_offsets_target`` to the targets, re-collects
+    the detector magnetization, re-estimates the PSD, and fills the "after"
+    panels of the time series, heatmap and PSD figures alongside an
+    offset-correlation plot.
+
+    Args:
+        ctx: Shared context carrying configuration and computed state between
+            stages.
+
+    Returns:
+        The same ``ctx``, updated with the verification data, PSD and refined
+        ``anneal_offsets_target``.
+    """
     stage_idx = ctx.stage_idx
     anneal_offsets_target = ctx.anneal_offsets_target
     cache_str = ctx.cache_str

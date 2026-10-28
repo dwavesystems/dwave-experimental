@@ -3,13 +3,21 @@
 from .common import *
 
 
-def run_flux_biases(ctx, *, anomalous_flux_bias_threshold=1e-4):
+def run_flux_biases(
+    ctx: MCAContext, *, anomalous_flux_bias_threshold: float = 1e-4
+) -> MCAContext:
     """Compensate static qubit body cross-talks via flux_biases.
 
     Args:
+        ctx: Shared context carrying configuration and computed state between
+            stages.
         anomalous_flux_bias_threshold: Magnitude (in normalized flux-bias units)
             above which a refined flux_bias is flagged as anomalously large and
             reported as a possible calibration issue or bad qubit.
+
+    Returns:
+        The same ``ctx``, updated with the refined ``flux_biases`` and
+        ``sampling_params``.
     """
     stage_idx = ctx.stage_idx
     td_shim_type = ctx.td_shim_type
