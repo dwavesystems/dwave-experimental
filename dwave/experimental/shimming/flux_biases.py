@@ -123,6 +123,7 @@ def shim_flux_biases(
     num_steps: int = 10,
     alpha: float | None = None,
     exp_weights_per_update: Mapping[Variable, Sequence[float]] | None = None,
+    sampling_params_in_place: bool = False,
 ) -> tuple[list[Bias], dict, dict]:
     r"""Return flux biases that minimize magnetization for symmetry-preserving
     experiments.
@@ -179,7 +180,8 @@ def shim_flux_biases(
             :class:`~dwave.system.samplers.DWaveSampler`. Note that if
             ``sampling_params`` contains
             :ref:`flux biases <parameter_qpu_flux_biases>`, these are treated as
-            an initial condition and edited in place. Choose a value for the
+            an initial condition. They are edited in place only when
+            ``sampling_params_in_place`` is ``True``. Choose a value for the
             :ref:`parameter_qpu_num_reads` parameter in conjunction with your
             chosen schedule. Note that the :ref:`parameter_qpu_initial_state`
             parameter, if provided, is assumed to be specified according to the
@@ -244,6 +246,13 @@ def shim_flux_biases(
             ``num_signed_experiments * len(sampling_params_updates)``.
             By default, a sum of experimental outcomes is used (unit weight per
             experiment).
+        sampling_params_in_place: If ``True``, the provided ``sampling_params``
+            is mutated in place, with its
+            :ref:`flux biases <parameter_qpu_flux_biases>` updated to the
+            shimmed values. Default is ``False``, in which case the caller's
+            ``sampling_params`` is left unmodified. Ignored when
+            ``sampling_params`` is ``None``, as there is no caller dict to
+            mutate.
 
     Returns:
         A tuple consisting of 3 parts:
@@ -294,12 +303,25 @@ def shim_flux_biases(
     # purpose.
 
     if sampling_params is None:
+        # No caller dict to mutate, so the in-place option is ignored.
         sampling_params = {}
+        sampling_params_in_place = False
+    elif not sampling_params_in_place:
+        # Shallow copy to avoid mutating the caller's dict; initial_state is
+        # copied because it is negated in place during symmetrization.
+        sampling_params = dict(sampling_params)
+        if "initial_state" in sampling_params:
+            sampling_params["initial_state"] = deepcopy(
+                sampling_params["initial_state"]
+            )
 
     if "flux_biases" in sampling_params:
         flux_biases = sampling_params.pop("flux_biases")
         if len(flux_biases) != sampler.properties["num_qubits"]:
             raise ValueError("flux_biases length incompatible with the sampler")
+        if not sampling_params_in_place:
+            # Avoid editing the caller's flux_biases list.
+            flux_biases = deepcopy(flux_biases)
         pop_fb = True
     else:
         flux_biases = [0] * sampler.properties["num_qubits"]
@@ -478,6 +500,7 @@ def shim_linewise_flux_biases(
     shimmed_variables: Collection[Variable] | None = None,
     lines: Iterable[int] | None = None,
     target_c: float | None = None,
+    sampling_params_in_place: bool = False,
     **kwargs,
 ) -> tuple[list[Bias], dict, dict]:
     """Shim flux_biases by per-line quench
@@ -499,11 +522,19 @@ def shim_linewise_flux_biases(
             ``x_anneal_schedules`` and ``x_polarizing_schedule`` entries are
             replaced per line, and ``flux_biases`` are carried forward across
             lines. If not specified, then defaults are used.
+            ``x_schedule_delays`` defaults to ``[0.0] * num_lines`` when not
+            provided, ensuring its presence, which selects the required SAPI
+            'ultra' precision mode.
         shimmed_variables: Variables to shim. Each variable is updated only
             during the line to which it is assigned.
         lines: Annealing lines to shim, one at a time. Defaults to all lines in
             ``exp_feature_line_info``.
         target_c: Value at which line is prepared before quenching.
+        sampling_params_in_place: If ``True``, the provided ``sampling_params``
+            is mutated in place, with its
+            :ref:`flux biases <parameter_qpu_flux_biases>` updated to the
+            shimmed values. Default is ``False``. Ignored when
+            ``sampling_params`` is ``None``.
         **kwargs: Additional keyword arguments passed through to
             :func:`.shim_flux_biases`, such as ``learning_schedule``,
             ``convergence_test``, ``beta_hypergradient``, ``num_steps``, and
@@ -524,11 +555,16 @@ def shim_linewise_flux_biases(
         lines = list(lines)
         _check_no_duplicate_lines("lines", lines)
     if sampling_params is None:
+        # No caller dict to mutate, so the in-place option is ignored.
         sampling_params = {'num_reads': 1000}
+        sampling_params_in_place = False
     _sampling_params = deepcopy(sampling_params)
     _sampling_params.pop("x_anneal_schedules", None)
     _sampling_params.pop("x_polarizing_schedule", None)
-    _sampling_params["x_schedule_delays"] = [0.0] * len(exp_feature_line_info)
+    # x_schedule_delays must be present to select the SAPI 'ultra' precision
+    # mode; default to zero delays when the caller does not specify them.
+    if "x_schedule_delays" not in _sampling_params:
+        _sampling_params["x_schedule_delays"] = [0.0] * len(exp_feature_line_info)
     flux_biases = _sampling_params.pop("flux_biases", None)
     if flux_biases is None:
         flux_biases = [0] * sampler.properties["num_qubits"]
@@ -571,6 +607,8 @@ def shim_linewise_flux_biases(
         _extend_history(dict_fb_all, dict_fb)
         _extend_history(dict_mag_all, {k: dict_mag[k] for k in dict_fb})
 
+    if sampling_params_in_place and flux_biases is not None:
+        sampling_params["flux_biases"] = flux_biases
     return flux_biases, dict_fb_all, dict_mag_all
 
 
@@ -607,6 +645,7 @@ def shim_tds_flux_biases(
     td_shim_type: Literal[
         "by_line_quench", "detector_only", "sequential", "alternating"
     ] = "alternating",
+    sampling_params_in_place: bool = False,
     **kwargs,
 ) -> tuple[list[Bias], dict, dict]:
     """Shim flux biases on target, detector and source annealing lines.
@@ -646,11 +685,21 @@ def shim_tds_flux_biases(
     same frequency and Ip on targets, independent of orientation).
     Otherwise divergence can be anticipated in some cases.
     Two experiments per iteration are run with detector and
-    target roles alternated (via swapped ``x_anneal_schedules`` and
-    ``x_schedule_delays``), and the update for each variable uses only the
-    experiment in which it plays the detector role. When ``shimmed_variables``
-    contains only detector variables, no alternation is performed and shimming
-    reduces to a single-experiment call to :func:`.shim_flux_biases`.
+    target roles alternated (via swapped ``x_anneal_schedules``;
+    ``x_schedule_delays`` are left untouched), and the update for each variable
+    uses only the experiment in which it plays the detector role. Delays need
+    not be swapped: the target is assumed quasi-static, so for a well-defined
+    (canonical) quench the delays are irrelevant to the measured statistics.
+    When ``shimmed_variables`` contains only detector variables, no alternation
+    is performed and shimming reduces to a single-experiment call to
+    :func:`.shim_flux_biases`.
+    The role swap uses a single representative schedule per role, so all
+    ``target_lines`` must share one ``x_anneal_schedules`` entry and all
+    ``detector_lines`` must share one (a :class:`ValueError` is raised
+    otherwise). The target and detector schedules must additionally be mutually
+    compatible, meaning interchangeable under the role swap, as produced by
+    :func:`~dwave.experimental.multicolor_anneal.make_tds_x_anneal_schedules`
+    with ``use_common_bounds=True``.
 
     To shim the source requires coupling into the target. Assuming degeneracy on
     targets and detectors is achieved. We can operate in a regime with the source
@@ -684,7 +733,16 @@ def shim_tds_flux_biases(
         sampling_params: Base sampling parameters passed to the sampler.
             If not specified, then defaults are used. A minimal set of
             functional parameters should include ``x_anneal_schedules`` and
-            ``num_reads``.
+            ``num_reads``. For ``td_shim_type="alternating"``, the
+            ``x_anneal_schedules`` must be identical across all ``target_lines``
+            and identical across all ``detector_lines``, and the target and
+            detector schedules must be mutually compatible (interchangeable
+            under the role swap), as produced by
+            :func:`~dwave.experimental.multicolor_anneal.make_tds_x_anneal_schedules`
+            with ``use_common_bounds=True``.
+            ``x_schedule_delays`` defaults to ``[0.0] * num_lines`` when not
+            provided, ensuring its presence, which selects the required SAPI
+            'ultra' precision mode.
         symmetrize_experiments: If ``True``, symmetry-breaking elements in the
             experiment are inverted for a second run and magnetizations are
             averaged. Passed through to :func:`.shim_flux_biases` for the
@@ -713,6 +771,11 @@ def shim_tds_flux_biases(
             quench followed by the detector-only shim), or ``"alternating"``
             (alternate the detector and target roles to shim both). The
             ``"alternating"`` strategy requires ``symmetrize_experiments=False``.
+        sampling_params_in_place: If ``True``, the provided ``sampling_params``
+            is mutated in place, with its
+            :ref:`flux biases <parameter_qpu_flux_biases>` updated to the final
+            shimmed values. Default is ``False``. Ignored when
+            ``sampling_params`` is ``None``.
         **kwargs: Additional keyword arguments passed through to
             :func:`.shim_flux_biases`, such as ``learning_schedule``,
             ``convergence_test``, ``beta_hypergradient``, ``num_steps``, and
@@ -749,7 +812,11 @@ def shim_tds_flux_biases(
 
     line_assignments = line_assignments_from_feature_info(exp_feature_line_info)
 
+    # Preserve the caller's dict for the optional in-place flux_biases update.
+    caller_sampling_params = sampling_params
     if sampling_params is None:
+        # No caller dict to mutate, so the in-place option is ignored.
+        sampling_params_in_place = False
         # A symmetric default schedule is effective. Dependence on the detailed
         # form (use of overshoot, etc.) is expected to be a perturbative
         # effect on the required flux biases.
@@ -780,6 +847,8 @@ def shim_tds_flux_biases(
                 "sampling_params must include 'x_anneal_schedules'"
             )
     num_lines = len(exp_feature_line_info)
+    # x_schedule_delays must be present to select the SAPI 'ultra' precision
+    # mode; default to zero delays when the caller does not specify them.
     if "x_schedule_delays" not in sampling_params:
         sampling_params["x_schedule_delays"] = [0.0] * num_lines
     sampling_params.pop("x_polarizing_schedule", None)
@@ -817,6 +886,12 @@ def shim_tds_flux_biases(
                 **kwargs,
             )
             if td_shim_type == "by_line_quench":
+                if (
+                    sampling_params_in_place
+                    and caller_sampling_params is not None
+                    and flux_biases is not None
+                ):
+                    caller_sampling_params["flux_biases"] = flux_biases
                 return flux_biases, dict_fb_all, dict_mag_all
         else:
             raise ValueError(
@@ -889,29 +964,44 @@ def shim_tds_flux_biases(
                     )
                     _extend_history(dict_fb_all, dict_fb)
                     _extend_history(dict_mag_all, {k: dict_mag[k] for k in dict_fb})
+            if (
+                sampling_params_in_place
+                and caller_sampling_params is not None
+                and flux_biases is not None
+            ):
+                caller_sampling_params["flux_biases"] = flux_biases
             return flux_biases, dict_fb_all, dict_mag_all
         else:
-            # Alternate between detector and target quench.
-            x_schedule_delays_reversed = deepcopy(sampling_params["x_schedule_delays"])
+            # Alternate between detector and target quench. The swap below
+            # applies one representative line's schedule to every line of the
+            # other role, which is only valid when all lines of a role share an
+            # identical schedule. x_schedule_delays are left untouched.
+            for role_name, role_lines in (
+                ("target_lines", target_lines),
+                ("detector_lines", detector_lines),
+            ):
+                role_schedules = [
+                    sampling_params["x_anneal_schedules"][line] for line in role_lines
+                ]
+                if any(s != role_schedules[0] for s in role_schedules):
+                    raise ValueError(
+                        "td_shim_type='alternating' requires identical "
+                        f"x_anneal_schedules across all {role_name}."
+                    )
             x_anneal_schedules_reversed = deepcopy(
                 sampling_params["x_anneal_schedules"]
             )
             dl = next(iter(detector_lines))
             for line in target_lines:
-                x_schedule_delays_reversed[line] = sampling_params["x_schedule_delays"][
-                    dl
-                ]
-                x_anneal_schedules_reversed[line] = sampling_params[
-                    "x_anneal_schedules"
-                ][dl]
+                # Deep copy so collapsed lines do not share one mutable object.
+                x_anneal_schedules_reversed[line] = deepcopy(
+                    sampling_params["x_anneal_schedules"][dl]
+                )
             tl = next(iter(target_lines))
             for line in detector_lines:
-                x_schedule_delays_reversed[line] = sampling_params["x_schedule_delays"][
-                    tl
-                ]
-                x_anneal_schedules_reversed[line] = sampling_params[
-                    "x_anneal_schedules"
-                ][tl]
+                x_anneal_schedules_reversed[line] = deepcopy(
+                    sampling_params["x_anneal_schedules"][tl]
+                )
 
             exp_weights_per_update = {
                 v: [1.0, 0.0] if line_assignments.get(v) in detector_lines else [0.0, 1.0]
@@ -919,14 +1009,8 @@ def shim_tds_flux_biases(
             }
 
             sampling_params_updates = [
-                {
-                    "x_anneal_schedules": sampling_params["x_anneal_schedules"],
-                    "x_schedule_delays": sampling_params["x_schedule_delays"],
-                },
-                {
-                    "x_anneal_schedules": x_anneal_schedules_reversed,
-                    "x_schedule_delays": x_schedule_delays_reversed,
-                },
+                {"x_anneal_schedules": sampling_params["x_anneal_schedules"]},
+                {"x_anneal_schedules": x_anneal_schedules_reversed},
             ]
     else:
         # Simple shim of detectors
@@ -948,4 +1032,10 @@ def shim_tds_flux_biases(
     )
     _extend_history(dict_fb_all, dict_fb)
     _extend_history(dict_mag_all, dict_mag)
+    if (
+        sampling_params_in_place
+        and caller_sampling_params is not None
+        and flux_biases is not None
+    ):
+        caller_sampling_params["flux_biases"] = flux_biases
     return flux_biases, dict_fb_all, dict_mag_all
