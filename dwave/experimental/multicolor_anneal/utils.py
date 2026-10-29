@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import math
-from collections.abc import Collection, Iterable
+from collections.abc import Collection, Hashable, Iterable
 from copy import deepcopy
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from typing import Any, Literal, NamedTuple, TypeAlias
@@ -161,21 +161,21 @@ def qubit_to_Advantage2_annealing_line(
 
 
 def line_assignments_from_feature_info(
-    exp_feature_info: ExpFeatureInfo,
-) -> dict[int, int]:
+    exp_feature_line_info: list[LineFeatureInfo],
+) -> dict[Hashable, int]:
     """Map each qubit to its annealing-line index.
 
     Builds a lookup from qubit label to annealing-line index using the per-line
-    ``qubits`` lists of ``exp_feature_info``. This is the properties-driven
+    ``qubits`` lists of ``exp_feature_line_info``. This is the properties-driven
     counterpart to :func:`qubit_to_Advantage2_annealing_line`, which instead
     derives the line from a qubit's Zephyr coordinate.
 
     Args:
-        exp_feature_info: Multicolor-annealing properties, as returned by
+        exp_feature_line_info: The ``annealing_line_info`` field of
+            :class:`ExpFeatureInfo`, as returned by
             :func:`~dwave.experimental.multicolor_anneal.api.get_properties`.
-            An :class:`ExpFeatureInfo` named tuple whose ``annealing_line_info``
-            field is a list of per-annealing-line dictionaries in ascending
-            order of annealing-line index, each with a ``qubits`` entry.
+            A list of per-annealing-line dictionaries in ascending order of
+            annealing-line index, each with a ``qubits`` entry.
 
     Returns:
         A dictionary mapping each qubit label to its annealing-line index.
@@ -185,13 +185,12 @@ def line_assignments_from_feature_info(
         >>> import dwave.experimental.multicolor_anneal as mca
         >>> exp_feature_info = mca.get_properties(DWaveSampler())   # doctest: +SKIP
         >>> line_assignments = mca.line_assignments_from_feature_info(
-        ...     exp_feature_info
+        ...     exp_feature_info.annealing_line_info
         ... )            # doctest: +SKIP
     """
-    exp_feature_info = ExpFeatureInfo(*exp_feature_info)
     return {
         n: al_idx
-        for al_idx, al in enumerate(exp_feature_info.annealing_line_info)
+        for al_idx, al in enumerate(exp_feature_line_info)
         for n in al["qubits"]
     }
 

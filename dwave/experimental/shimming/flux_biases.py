@@ -460,6 +460,17 @@ def _extend_history(target: dict, source: dict) -> None:
         target.setdefault(k, []).extend(v)
 
 
+def _line_assignments(
+    exp_feature_line_info: list[LineFeatureInfo],
+) -> dict[Variable, int]:
+    """Map each qubit to its annealing-line index."""
+    return {
+        q: i
+        for i, line_info in enumerate(exp_feature_line_info)
+        for q in line_info["qubits"]
+    }
+
+
 def shim_linewise_flux_biases(
     bqm: dimod.BinaryQuadraticModel,
     sampler: dimod.Sampler,
@@ -513,11 +524,6 @@ def shim_linewise_flux_biases(
         lines = range(len(exp_feature_line_info))
     if sampling_params is None:
         sampling_params = {'num_reads': 1000}
-    line_assignments = {
-        q: i
-        for i, line_info in enumerate(exp_feature_line_info)
-        for q in line_info["qubits"]
-    }
     _sampling_params = deepcopy(sampling_params)
     _sampling_params.pop("x_anneal_schedules", None)
     _sampling_params.pop("x_polarizing_schedule", None)
@@ -527,6 +533,9 @@ def shim_linewise_flux_biases(
         flux_biases = [0] * sampler.properties["num_qubits"]
     if shimmed_variables is None:
         shimmed_variables = list(bqm.variables)
+    elif not set(shimmed_variables).issubset(bqm.variables):
+        raise ValueError("shimmed_variables should be a subset of bqm.variables")
+    line_assignments = _line_assignments(exp_feature_line_info)
     dict_fb_all = {}
     dict_mag_all = {}
     viable_lines = {
@@ -731,11 +740,7 @@ def shim_tds_flux_biases(
             "td_shim_type='alternating' requires symmetrize_experiments=False."
         )
 
-    line_assignments = {
-        q: i
-        for i, line_info in enumerate(exp_feature_line_info)
-        for q in line_info["qubits"]
-    }
+    line_assignments = _line_assignments(exp_feature_line_info)
 
     if sampling_params is None:
         # A symmetric default schedule is effective. Dependence on the detailed
@@ -763,6 +768,10 @@ def shim_tds_flux_biases(
         )
     else:
         sampling_params = deepcopy(sampling_params)
+        if "x_anneal_schedules" not in sampling_params:
+            raise ValueError(
+                "sampling_params must include 'x_anneal_schedules'"
+            )
     num_lines = len(exp_feature_line_info)
     if "x_schedule_delays" not in sampling_params:
         sampling_params["x_schedule_delays"] = [0.0] * num_lines
@@ -793,6 +802,7 @@ def shim_tds_flux_biases(
                 bqm=bqm,
                 sampler=sampler,
                 sampling_params=sampling_params,
+                shimmed_variables=shimmed_variables,
                 lines=tds_lines,
                 target_c=target_c,
                 **kwargs,
