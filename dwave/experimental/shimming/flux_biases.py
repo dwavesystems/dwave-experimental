@@ -523,6 +523,8 @@ def shim_linewise_flux_biases(
     _sampling_params.pop("x_polarizing_schedule", None)
     _sampling_params["x_schedule_delays"] = [0.0] * len(exp_feature_line_info)
     flux_biases = _sampling_params.pop("flux_biases", None)
+    if flux_biases is None:
+        flux_biases = [0] * sampler.properties["num_qubits"]
     if shimmed_variables is None:
         shimmed_variables = list(bqm.variables)
     dict_fb_all = {}
