@@ -523,9 +523,6 @@ def shim_linewise_flux_biases(
             ``x_anneal_schedules`` and ``x_polarizing_schedule`` entries are
             replaced per line, and ``flux_biases`` are carried forward across
             lines. If not specified, then defaults are used.
-            ``x_schedule_delays`` defaults to ``[0.0] * num_lines`` when not
-            provided, ensuring its presence, which selects the required SAPI
-            'ultra' precision mode.
         shimmed_variables: Variables to shim. Each variable is updated only
             during the line to which it is assigned.
         lines: Annealing lines to shim, one at a time. Defaults to all lines in
@@ -562,10 +559,6 @@ def shim_linewise_flux_biases(
     _sampling_params = deepcopy(sampling_params)
     _sampling_params.pop("x_anneal_schedules", None)
     _sampling_params.pop("x_polarizing_schedule", None)
-    # x_schedule_delays must be present to select the SAPI 'ultra' precision
-    # mode; default to zero delays when the caller does not specify them.
-    if "x_schedule_delays" not in _sampling_params:
-        _sampling_params["x_schedule_delays"] = [0.0] * len(exp_feature_line_info)
     flux_biases = _sampling_params.pop("flux_biases", None)
     if flux_biases is None:
         flux_biases = [0] * sampler.properties["num_qubits"]
@@ -741,9 +734,6 @@ def shim_tds_flux_biases(
             under the role swap), as produced by
             :func:`~dwave.experimental.multicolor_anneal.make_tds_x_anneal_schedules`
             with ``use_common_bounds=True``.
-            ``x_schedule_delays`` defaults to ``[0.0] * num_lines`` when not
-            provided, ensuring its presence, which selects the required SAPI
-            'ultra' precision mode.
         symmetrize_experiments: If ``True``, symmetry-breaking elements in the
             experiment are inverted for a second run and magnetizations are
             averaged. Passed through to :func:`.shim_flux_biases` for the
@@ -848,10 +838,6 @@ def shim_tds_flux_biases(
                 "sampling_params must include 'x_anneal_schedules'"
             )
     num_lines = len(exp_feature_line_info)
-    # x_schedule_delays must be present to select the SAPI 'ultra' precision
-    # mode; default to zero delays when the caller does not specify them.
-    if "x_schedule_delays" not in sampling_params:
-        sampling_params["x_schedule_delays"] = [0.0] * num_lines
     sampling_params.pop("x_polarizing_schedule", None)
 
     detector_set = set(detector_lines)
