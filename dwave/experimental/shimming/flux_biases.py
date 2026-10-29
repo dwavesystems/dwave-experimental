@@ -332,11 +332,12 @@ def shim_flux_biases(
             shimmed_variables = list(exp_weights_per_update.keys())
         else:
             shimmed_variables = bqm.variables
-    else:
-        if len(shimmed_variables) == 0:
-            raise ValueError("shimmed_variables should not be empty")
-        elif not set(shimmed_variables).issubset(bqm.variables):
-            raise ValueError("Invalid shimmed variables")
+    elif len(shimmed_variables) == 0:
+        raise ValueError("shimmed_variables should not be empty")
+
+    # Validate inferred and provided variables alike against the bqm.
+    if not set(shimmed_variables).issubset(bqm.variables):
+        raise ValueError("Invalid shimmed variables")
 
     if symmetrize_experiments:
         unshimmed_variables = set(bqm.variables).difference(shimmed_variables)
