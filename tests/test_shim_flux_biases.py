@@ -147,7 +147,7 @@ class FluxBiases(unittest.TestCase):
                 len(mh[1]),
             )
             exp_weights_per_update = {
-                v: [1 / num_experiments] * num_experiments for v in shimmed_variables
+                v: [1] * num_experiments for v in shimmed_variables
             }
             fb2, fbh2, mh2 = shim_flux_biases(
                 bqm,

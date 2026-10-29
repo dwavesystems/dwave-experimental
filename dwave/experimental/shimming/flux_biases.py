@@ -241,7 +241,8 @@ def shim_flux_biases(
             When provided, keys must match ``shimmed_variables`` and each
             weight sequence must have length
             ``num_signed_experiments * len(sampling_params_updates)``.
-            By default, a mean of experimental outcomes is used.
+            By default, a sum of experimental outcomes is used (unit weight per
+            experiment).
 
     Returns:
         A tuple consisting of 3 parts:
@@ -410,9 +411,6 @@ def shim_flux_biases(
             # This can be included as part of the test evaluation (if required)
             break
         if exp_weights_per_update is None:
-            # Switching this to np.mean has been considered, but it makes only a
-            # superficial difference when the other hyperparameters (e.g. alpha,
-            # learning_schedule) are properly tuned or defaulted.
             exp_av_mags = {
                 v: np.sum(mag_history[v][-num_experiments:]) for v in shimmed_variables
             }
