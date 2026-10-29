@@ -123,7 +123,7 @@ def shim_flux_biases(
     num_steps: int = 10,
     alpha: float | None = None,
     exp_weights_per_update: Mapping[Variable, Sequence[float]] | None = None,
-    sampling_params_in_place: bool = False,
+    sampling_params_in_place: bool = True,
 ) -> tuple[list[Bias], dict, dict]:
     r"""Return flux biases that minimize magnetization for symmetry-preserving
     experiments.
@@ -249,7 +249,7 @@ def shim_flux_biases(
         sampling_params_in_place: If ``True``, the provided ``sampling_params``
             is mutated in place, with its
             :ref:`flux biases <parameter_qpu_flux_biases>` updated to the
-            shimmed values. Default is ``False``, in which case the caller's
+            shimmed values. Default is ``True``. When ``False``, the caller's
             ``sampling_params`` is left unmodified. Ignored when
             ``sampling_params`` is ``None``, as there is no caller dict to
             mutate.
@@ -531,7 +531,7 @@ def shim_linewise_flux_biases(
         sampling_params_in_place: If ``True``, the provided ``sampling_params``
             is mutated in place, with its
             :ref:`flux biases <parameter_qpu_flux_biases>` updated to the
-            shimmed values. Default is ``False``. Ignored when
+            shimmed values. Default is ``True``. Ignored when
             ``sampling_params`` is ``None``.
         **kwargs: Additional keyword arguments passed through to
             :func:`.shim_flux_biases`, such as ``learning_schedule``,
@@ -639,7 +639,7 @@ def shim_tds_flux_biases(
     td_shim_type: Literal[
         "by_line_quench", "detector_only", "sequential", "alternating"
     ] = "alternating",
-    sampling_params_in_place: bool = False,
+    sampling_params_in_place: bool = True,
     **kwargs,
 ) -> tuple[list[Bias], dict, dict]:
     """Shim flux biases on target, detector and source annealing lines.
@@ -765,7 +765,7 @@ def shim_tds_flux_biases(
         sampling_params_in_place: If ``True``, the provided ``sampling_params``
             is mutated in place, with its
             :ref:`flux biases <parameter_qpu_flux_biases>` updated to the final
-            shimmed values. Default is ``False``. Ignored when
+            shimmed values. Default is ``True``. Ignored when
             ``sampling_params`` is ``None``.
         **kwargs: Additional keyword arguments passed through to
             :func:`.shim_flux_biases`, such as ``learning_schedule``,
