@@ -26,6 +26,7 @@ from dimod.typing import Bias, Variable
 from dwave.experimental.multicolor_anneal import (
     LineFeatureInfo,
     XAnnealSchedules,
+    line_assignments_from_feature_info,
     make_tds_x_anneal_schedules,
 )
 
@@ -458,15 +459,14 @@ def _extend_history(target: dict, source: dict) -> None:
         target.setdefault(k, []).extend(v)
 
 
-def _line_assignments(
-    exp_feature_line_info: list[LineFeatureInfo],
-) -> dict[Variable, int]:
-    """Map each qubit to its annealing-line index."""
-    return {
-        q: i
-        for i, line_info in enumerate(exp_feature_line_info)
-        for q in line_info["qubits"]
-    }
+def _check_no_duplicate_lines(name: str, lines: Collection[int]) -> None:
+    """Raise if a line-set collection contains duplicate entries.
+
+    It's not enough for documentation to make that clear sometimes.
+    """
+    lines = list(lines)
+    if len(lines) != len(set(lines)):
+        raise ValueError(f"{name} should not contain duplicate entries")
 
 
 def shim_linewise_flux_biases(
@@ -520,6 +520,9 @@ def shim_linewise_flux_biases(
     """
     if lines is None:
         lines = range(len(exp_feature_line_info))
+    else:
+        lines = list(lines)
+        _check_no_duplicate_lines("lines", lines)
     if sampling_params is None:
         sampling_params = {'num_reads': 1000}
     _sampling_params = deepcopy(sampling_params)
@@ -533,7 +536,7 @@ def shim_linewise_flux_biases(
         shimmed_variables = list(bqm.variables)
     elif not set(shimmed_variables).issubset(bqm.variables):
         raise ValueError("shimmed_variables should be a subset of bqm.variables")
-    line_assignments = _line_assignments(exp_feature_line_info)
+    line_assignments = line_assignments_from_feature_info(exp_feature_line_info)
     dict_fb_all = {}
     dict_mag_all = {}
     viable_lines = {
@@ -730,6 +733,12 @@ def shim_tds_flux_biases(
             "There must be detector lines to shim, but detector_lines is empty"
         )
 
+    _check_no_duplicate_lines("detector_lines", detector_lines)
+    _check_no_duplicate_lines("target_lines", target_lines)
+    if source_lines is not None:
+        source_lines = list(source_lines)
+        _check_no_duplicate_lines("source_lines", source_lines)
+
     if td_shim_type == "alternating" and symmetrize_experiments:
         # Alternation resolves symmetry via the detector-role weighting, which
         # assumes one experiment per role; per-experiment symmetrization would
@@ -738,7 +747,7 @@ def shim_tds_flux_biases(
             "td_shim_type='alternating' requires symmetrize_experiments=False."
         )
 
-    line_assignments = _line_assignments(exp_feature_line_info)
+    line_assignments = line_assignments_from_feature_info(exp_feature_line_info)
 
     if sampling_params is None:
         # A symmetric default schedule is effective. Dependence on the detailed
@@ -775,11 +784,13 @@ def shim_tds_flux_biases(
         sampling_params["x_schedule_delays"] = [0.0] * num_lines
     sampling_params.pop("x_polarizing_schedule", None)
 
-    dt_lines = set(detector_lines) | set(target_lines)
+    detector_set = set(detector_lines)
+    target_set = set(target_lines)
+    dt_lines = detector_set | target_set
     shim_lines = set(detector_lines)
     if not (
         dt_lines.issubset(range(num_lines))
-        and len(dt_lines) == len(detector_lines) + len(target_lines)
+        and len(dt_lines) == len(detector_set) + len(target_set)
     ):
         raise ValueError(
             "detector_lines and target_lines should be disjoint subsets of set(range(num_lines))"
