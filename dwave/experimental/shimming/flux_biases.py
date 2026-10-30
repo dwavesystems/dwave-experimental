@@ -24,11 +24,13 @@ import numpy as np
 from dimod.typing import Bias, Variable
 
 from dwave.experimental.multicolor_anneal import (
+    AnnealSchedule,
     LineFeatureInfo,
     XAnnealSchedules,
     line_assignments_from_feature_info,
     make_tds_x_anneal_schedules,
 )
+from dwave.experimental.multicolor_anneal.utils import _round_sigfigs
 
 __all__ = [
     "shim_flux_biases",
@@ -521,6 +523,13 @@ def shim_linewise_flux_biases(
     A flux setting achieving zero magnetization can then be established by the
     standard procedure.
 
+    This method assumes flux biases serve the purpose of calibration refinement
+    only and do not break the symmetry of the system. The method operates on a
+    strictly :math:`Z_2` symmetric system; this is enforced by safely popping
+    any ``x_polarizing_schedule`` from ``sampling_params`` before calling
+    shim_flux_biases with `symmetrize_experiments=False`. Some methods generalize
+    but the aim is to protect against strange edge cases.
+
     Args:
         bqm: A :class:`~dimod.binary.BinaryQuadraticModel` describing the
             coupled system.
@@ -540,7 +549,7 @@ def shim_linewise_flux_biases(
         sampling_params_in_place: If ``True``, the provided ``sampling_params``
             is mutated in place, with its
             :ref:`flux biases <parameter_qpu_flux_biases>` updated to the
-            shimmed values. Default is ``True``. Ignored when
+            shimmed values. Default is ``False``. Ignored when
             ``sampling_params`` is ``None``.
         learning_schedule: Passed through to :func:`.shim_flux_biases`.
         convergence_test: Passed through to :func:`.shim_flux_biases`.
@@ -620,18 +629,45 @@ def shim_linewise_flux_biases(
     return flux_biases, dict_fb_all, dict_mag_all
 
 
+def _neutralize_line_schedule(
+    schedule: AnnealSchedule, min_c: float, no_polarizing_schedule: bool = False,
+) -> AnnealSchedule:
+    """Flatten a single line's schedule to a constant ``min_c`` hold.
+
+    Leading zero-valued support points are kept; from the first point whose
+    value deviates from 0 onward, every value is replaced by ``min_c``. Only
+    existing support points are revalued and their times are untouched, so no
+    new interval of variability is introduced and every step size is preserved
+    — the schedule remains valid.
+
+    We need only be careful with intervals of change if polarizing schedules are
+    in use.
+    """
+    neutralized = []
+    neutralize = False
+    for t, k in schedule:
+        if k != 0 or no_polarizing_schedule:
+            neutralize = True
+        neutralized.append([t, min_c if neutralize else k])
+    return neutralized
+
+
 def _neutralize_lines(
     exp_feature_line_info: list[LineFeatureInfo],
     unused_lines: Iterable[int],
     x_anneal_schedules: XAnnealSchedules,
+    no_polarizing_schedule: bool = False
 ) -> XAnnealSchedules:
-    """Set unused lines in the x_anneal_schedules to neutral (Cmin) values."""
+    """Set non-target/detector lines to a neutral (rounded minC) hold.
+
+    ``minC`` is rounded toward zero to the client-safe precision via
+    :func:`~dwave.experimental.multicolor_anneal.utils._round_sigfigs`.
+    """
     for line in unused_lines:
-        x_anneal_schedules[line] = [
-            [t, exp_feature_line_info[line]["minC"]]
-            for t, _ in x_anneal_schedules[line]
-        ]
-        x_anneal_schedules[line][0][0] = 0.0  # Requirement
+        min_c = _round_sigfigs(exp_feature_line_info[line]["minC"], mode="up")
+        x_anneal_schedules[line] = _neutralize_line_schedule(
+            x_anneal_schedules[line], min_c, no_polarizing_schedule=no_polarizing_schedule
+        )
     return x_anneal_schedules
 
 
@@ -646,7 +682,6 @@ def shim_tds_flux_biases(
     by_line_pair: bool = True,
     sampling_params: dict[str, Any] | None = None,
     shimmed_variables: Collection[Variable] | None = None,
-    decouple_tar_and_det: bool | None = None,
     target_c: float | None = None,
     num_reads: int = 500,
     td_shim_type: Literal[
@@ -669,7 +704,8 @@ def shim_tds_flux_biases(
     refinement only and do not break the symmetry of the system. The methods
     operate on a strictly :math:`Z_2` symmetric system; this is enforced by
     safely popping any ``x_polarizing_schedule`` from ``sampling_params`` before
-    calling shim_flux_biases with `symmetrize_experiments=False`.
+    calling shim_flux_biases with `symmetrize_experiments=False`. Some methods generalize
+    but the aim is to protect against strange edge cases.
 
     Detector only method:
     The source qubits, and qubits on unused lines, can be decoupled (set to Cmin).
@@ -682,7 +718,8 @@ def shim_tds_flux_biases(
 
     Sequential method:
     Run first a line-wise quench on sources, targets and detectors. Then the
-    detector only method.
+    detector only method. Note the parameters passed through to shim_flux_biases
+    are the same in both stages.
 
     Alternating method:
     Coupled qubits can act as complementary detectors. If we assume the required
@@ -761,12 +798,6 @@ def shim_tds_flux_biases(
             ``detector_lines`` (and, for the ``"alternating"`` strategy, also
             ``target_lines``). If provided, they must be a subset of variables
             assigned to ``target_lines`` or ``detector_lines``.
-        decouple_tar_and_det: If ``True``, a copy of ``bqm`` restricted to
-            variables assigned to ``target_lines`` or ``detector_lines`` is
-            used for shimming. This decouples the target-detector system
-            from any residual couplings to qubits on other annealing lines.
-            The caller's ``bqm`` is not modified. Default is ``None``, which
-            decouples only for the ``"alternating"`` strategy.
         target_c: If ``sampling_params`` is not provided, this is used
            to parameterize x_anneal_schedules for ``target_lines``.
         num_reads: If ``sampling_params`` is not provided, this is used to
@@ -906,8 +937,12 @@ def shim_tds_flux_biases(
         v for v in bqm.variables if line_assignments.get(v) in shim_lines
     )  # Only detectors and targets are shimmed henceforth
     unused_lines = set(range(num_lines)).difference(dt_lines)
+    # x_polarizing_schedule is popped above, so there is no polarizing schedule.
     sampling_params["x_anneal_schedules"] = _neutralize_lines(
-        exp_feature_line_info, unused_lines, sampling_params["x_anneal_schedules"]
+        exp_feature_line_info,
+        unused_lines,
+        sampling_params["x_anneal_schedules"],
+        no_polarizing_schedule=True,
     )
 
     if shimmed_variables is None:
@@ -921,12 +956,7 @@ def shim_tds_flux_biases(
         line_assignments.get(v) in target_lines for v in shimmed_variables
     )
 
-    if (
-        decouple_tar_and_det
-        or (decouple_tar_and_det is None and td_shim_type == "alternating")
-    ) and not (
-        by_line_pair and use_target_variables and td_shim_type == "alternating"
-    ):
+    if td_shim_type == "alternating" and use_target_variables:
         # Any qubit outside of the target and detector lines is
         # explicitly decoupled. This is desirable for the alternating method.
         # otherwise it makes sense to leave the full Hamiltonian programmed
@@ -935,7 +965,6 @@ def shim_tds_flux_biases(
         bqm.remove_variables_from(
             set(bqm.variables).difference(viable_shimmed_variables)
         )
-    if td_shim_type == "alternating" and use_target_variables:
         if by_line_pair:
             # degenerate detector lines interfere post-quench, therefore process separately.
             for target_line in target_lines:
@@ -957,7 +986,6 @@ def shim_tds_flux_biases(
                         by_line_pair=False,
                         sampling_params=sampling_params,
                         shimmed_variables=shimmed_variables_dt,
-                        decouple_tar_and_det=True,  # decouples this pair
                         exp_feature_line_info=exp_feature_line_info,
                         learning_schedule=learning_schedule,
                         convergence_test=convergence_test,
