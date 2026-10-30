@@ -346,14 +346,17 @@ def shim_flux_biases(
     if not set(shimmed_variables).issubset(bqm.variables):
         raise ValueError("Invalid shimmed variables")
 
+    # Shimming targets zero magnetization in the SPIN convention regardless of
+    # symmetrization, so convert BINARY BQMs up front.
+    if bqm.vartype is dimod.BINARY:
+        bqm = bqm.change_vartype(dimod.SPIN, inplace=False)
+
     if symmetrize_experiments:
         unshimmed_variables = set(bqm.variables).difference(shimmed_variables)
         if flux_biases_break_symmetry:
             fbnonzero = any(flux_biases[v] != 0 for v in unshimmed_variables)
         else:
             fbnonzero = False
-        if bqm.vartype is dimod.BINARY:
-            bqm = bqm.change_vartype(dimod.SPIN, inplace=False)
         hnonzero = any(bqm.linear.values())
         if hnonzero:
             bqm = bqm.copy()
@@ -781,32 +784,48 @@ def shim_tds_flux_biases(
             parameter.
         exp_feature_line_info: Per-line experiment feature information. Used to
             map each variable (qubit index) to its annealing line index, and,
-            when ``sampling_params`` is not provided, to parameterize
-            ``x_anneal_schedules``.
+            when ``x_anneal_schedules`` is not supplied in ``sampling_params``,
+            to parameterize it. Also used to determine settings for neutralizing lines in
+            some methods.
         source_lines: Indices of annealing lines whose qubits act as sources.
             Used by the ``"sequential"`` and ``"by_line_quench"`` strategies to
             include source lines in the line-wise quench. Optional.
         by_line_pair: If ``True``, the shimming is performed independently
             for each combination of target and detector line.
         sampling_params: Base sampling parameters passed to the sampler.
-            If not specified, then defaults are used. A minimal set of
-            functional parameters should include ``x_anneal_schedules`` and
-            ``num_reads``. For ``td_shim_type="alternating"``, the
+            Entries the caller omits are filled with defaults: missing
+            ``x_anneal_schedules`` is built from ``exp_feature_line_info`` (and
+            ``target_c``), missing ``num_reads`` defaults to the ``num_reads``
+            argument, and missing ``x_disable_filtering`` defaults to ``True``.
+            Any ``x_polarizing_schedule`` is removed to keep the system
+            :math:`Z_2` symmetric. For ``td_shim_type="alternating"``, the
             ``x_anneal_schedules`` must be identical across all ``target_lines``
             and identical across all ``detector_lines``, and the target and
             detector schedules must be mutually compatible (interchangeable
             under the role swap), as produced by
             :func:`~dwave.experimental.multicolor_anneal.make_tds_x_anneal_schedules`
             with ``use_common_bounds=True``.
-        shimmed_variables: Variables to shim. By default, variables assigned to
-            ``detector_lines`` (and, for the ``"alternating"`` strategy, also
-            ``target_lines``). If provided, they must be a subset of variables
-            assigned to ``target_lines`` or ``detector_lines``.
-        target_c: If ``sampling_params`` is not provided, this is used
-           to parameterize x_anneal_schedules for ``target_lines``.
-        num_reads: If ``sampling_params`` is not provided, this is used to
-            set the default number of reads per iterative stage. Larger
-            values result in lower variance (better) convergence.
+        sampling_params_in_place = False
+        shimmed_variables: Variables to shim; validated before any sampling
+            against the lines the chosen ``td_shim_type`` shims:
+            ``"detector_only"`` requires a subset of ``detector_lines``
+            variables; ``"alternating"`` a subset of ``target_lines`` or
+            ``detector_lines`` variables; ``"sequential"`` and
+            ``"by_line_quench"`` additionally accept ``source_lines`` variables
+            (shimmed in the line-wise stage). By default, variables assigned to
+            ``detector_lines`` (and, for ``"alternating"``, also
+            ``target_lines``); the line-wise stage instead defaults to every bqm
+            variable, regardless of whether it is on a source, target or detector
+            line. The final shim stage updates only ``detector_lines`` variables,
+            so for ``"sequential"`` the full set is used in the line-wise first
+            stage and then narrowed to the ``detector_lines`` subset for the
+            second stage.
+        target_c: If ``x_anneal_schedules`` is not supplied in
+           ``sampling_params``, this is used to parameterize it for
+           ``target_lines``.
+        num_reads: If ``num_reads`` is not supplied in ``sampling_params``, this
+            is used to set the default number of reads per iterative stage.
+            Larger values result in lower variance (better) convergence.
         td_shim_type: The shimming strategy for target-detector pairs at
             equilibrium (with source depolarized). One of ``"detector_only"``
             (shim detector qubits only), ``"by_line_quench"`` (shim every line
@@ -833,6 +852,10 @@ def shim_tds_flux_biases(
             across iterations.
         3.  History of magnetizations per variable across experiments
             and iterations.
+
+        Multi-stage shimming processes (such as ``"sequential"``) append the
+        per-stage histories, so entries may not align across variables by
+        iteration when the shimmed variables differ between stages.
     """
     if not detector_lines:
         raise ValueError(
@@ -846,44 +869,31 @@ def shim_tds_flux_biases(
         _check_no_duplicate_lines("source_lines", source_lines)
 
     line_assignments = line_assignments_from_feature_info(exp_feature_line_info)
+    num_lines = len(exp_feature_line_info)
 
     # Preserve the caller's dict for the optional in-place flux_biases update.
     caller_sampling_params = sampling_params
     if sampling_params is None:
-        # No caller dict to mutate, so the in-place option is ignored.
+        sampling_params = {}
         sampling_params_in_place = False
-        # A symmetric default schedule is effective. Dependence on the detailed
-        # form (use of overshoot, etc.) is expected to be a perturbative
-        # effect on the required flux biases.
-        if td_shim_type == "alternating":
-            # Requires interchangeable schedules for self-consistency.
-            use_common_bounds = True
-            symmetrize_c_bounds = True
-        else:
-            # Defaults are fine
-            use_common_bounds = False
-            symmetrize_c_bounds = False
-        sampling_params = dict(
-            x_anneal_schedules=make_tds_x_anneal_schedules(
-                exp_feature_line_info=exp_feature_line_info,
-                target_lines=target_lines,
-                target_c=target_c,
-                detector_lines=detector_lines,
-                use_common_bounds=use_common_bounds,
-                symmetrize_c_bounds=symmetrize_c_bounds,
-            ),  # For consistency under line swapping.
-            num_reads=num_reads,
-            x_disable_filtering=True,
-        )
     else:
         sampling_params = deepcopy(sampling_params)
-        if "x_anneal_schedules" not in sampling_params:
-            raise ValueError(
-                "sampling_params must include 'x_anneal_schedules'"
-            )
-    num_lines = len(exp_feature_line_info)
     sampling_params.pop("x_polarizing_schedule", None)
-
+    # Fill any sampling parameters the caller omitted with defaults built from
+    # the line info; x_polarizing_schedule is dropped above for Z2 symmetry.
+    if "x_anneal_schedules" not in sampling_params:
+        sampling_params["x_anneal_schedules"] = make_tds_x_anneal_schedules(
+                    exp_feature_line_info=exp_feature_line_info,
+                    target_lines=target_lines,
+                    target_c=target_c,
+                    detector_lines=detector_lines,
+                    use_common_bounds=(td_shim_type == "alternating"),
+                    symmetrize_c_bounds=(td_shim_type == "alternating"),
+                )  # For consistency under line swapping.
+    if "num_reads" not in sampling_params:
+        sampling_params["num_reads"] = num_reads
+    if "x_disable_filtering" not in sampling_params:
+        sampling_params["x_disable_filtering"] = True
     detector_set = set(detector_lines)
     target_set = set(target_lines)
     dt_lines = detector_set | target_set
@@ -894,6 +904,23 @@ def shim_tds_flux_biases(
     ):
         raise ValueError(
             "detector_lines and target_lines should be disjoint subsets of set(range(num_lines))"
+        )
+
+    # Validate before any sampling so an invalid set is rejected without wasted
+    # QPU calls, against the lines the chosen strategy actually shims.
+    if td_shim_type in ("sequential", "by_line_quench"):
+        # The line-wise stage also shims source lines.
+        shimmable_lines = dt_lines | (set(source_lines) if source_lines else set())
+    elif td_shim_type == "detector_only":
+        shimmable_lines = detector_set
+    else:  # "alternating"
+        shimmable_lines = dt_lines
+    if shimmed_variables is not None and not set(shimmed_variables).issubset(
+        v for v in bqm.variables if line_assignments.get(v) in shimmable_lines
+    ):
+        raise ValueError(
+            "shimmed_variables should be a subset of the bqm variables assigned "
+            f"to the lines shimmed by td_shim_type='{td_shim_type}'"
         )
 
     if td_shim_type != "detector_only":
@@ -949,13 +976,17 @@ def shim_tds_flux_biases(
         no_polarizing_schedule=True,
     )
 
+    # The final shim stage updates only shim_lines variables (detector lines,
+    # plus target lines for the alternating method). shimmed_variables were
+    # validated against the full target-or-detector domain above and forwarded
+    # in full to the line-wise first stage of the sequential method; here they
+    # are narrowed to the shim_lines subset for the remaining stage.
     if shimmed_variables is None:
         shimmed_variables = viable_shimmed_variables
     else:
-        if not set(shimmed_variables).issubset(viable_shimmed_variables):
-            raise ValueError(
-                "shimmed_variables should be a subset of variables assigned to target_lines or detector_lines"
-            )
+        shimmed_variables = set(
+            v for v in shimmed_variables if line_assignments.get(v) in shim_lines
+        )
     use_target_variables = any(
         line_assignments.get(v) in target_lines for v in shimmed_variables
     )
