@@ -33,6 +33,7 @@ import hashlib
 import json
 import os
 import re
+import warnings
 from collections.abc import Collection, Iterable, Sequence
 from typing import Any, Literal
 
@@ -104,6 +105,8 @@ __all__ = [
     "estimate_decoupling_timescale",
     "_to_independent_tds",
     "compute_delay_grid",
+    "create_solver",
+    "connect_qpu",
     "MCAContext",
 ]
 
@@ -1053,6 +1056,7 @@ class MCAContext:
         "stage_idx",
         "qpu",
         "online",
+        "cached_chip_id",
         "exp_feature_info",
         "line_color",
         "x_anneal_schedules",
@@ -1107,3 +1111,91 @@ class MCAContext:
 
     def __setattr__(self, name: str, value: Any) -> None:
         object.__setattr__(self, name, value)
+
+
+def create_solver(
+    solver_name: dict | str | None, *, cache_empty: bool = False
+) -> DWaveSampler:
+    """Create the QPU sampler used by the experiment.
+
+    This is the single place the solver is created, so every stage fails the
+    same way: an error is raised only because the solver could not be created.
+
+    Args:
+        solver_name: Name of the solver, or dictionary of characteristics, as
+            accepted by :class:`~dwave.system.DWaveSampler`.
+        cache_empty: Set when cached data is enabled but cannot substitute for
+            the solver. The error message then notes that retrieval of data is
+            not possible.
+
+    Returns:
+        The connected :class:`~dwave.system.DWaveSampler`.
+
+    Raises:
+        RuntimeError: If the solver cannot be created or reached. The message
+            names the underlying error.
+    """
+    try:
+        qpu = DWaveSampler(solver=solver_name)
+        # The client can serve solver data from its cache without a connection;
+        # refreshing forces a round trip so success means the API is reachable.
+        qpu.client.get_solvers(refresh=True)
+    except Exception as error:
+        note = (
+            " and cache empty (retrieval of data not possible)"
+            if cache_empty
+            else ""
+        )
+        raise RuntimeError(
+            f"Solver creation failed{note}: {type(error).__name__}: {error}"
+        ) from error
+    return qpu
+
+
+def connect_qpu(ctx: MCAContext) -> MCAContext:
+    """Create the solver on demand after a stage's cache lookup fails.
+
+    Stages try cached data first. When that misses and the context is offline
+    (``ctx.online`` is False, because the waveforms stage substituted a
+    :class:`~dwave.system.testing.MockDWaveSampler` built from cached
+    properties), call this to create the real solver. There is no fallback to
+    cached data: an error is raised only if the solver cannot be created.
+
+    On success ``ctx.qpu`` is replaced, ``ctx.sampler`` is rebuilt over the new
+    solver from the existing embeddings (``ctx.embs``), and ``ctx.online`` is set
+    to True. Stages must re-read ``ctx.qpu`` and ``ctx.sampler`` afterwards, as
+    any local references still point at the offline mock. Does nothing when
+    ``ctx.online`` is already True.
+
+    Args:
+        ctx: Shared context carrying configuration and computed state between
+            stages.
+
+    Returns:
+        The same ``ctx``.
+
+    Raises:
+        RuntimeError: If the solver cannot be created. A warning (not an error)
+            is issued if its ``chip_id`` differs from the solver the cached
+            properties, embeddings and schedules were built for.
+    """
+    if ctx.online:
+        return ctx
+    qpu = create_solver(ctx.solver_name, cache_empty=bool(ctx.cache_str))
+    chip_id = qpu.properties.get("chip_id")
+    if (
+        ctx.cached_chip_id is not None
+        and chip_id is not None
+        and chip_id != ctx.cached_chip_id
+    ):
+        warnings.warn(
+            f"Solver created on demand has chip_id {chip_id!r}, but the cached "
+            f"properties, embeddings and schedules were built for {ctx.cached_chip_id!r}.",
+            stacklevel=2,
+        )
+    print(f"Solver connected on cache miss: {qpu.solver.identity}")
+    ctx.qpu = qpu
+    if ctx.embs is not None:
+        ctx.sampler = ParallelEmbeddingComposite(qpu, embeddings=ctx.embs)
+    ctx.online = True
+    return ctx

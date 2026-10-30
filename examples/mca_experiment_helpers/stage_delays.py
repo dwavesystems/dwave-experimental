@@ -57,7 +57,8 @@ def run_detect_delays(ctx: MCAContext) -> MCAContext:
                 t_decoupled, t_mags, t_decoupled_by_qubit = pickle.load(f)
         else:
             if not online:
-                raise RuntimeError("QPU not available, and no cached data found.")
+                connect_qpu(ctx)
+                sampler = ctx.sampler
             t_decoupled, t_mags, t_decoupled_by_qubit = estimate_decoupling_timescale(
                 sampler=sampler,
                 bqm=bqm,
@@ -185,6 +186,10 @@ def run_refine_delays(
 ) -> MCAContext:
     """Refine source and detector delays after anneal-offset refinement.
 
+    Both the refined decoupling-delay estimate and the dt/dc experiments that
+    follow it are cached; the solver is created on demand only if either is
+    missing.
+
     Args:
         ctx: Shared context carrying configuration and computed state between
             stages.
@@ -213,7 +218,6 @@ def run_refine_delays(
     by_det_src_pair = ctx.by_det_src_pair
     embs = ctx.embs
     dt_dc = ctx.dt_dc
-    online = ctx.online
 
     # Repeat the source-decoupling detection; the outcome differs because
     # of the updated anneal_offsets on the targets.
@@ -227,14 +231,14 @@ def run_refine_delays(
         " to some improved target frequency alignment on a plurality of qubits)."
     )
 
-    if not online:
-        raise RuntimeError("QPU not available, and no cached data found.")
-
     fn_cache = f"cache/source_decoupling_refined_{cache_str}.pkl"
-    if cache_str and os.path.isfile(fn_cache):
+    estimate_cached = bool(cache_str) and os.path.isfile(fn_cache)
+    if estimate_cached:
         with open(fn_cache, "rb") as f:
             t_decoupled, t_mags, t_decoupled_by_qubit = pickle.load(f)
     else:
+        connect_qpu(ctx)
+        sampler = ctx.sampler
         t_decoupled, t_mags, t_decoupled_by_qubit = estimate_decoupling_timescale(
             sampler=sampler,
             bqm=bqm,
@@ -291,9 +295,20 @@ def run_refine_delays(
         "c(t)=anneal_offset(t) is to a good approximation linear, assuming "
         f"dt/dc ~ {dt_dc}us we can correct a measured delay in one step."
     )
-    mags_t0 = [
-        run_parallel_experiment(sampler, bqm, sampling_params, detector_lines).ravel()
-    ]
+    # The measurements below depend on the decoupling estimate just applied, so
+    # cached ones are reused only when that estimate was cached as well.
+    fn_cache_mags = f"cache/refine_delays_mags_{cache_str}.npy"
+    mags_cached = estimate_cached and os.path.isfile(fn_cache_mags)
+    if mags_cached:
+        mags_t0 = list(np.load(fn_cache_mags))
+    else:
+        connect_qpu(ctx)
+        sampler = ctx.sampler
+        mags_t0 = [
+            run_parallel_experiment(
+                sampler, bqm, sampling_params, detector_lines
+            ).ravel()
+        ]
     if len(source_lines) == 1:
         t_decoupled[source_lines[0]] = 0.0
     for emb in embs:
@@ -306,9 +321,12 @@ def run_refine_delays(
             )
         # Residual part, not captured by line-wise correction.
 
-    mags_t0.append(
-        run_parallel_experiment(sampler, bqm, sampling_params, detector_lines).ravel()
-    )
+    if not mags_cached:
+        mags_t0.append(
+            run_parallel_experiment(
+                sampler, bqm, sampling_params, detector_lines
+            ).ravel()
+        )
     relative_offset = np.mean(list(t_decoupled_by_qubit.values()))
     for emb in embs:
         det_q = emb[("detector", 0)][0]
@@ -318,9 +336,14 @@ def run_refine_delays(
             sampling_params["anneal_offsets"][det_q] = (
                 -(t_decoupled_by_qubit[det_q] - relative_offset) / dt_dc
             )
-    mags_t0.append(
-        run_parallel_experiment(sampler, bqm, sampling_params, detector_lines).ravel()
-    )
+    if not mags_cached:
+        mags_t0.append(
+            run_parallel_experiment(
+                sampler, bqm, sampling_params, detector_lines
+            ).ravel()
+        )
+        if cache_str:
+            np.save(fn_cache_mags, np.array(mags_t0))
     plt.figure("Mags with/without synchronization")
     num_points = len(mags_t0[0])
     inter_quartiles = [np.diff(np.percentile(mags, [25, 75])) for mags in mags_t0]

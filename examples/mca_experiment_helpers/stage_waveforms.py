@@ -6,9 +6,11 @@ from .common import *
 def run_waveforms(ctx: MCAContext) -> MCAContext:
     """Build multi-color annealing waveforms compatible with the QPU.
 
-    Connects to the solver (or a mock from cache), resolves the detector,
-    source and target lines, builds the T-D-S x-schedules and polarizing
-    schedule, plots them, and initializes the shared ``sampling_params``.
+    Uses cached solver properties when available (no client call; the solver is
+    then created on demand by a stage that must sample), otherwise connects to
+    the solver. Resolves the detector, source and target lines, builds the
+    T-D-S x-schedules and polarizing schedule, plots them, and initializes the
+    shared ``sampling_params``.
 
     Args:
         ctx: Shared context carrying configuration and computed state between
@@ -40,35 +42,37 @@ def run_waveforms(ctx: MCAContext) -> MCAContext:
         "research QPU."
     )
 
-    if cache_str:
-        qpu_fn = f"cache/qpu_{cache_str}.pkl"
-    try:
-        qpu = DWaveSampler(solver=solver)
-        print(
-            f"Solver connected to (check matches schedule file): {qpu.solver.identity}"
-        )
-        exp_feature_info = get_properties(qpu)
-        if cache_str:
-            with open(qpu_fn, "wb") as f:
-                pickle.dump((qpu.properties, exp_feature_info), f)
-        online = True
-    except Exception as error:
-        if not cache_str:
-            raise (error)
-        elif not os.path.isfile(qpu_fn):
-            raise FileNotFoundError(
-                f"use_cache=True, but cache files are missing and no client "
-                f"is available: {error}"
-            )
-        else:
-            with open(qpu_fn, "rb") as f:
-                properties, exp_feature_info = pickle.load(f)
+    qpu_fn = f"cache/qpu_{cache_str}.pkl"  # Only used when cache_str is set.
+    cached_chip_id = None
+    if cache_str and os.path.isfile(qpu_fn):
+        # Cached properties suffice, so the client is not contacted here; the
+        # first stage that must sample creates the solver (see connect_qpu).
+        with open(qpu_fn, "rb") as f:
+            properties, exp_feature_info = pickle.load(f)
         qpu = MockDWaveSampler(
             properties=properties,
             nodelist=properties["qubits"],
             edgelist=properties["couplers"],
         )
+        cached_chip_id = properties.get("chip_id")
+        print(
+            f"Using cached solver properties (chip_id {cached_chip_id}; check matches "
+            "schedule file). The solver is created on demand if a stage needs new data."
+        )
         online = False
+    else:
+        if cache_str:
+            print(f"Cache miss: {qpu_fn} not found. Creating the solver.")
+        qpu = create_solver(solver, cache_empty=bool(cache_str))
+        print(
+            f"Solver connected to (check matches schedule file): {qpu.solver.identity}"
+        )
+        exp_feature_info = get_properties(qpu)
+        if cache_str:
+            os.makedirs("cache", exist_ok=True)
+            with open(qpu_fn, "wb") as f:
+                pickle.dump((qpu.properties, exp_feature_info), f)
+        online = True
     if len(exp_feature_info) != 2:
         raise ValueError("Legacy format")
     line_assignments = line_assignments_from_feature_info(
@@ -143,6 +147,7 @@ def run_waveforms(ctx: MCAContext) -> MCAContext:
     ctx.stage_idx = stage_idx
     ctx.qpu = qpu
     ctx.online = online
+    ctx.cached_chip_id = cached_chip_id
     ctx.exp_feature_info = exp_feature_info
     ctx.detector_lines = detector_lines
     ctx.source_lines = source_lines

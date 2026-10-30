@@ -52,7 +52,8 @@ def run_flux_biases(
             flux_biases, flux_history, mag_history = pickle.load(f)
     else:
         if not online:
-            raise RuntimeError("QPU not available, and no cached data found.")
+            connect_qpu(ctx)
+            qpu = ctx.qpu
 
         bqm_embedded = dimod.BinaryQuadraticModel("SPIN").from_ising(
             {emb[n][0]: h for emb in embs for n, h in bqm.linear.items()},

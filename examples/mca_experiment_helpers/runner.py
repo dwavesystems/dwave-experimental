@@ -212,17 +212,19 @@ def main(
             cache/ is created which is populated with experimental data. The cache
             is checked for compatible experimental data before running an experiment,
             and if compatible data is present the data is reloaded rather than
-            running new jobs through the client.
+            running new jobs through the client. When it is not present, the
+            solver is created on demand if not already available.
     Raises:
         ValueError: If the delay/fit window is empty (too small for
             ``target_A``); if neither or both of ``target_c`` and ``target_A``
             are specified; or if ``exp_feature_info`` has an unexpected (legacy)
             format.
-        FileNotFoundError: If the QPU is offline and the fallback pickle
-            caches for solver properties or experimental feature info are
-            missing.
-        RuntimeError: If the QPU is unavailable and no cached data is found
-            for a stage that requires new sampling.
+        RuntimeError: If the solver cannot be created. Cached solver properties
+            are used without contacting the client; when a stage's cache
+            misses, the solver is created on demand (see ``connect_qpu``) with
+            no fallback to cached data or a mock sampler. With ``cache_str``
+            set, the message notes "and cache empty (retrieval of data not
+            possible)".
     """
 
     if loop_length == 1:

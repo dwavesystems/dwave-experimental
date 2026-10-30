@@ -68,7 +68,8 @@ def run_anneal_offsets(ctx: MCAContext) -> MCAContext:
         mean_Z_detector = np.load(fn_cache)
     else:
         if not online:
-            raise RuntimeError("QPU not available, and no cached data found.")
+            connect_qpu(ctx)
+            sampler = ctx.sampler
 
         mean_Z_detector = run_parallel_experiment(
             sampler, bqm, sampling_params, detector_lines, delays=delays
@@ -252,7 +253,8 @@ def run_verification(ctx: MCAContext) -> MCAContext:
         mean_Z_detector = np.load(fn_cache)
     else:
         if not online:
-            raise RuntimeError("QPU not available, and no cached data found.")
+            connect_qpu(ctx)
+            sampler = ctx.sampler
         for emb, ao in zip(embs, anneal_offsets_target):
             sampling_params["anneal_offsets"][
                 emb[0][0]

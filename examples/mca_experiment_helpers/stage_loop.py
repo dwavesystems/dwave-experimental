@@ -64,7 +64,6 @@ def run_loop(ctx: MCAContext, *, dt_div_A_final: float = 0.25) -> MCAContext:
         print(
             f"Single-site propagation occurs on a time scale  ~ 1/(2pi B(s) |Jtt|) = {1/np.abs(target_B * np.pi * 2 * Jtt):.3g}ns"
         )
-    sampler_experiment = ParallelEmbeddingComposite(qpu, embeddings=embs_experiment)
     bqm_experiment = dimod.BinaryQuadraticModel("SPIN").from_ising(
         {n: 0 for n in S_experiment.nodes()},
         {
@@ -100,7 +99,9 @@ def run_loop(ctx: MCAContext, *, dt_div_A_final: float = 0.25) -> MCAContext:
         mean_Z_detector = np.load(fn_cache)
     else:
         if not online:
-            raise RuntimeError("QPU not available, and no cached data found.")
+            connect_qpu(ctx)
+            qpu = ctx.qpu
+        sampler_experiment = ParallelEmbeddingComposite(qpu, embeddings=embs_experiment)
         mean_Z_detector = run_parallel_experiment(
             sampler_experiment,
             bqm_experiment,
