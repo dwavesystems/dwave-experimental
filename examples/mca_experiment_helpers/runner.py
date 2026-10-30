@@ -1,7 +1,7 @@
 """Orchestrates the multi-color-annealing calibration-refinement stages.
 
 This thin orchestrator threads a shared
-:class:`~mca_shim_AO_FB_helpers.common.MCAContext`
+:class:`~mca_experiment_helpers.common.MCAContext`
 through the individual ``stage_*`` modules, preserving the original sequential
 data flow while keeping each stage in its own small, readable script.
 """

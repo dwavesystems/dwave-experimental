@@ -33,7 +33,8 @@ import hashlib
 import json
 import os
 import re
-from typing import Any, Collection, Iterable, Literal, Sequence
+from collections.abc import Collection, Iterable, Sequence
+from typing import Any, Literal
 
 import pickle
 import pandas as pd
@@ -59,7 +60,7 @@ from dwave.experimental.multicolor_anneal import (
 )
 from dwave.experimental.shimming import shim_tds_flux_biases
 
-# Re-exported so ``from mca_shim_AO_FB_helpers.common import *`` makes every name
+# Re-exported so ``from mca_experiment_helpers.common import *`` makes every name
 # used by the verbatim stage bodies available (including the underscore-prefixed
 # helpers and the third-party modules/functions those bodies reference).
 __all__ = [
@@ -1014,7 +1015,7 @@ class MCAContext:
     """
 
     #: Names of every attribute threaded between stages. Config values mirror the
-    #: parameters of :func:`mca_shim_AO_FB_helpers.runner.main`; the remainder are computed.
+    #: parameters of :func:`mca_experiment_helpers.runner.main`; the remainder are computed.
     _FIELDS = (
         # configuration (see runner.main for documentation)
         "cache_str",

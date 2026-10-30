@@ -36,8 +36,8 @@ def run_waveforms(ctx: MCAContext) -> MCAContext:
     stage_idx += 1
     print()
     print(
-        f"Stage {stage_idx}: Build multi color annealing waveforms compatible with the "
-        f"research QPU."
+        f"Stage {stage_idx}: Build multi-color annealing waveforms compatible with the "
+        "research QPU."
     )
 
     if cache_str:
@@ -110,7 +110,6 @@ def run_waveforms(ctx: MCAContext) -> MCAContext:
         use_common_bounds=use_common_c_bounds,
         use_overshoot=use_overshoot,
         sign_polarization=-np.sign(Jts * Jtd * preparation_orientation),
-        # depolarization_time_scale=50.0
     )
     _plot_tds_schedules(
         x_polarizing_schedule,
