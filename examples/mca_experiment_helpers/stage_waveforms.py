@@ -71,7 +71,9 @@ def run_waveforms(ctx: MCAContext) -> MCAContext:
         online = False
     if len(exp_feature_info) != 2:
         raise ValueError("Legacy format")
-    line_assignments = line_assignments_from_feature_info(exp_feature_info)
+    line_assignments = line_assignments_from_feature_info(
+        exp_feature_info.annealing_line_info
+    )
     num_lines = len(exp_feature_info.annealing_line_info)
     # 2/3 of lines reserved for the target (typical applications)
     if (detector_lines is None) != (source_lines is None):

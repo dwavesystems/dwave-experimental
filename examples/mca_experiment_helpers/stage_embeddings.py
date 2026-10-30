@@ -21,7 +21,9 @@ def run_embeddings(
     """
     stage_idx = ctx.stage_idx
     qpu = ctx.qpu
-    line_assignments = line_assignments_from_feature_info(ctx.exp_feature_info)
+    line_assignments = line_assignments_from_feature_info(
+        ctx.exp_feature_info.annealing_line_info
+    )
     detector_lines = ctx.detector_lines
     source_lines = ctx.source_lines
     target_lines = ctx.target_lines

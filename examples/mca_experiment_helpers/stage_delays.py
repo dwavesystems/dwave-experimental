@@ -31,7 +31,9 @@ def run_detect_delays(ctx: MCAContext) -> MCAContext:
     sampling_params = ctx.sampling_params
     detector_lines = ctx.detector_lines
     target_A = ctx.target_A
-    line_assignments = line_assignments_from_feature_info(ctx.exp_feature_info)
+    line_assignments = line_assignments_from_feature_info(
+        ctx.exp_feature_info.annealing_line_info
+    )
     source_lines = ctx.source_lines
     by_det_src_pair = ctx.by_det_src_pair
     save_figures = ctx.save_figures
@@ -204,7 +206,9 @@ def run_refine_delays(
     sampling_params = ctx.sampling_params
     detector_lines = ctx.detector_lines
     target_A = ctx.target_A
-    line_assignments = line_assignments_from_feature_info(ctx.exp_feature_info)
+    line_assignments = line_assignments_from_feature_info(
+        ctx.exp_feature_info.annealing_line_info
+    )
     source_lines = ctx.source_lines
     by_det_src_pair = ctx.by_det_src_pair
     embs = ctx.embs

@@ -32,7 +32,9 @@ def run_flux_biases(
     source_lines = ctx.source_lines
     exp_feature_info = ctx.exp_feature_info
     target_c = ctx.target_c
-    line_assignments = line_assignments_from_feature_info(exp_feature_info)
+    line_assignments = line_assignments_from_feature_info(
+        exp_feature_info.annealing_line_info
+    )
     save_figures = ctx.save_figures
     x_polarizing_schedule = ctx.x_polarizing_schedule
     flux_biases = ctx.flux_biases

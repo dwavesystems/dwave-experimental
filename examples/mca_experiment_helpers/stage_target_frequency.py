@@ -36,7 +36,9 @@ def run_anneal_offsets(ctx: MCAContext) -> MCAContext:
     delay_max = ctx.delay_max
     dt = ctx.dt
     embs = ctx.embs
-    line_assignments = line_assignments_from_feature_info(ctx.exp_feature_info)
+    line_assignments = line_assignments_from_feature_info(
+        ctx.exp_feature_info.annealing_line_info
+    )
     line_color = ctx.line_color
     line_exemplars = ctx.line_exemplars
     colormap_type = ctx.colormap_type
@@ -228,7 +230,9 @@ def run_verification(ctx: MCAContext) -> MCAContext:
     frequencies = ctx.frequencies
     dAdc = ctx.dAdc
     target_A = ctx.target_A
-    line_assignments = line_assignments_from_feature_info(ctx.exp_feature_info)
+    line_assignments = line_assignments_from_feature_info(
+        ctx.exp_feature_info.annealing_line_info
+    )
     line_color = ctx.line_color
     line_exemplars = ctx.line_exemplars
     colormap_type = ctx.colormap_type
