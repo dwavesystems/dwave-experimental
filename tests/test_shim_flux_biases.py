@@ -52,7 +52,9 @@ class FluxBiases(unittest.TestCase):
         self.assertSetEqual(set(mh.keys()), set(bqm.variables))
 
     def test_flux_biases_params(self):
-        """Check parameters in = parameters out for empty learning_schedule or convergence test"""
+        """With ``sampling_params_in_place=False`` the caller's ``sampling_params``
+        is left unmutated; verified against a pre-call deep copy. Also checks the
+        no-movement cases (empty learning_schedule or convergence test)."""
         nv = 10
         bqm = dimod.BinaryQuadraticModel("SPIN").from_ising(
             {i: 1 for i in range(nv)}, {}
@@ -66,8 +68,11 @@ class FluxBiases(unittest.TestCase):
         }
 
         # Defaults, with initialization
-        fb, fbh, mh = shim_flux_biases(bqm, sampler, sampling_params=sampling_params)
-        self.assertTrue(all(x == y for x, y in zip(fb, sampling_params["flux_biases"])))
+        sp_before = deepcopy(sampling_params)
+        fb, fbh, mh = shim_flux_biases(
+            bqm, sampler, sampling_params=sampling_params, sampling_params_in_place=False
+        )
+        self.assertEqual(sampling_params, sp_before)
         self.assertEqual(sum(x != val for x in fb), nv)
         self.assertEqual(nv, len(fbh))
         self.assertEqual(nv, len(mh))
@@ -78,13 +83,15 @@ class FluxBiases(unittest.TestCase):
             "flux_biases": [val] * sampler.properties["num_qubits"],
         }
         shimmed_variables = list(range(nv)[::2])
+        sp_before = deepcopy(sampling_params)
         fb, fbh, mh = shim_flux_biases(
             bqm,
             sampler,
             sampling_params=sampling_params,
             shimmed_variables=shimmed_variables,
+            sampling_params_in_place=False,
         )
-        self.assertTrue(all(x == y for x, y in zip(fb, sampling_params["flux_biases"])))
+        self.assertEqual(sampling_params, sp_before)
         self.assertEqual(sum(x != val for x in fb), len(shimmed_variables))
         self.assertEqual(nv // 2, len(shimmed_variables))
 
@@ -93,20 +100,27 @@ class FluxBiases(unittest.TestCase):
             "num_reads": 1,
             "flux_biases": [val] * sampler.properties["num_qubits"],
         }
+        sp_before = deepcopy(sampling_params)
         fb, fbh, mh = shim_flux_biases(
-            bqm, sampler, sampling_params=sampling_params, learning_schedule=[]
-        )  # , shimmed_variables, learning_schedule, convergence_test, symmetrize_experiments
-        self.assertTrue(all(x == y for x, y in zip(fb, sampling_params["flux_biases"])))
+            bqm,
+            sampler,
+            sampling_params=sampling_params,
+            learning_schedule=[],
+            sampling_params_in_place=False,
+        )
+        self.assertEqual(sampling_params, sp_before)
         self.assertTrue(all(x == val for x in fb))
 
         # No movement if converged:
+        sp_before = deepcopy(sampling_params)
         fb, fbh, mh = shim_flux_biases(
             bqm,
             sampler,
             sampling_params=sampling_params,
             convergence_test=lambda x, y: True,
+            sampling_params_in_place=False,
         )
-        self.assertTrue(all(x == y for x, y in zip(fb, sampling_params["flux_biases"])))
+        self.assertEqual(sampling_params, sp_before)
         self.assertTrue(all(x == val for x in fb))
 
         # Symmetrized experiment, twice as many magnetizations:
