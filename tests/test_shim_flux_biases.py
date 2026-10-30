@@ -811,6 +811,61 @@ class FluxBiases(unittest.TestCase):
                     shimmed_variables={sampler.properties["num_qubits"] + 1},
                 )
 
+        with self.subTest(case="detector_only_rejects_target_variable"):
+            target_qubit = next(
+                v for v, l in line_assignments.items() if l in target_lines
+            )
+            with self.assertRaises(ValueError):
+                shim_tds_flux_biases(
+                    bqm,
+                    sampler,
+                    target_lines,
+                    detector_lines,
+                    exp_feature_line_info,
+                    sampling_params=sampling_params,
+                    td_shim_type="detector_only",
+                    shimmed_variables={target_qubit},
+                )
+
+    def test_shim_tds_flux_biases_sequential_cross_role_shimmed_variables(self):
+        """``"sequential"`` accepts a cross-role ``shimmed_variables`` (target and
+        detector): used in full for the line-wise stage, then narrowed to the
+        detector subset for the detector-only second stage."""
+        (
+            sampler,
+            bqm,
+            target_lines,
+            detector_lines,
+            line_assignments,
+            sampling_params,
+            exp_feature_line_info,
+            target_c,
+        ) = self._tds_setup()
+        target_qubit = next(
+            v for v, l in line_assignments.items() if l in target_lines
+        )
+        detector_qubit = next(
+            v for v, l in line_assignments.items() if l in detector_lines
+        )
+
+        _, fb_history, mag_history = shim_tds_flux_biases(
+            bqm,
+            sampler,
+            target_lines,
+            detector_lines,
+            exp_feature_line_info,
+            sampling_params=sampling_params,
+            num_steps=2,
+            td_shim_type="sequential",
+            shimmed_variables={target_qubit, detector_qubit},
+        )
+        self.assertIn(target_qubit, fb_history)
+        self.assertIn(detector_qubit, fb_history)
+        # Target shimmed only in the line-wise stage; detector also in stage two.
+        self.assertGreater(
+            len(fb_history[detector_qubit]), len(fb_history[target_qubit])
+        )
+
     def test_shim_linewise_flux_biases_default_sampling_params(self):
         """``sampling_params=None`` falls back to internally built defaults."""
         (
