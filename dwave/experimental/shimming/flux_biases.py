@@ -351,6 +351,7 @@ def shim_flux_biases(
     if bqm.vartype is dimod.BINARY:
         bqm = bqm.change_vartype(dimod.SPIN, inplace=False)
 
+    unshimmed_variables: set[Variable] = set()
     if symmetrize_experiments:
         unshimmed_variables = set(bqm.variables).difference(shimmed_variables)
         if flux_biases_break_symmetry:
@@ -400,6 +401,7 @@ def shim_flux_biases(
     use_hypergradient = learning_schedule is None
     if not use_hypergradient:
         num_steps = len(learning_schedule)
+        alpha = 0.0  # replaced each step from learning_schedule
     else:
         if alpha is None:
             alpha = qubit_freezeout_alpha_phi()
@@ -411,6 +413,9 @@ def shim_flux_biases(
     if convergence_test is None:
         convergence_test = lambda x, y: False
 
+    # Shaped like magnetizations; overwritten each hypergradient step before it
+    # is read (only used when step > 0).
+    last_mags = np.zeros(len(shimmed_variables))
     flux_bias_history = {v: [flux_biases[v]] for v in shimmed_variables}
     mag_history = {v: [] for v in bqm.variables}
     for step in range(num_steps):
@@ -581,9 +586,10 @@ def shim_linewise_flux_biases(
     _sampling_params = deepcopy(sampling_params)
     _sampling_params.pop("x_anneal_schedules", None)
     _sampling_params.pop("x_polarizing_schedule", None)
-    flux_biases = _sampling_params.pop("flux_biases", None)
-    if flux_biases is None:
-        flux_biases = [0] * sampler.properties["num_qubits"]
+    popped_fb = _sampling_params.pop("flux_biases", None)
+    flux_biases: list[Bias] = (
+        [0] * sampler.properties["num_qubits"] if popped_fb is None else popped_fb
+    )
     if shimmed_variables is None:
         shimmed_variables = list(bqm.variables)
     elif not set(shimmed_variables).issubset(bqm.variables):
