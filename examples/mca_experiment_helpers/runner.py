@@ -4,6 +4,9 @@ This thin orchestrator threads a shared
 :class:`~mca_experiment_helpers.common.MCAContext`
 through the individual ``stage_*`` modules, preserving the original sequential
 data flow while keeping each stage in its own small, readable script.
+
+Caching (the ``--use-cache`` default) is described under ``cache_str`` in
+:func:`main`.
 """
 
 from typing import Literal
@@ -208,12 +211,25 @@ def main(
         save_figures:
             When True, save generated figures to a ``figures`` folder.
         cache_str:
-            A unique experimental identifier. If not None, a directory
-            cache/ is created which is populated with experimental data. The cache
-            is checked for compatible experimental data before running an experiment,
-            and if compatible data is present the data is reloaded rather than
-            running new jobs through the client. When it is not present, the
-            solver is created on demand if not already available.
+            A unique experimental identifier (the ``--use-cache`` default; see
+            ``_get_experiment_id``), or None to disable caching, in which case
+            nothing in ``cache/`` is read or written and every stage runs on the
+            QPU. Otherwise ``cache/`` is created and each stage looks for its own
+            file before running: if present, its data are reloaded without
+            running QPU jobs; if not, the stage runs and saves its result. In
+            stage order the files are ``qpu_<id>.pkl`` (solver properties),
+            ``emb_<hash>.pkl`` (embeddings, keyed only by the parameters that
+            affect the search), ``FB_<id>.npy``, ``source_decoupling_<id>.pkl``,
+            ``AO_It0_<id>.npy``, ``source_decoupling_refined_<id>.pkl``,
+            ``refine_delays_mags_<id>.npy``, ``AO_It1_<id>.npy`` and
+            ``LoopExperiment_<id>.npy``. The solver is contacted at the start
+            only when ``qpu_<id>.pkl`` is missing; otherwise it is created on
+            demand by the first stage that must sample, so a fully cached run
+            makes no client calls. Caches are keyed by parameters alone and are
+            not invalidated when an upstream stage is repeated or the physical
+            solver changes (the default solver is not distinguished). Delete a
+            stage's file, and those of later stages, to repeat it, or the
+            ``cache/`` directory to start afresh.
     Raises:
         ValueError: If the delay/fit window is empty (too small for
             ``target_A``); if neither or both of ``target_c`` and ``target_A``

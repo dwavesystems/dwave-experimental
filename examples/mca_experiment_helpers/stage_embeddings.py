@@ -101,16 +101,19 @@ def run_embeddings(
                 sort_keys=True,
             ).encode("utf-8")
         ).hexdigest()[:8]
-    else:
-        embedding_cache_str = None
-
-    fn_cache = f"cache/emb_{embedding_cache_str}.pkl"
-    if cache_str:
+        fn_cache = f"cache/emb_{embedding_cache_str}.pkl"
         os.makedirs(os.path.dirname(fn_cache), exist_ok=True)
+    else:
+        fn_cache = None  # Caching disabled: no cache file is sought or written.
 
-    if cache_str and os.path.isfile(fn_cache):
+    if fn_cache is not None and os.path.isfile(fn_cache):
         with open(fn_cache, "rb") as f:
             embs_experiment = pickle.load(f)
+        if len(embs_experiment) == 0:
+            raise RuntimeError(
+                f"The cached embeddings in {fn_cache} are empty; delete the file "
+                "to repeat the embedding search."
+            )
     else:
         subgraph_kwargs = dict(
             node_labels=(Snode_to_tds, Tnode_to_tds),
@@ -130,7 +133,7 @@ def run_embeddings(
             raise RuntimeError(
                 "No embeddings were found, try a larger embedding_timeout, simpler target (smaller or no num_loops) or new line combination."
             )
-        else:
+        if fn_cache is not None:
             with open(fn_cache, "wb") as f:
                 pickle.dump(embs_experiment, f)
 

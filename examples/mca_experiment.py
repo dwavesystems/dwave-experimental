@@ -169,9 +169,16 @@ if __name__ == "__main__":
         action=argparse.BooleanOptionalAction,
         default=True,
         help=(
-            "Cache and reload experiment artifacts keyed by CLI parameters "
-            "(default). Use --no-use-cache to disable. "
-            "If solver graph_id changes, cached embeddings may be invalid."
+            "Cache stage results in cache/, keyed by an identifier hashed from the "
+            "CLI parameters. Enabled by default; --no-use-cache reads and writes "
+            "nothing and runs every stage on the QPU. Each stage first looks for its "
+            "own cache file and, if found, reloads it instead of running QPU jobs; "
+            "otherwise it runs and saves the result. Cached solver properties are "
+            "used without contacting the client; the solver is created only when a "
+            "stage needs new data. Caches are not invalidated automatically: delete "
+            "a stage's file and those of later stages to repeat them, or the cache/ "
+            "directory to start afresh. Cached data may be invalid if the physical "
+            "solver changes (the default solver is not distinguished)."
         ),
     )
     parser.add_argument(
