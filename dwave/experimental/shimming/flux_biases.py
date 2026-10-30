@@ -707,6 +707,10 @@ def shim_tds_flux_biases(
     calling shim_flux_biases with `symmetrize_experiments=False`. Some methods generalize
     but the aim is to protect against strange edge cases.
 
+    Source line qubits are decoupled from the target by holding them at small
+    ``c`` (the rounded ``minC``). This models the expected state at equilibrium,
+    long after the source has depolarized.
+
     Detector only method:
     The source qubits, and qubits on unused lines, can be decoupled (set to Cmin).
     Then assuming a target consists of degenerate qubits, the detected magnetization
