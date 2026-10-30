@@ -460,7 +460,6 @@ class FluxBiases(unittest.TestCase):
                     exp_feature_line_info,
                     sampling_params=sp,
                     num_steps=2,
-                    symmetrize_experiments=False,
                     target_c=target_c,
                 )
 
@@ -497,7 +496,6 @@ class FluxBiases(unittest.TestCase):
             exp_feature_line_info,
             sampling_params=sampling_params,
             num_steps=2,
-            symmetrize_experiments=False,
             shimmed_variables=shimmed_variables,
         )
 
@@ -529,7 +527,6 @@ class FluxBiases(unittest.TestCase):
             exp_feature_line_info,
             sampling_params=sampling_params,
             num_steps=1,
-            symmetrize_experiments=False,
             shimmed_variables=shimmed_variables,
             td_shim_type="alternating",
             by_line_pair=True,
@@ -562,7 +559,6 @@ class FluxBiases(unittest.TestCase):
             exp_feature_line_info,
             sampling_params=sampling_params,
             num_steps=2,
-            symmetrize_experiments=False,
             td_shim_type="detector_only",
         )
         detector_vars = {
@@ -593,7 +589,6 @@ class FluxBiases(unittest.TestCase):
             detector_lines,
             exp_feature_line_info,
             sampling_params=sampling_params,
-            symmetrize_experiments=False,
             td_shim_type="by_line_quench",
         )
         self.assertIsInstance(flux_biases, list)
@@ -626,7 +621,6 @@ class FluxBiases(unittest.TestCase):
             exp_feature_line_info,
             sampling_params=sampling_params,
             num_steps=2,
-            symmetrize_experiments=False,
             td_shim_type="sequential",
         )
         self.assertSetEqual(set(fb_history.keys()), set(bqm.variables))

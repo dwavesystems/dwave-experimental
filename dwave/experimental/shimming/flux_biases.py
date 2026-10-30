@@ -302,11 +302,19 @@ def shim_flux_biases(
     # graph-restricted Boltzmann machines, we should modify our plugin for this
     # purpose.
 
+    # Preserve the caller's dict for the optional in-place flux_biases update;
+    # all internal mutation happens on a copy so the only caller-visible change
+    # is the flux_biases assignment performed at the end.
+    caller_sampling_params = sampling_params
     if sampling_params is None:
         # No caller dict to mutate, so the in-place option is ignored.
         sampling_params = {}
         sampling_params_in_place = False
-    elif not sampling_params_in_place:
+    elif sampling_params_updates is not None:
+        # Each iteration applies sampling_params.update(spu), which would
+        # overwrite caller keys; deep copy so only flux_biases is written back.
+        sampling_params = deepcopy(sampling_params)
+    else:
         # Shallow copy to avoid mutating the caller's dict; initial_state is
         # copied because it is negated in place during symmetrization.
         sampling_params = dict(sampling_params)
@@ -319,13 +327,10 @@ def shim_flux_biases(
         flux_biases = sampling_params.pop("flux_biases")
         if len(flux_biases) != sampler.properties["num_qubits"]:
             raise ValueError("flux_biases length incompatible with the sampler")
-        if not sampling_params_in_place:
-            # Avoid editing the caller's flux_biases list.
-            flux_biases = deepcopy(flux_biases)
-        pop_fb = True
+        # Copy so the in-place arithmetic below never mutates a caller-owned list.
+        flux_biases = deepcopy(flux_biases)
     else:
         flux_biases = [0] * sampler.properties["num_qubits"]
-        pop_fb = False
 
     if shimmed_variables is None:
         if exp_weights_per_update is not None:
@@ -470,8 +475,8 @@ def shim_flux_biases(
             flux_biases[v] -= alpha * exp_av_mags[v]
             flux_bias_history[v].append(flux_biases[v])
 
-    if pop_fb:
-        sampling_params["flux_biases"] = flux_biases
+    if sampling_params_in_place and caller_sampling_params is not None:
+        caller_sampling_params["flux_biases"] = flux_biases
 
     return flux_biases, flux_bias_history, mag_history
 
@@ -502,7 +507,11 @@ def shim_linewise_flux_biases(
     lines: Iterable[int] | None = None,
     target_c: float | None = None,
     sampling_params_in_place: bool = False,
-    **kwargs,
+    learning_schedule: Sequence[float] | None = None,
+    convergence_test: Callable[[dict, dict], bool] | None = None,
+    beta_hypergradient: float = 0.4,
+    num_steps: int = 10,
+    alpha: float | None = None,
 ) -> tuple[list[Bias], dict, dict]:
     """Shim flux_biases by per-line quench
 
@@ -533,10 +542,11 @@ def shim_linewise_flux_biases(
             :ref:`flux biases <parameter_qpu_flux_biases>` updated to the
             shimmed values. Default is ``True``. Ignored when
             ``sampling_params`` is ``None``.
-        **kwargs: Additional keyword arguments passed through to
-            :func:`.shim_flux_biases`, such as ``learning_schedule``,
-            ``convergence_test``, ``beta_hypergradient``, ``num_steps``, and
-            ``alpha``.
+        learning_schedule: Passed through to :func:`.shim_flux_biases`.
+        convergence_test: Passed through to :func:`.shim_flux_biases`.
+        beta_hypergradient: Passed through to :func:`.shim_flux_biases`.
+        num_steps: Passed through to :func:`.shim_flux_biases`.
+        alpha: Passed through to :func:`.shim_flux_biases`.
 
     Returns:
         A tuple of three parts mirroring the return value of
@@ -596,7 +606,11 @@ def shim_linewise_flux_biases(
             sampling_params=_sampling_params,
             symmetrize_experiments=False,
             shimmed_variables=line_shimmed_variables,
-            **kwargs,
+            learning_schedule=learning_schedule,
+            convergence_test=convergence_test,
+            beta_hypergradient=beta_hypergradient,
+            num_steps=num_steps,
+            alpha=alpha,
         )
         _extend_history(dict_fb_all, dict_fb)
         _extend_history(dict_mag_all, {k: dict_mag[k] for k in dict_fb})
@@ -631,7 +645,6 @@ def shim_tds_flux_biases(
     source_lines: Iterable[int] | None = None,
     by_line_pair: bool = True,
     sampling_params: dict[str, Any] | None = None,
-    symmetrize_experiments: bool = False,
     shimmed_variables: Collection[Variable] | None = None,
     decouple_tar_and_det: bool | None = None,
     target_c: float | None = None,
@@ -640,13 +653,23 @@ def shim_tds_flux_biases(
         "by_line_quench", "detector_only", "sequential", "alternating"
     ] = "alternating",
     sampling_params_in_place: bool = True,
-    **kwargs,
+    learning_schedule: Sequence[float] | None = None,
+    convergence_test: Callable[[dict, dict], bool] | None = None,
+    beta_hypergradient: float = 0.4,
+    num_steps: int = 10,
+    alpha: float | None = None,
 ) -> tuple[list[Bias], dict, dict]:
     """Shim flux biases on target, detector and source annealing lines.
 
     Several tds shims are supported on the basis of unsourced (equilibrium)
     measurements.
     Fitting shims to a time series model is an alternative not supported.
+
+    The tds methods assume flux biases serve the purpose of calibration
+    refinement only and do not break the symmetry of the system. The methods
+    operate on a strictly :math:`Z_2` symmetric system; this is enforced by
+    safely popping any ``x_polarizing_schedule`` from ``sampling_params`` before
+    calling shim_flux_biases with `symmetrize_experiments=False`.
 
     Detector only method:
     The source qubits, and qubits on unused lines, can be decoupled (set to Cmin).
@@ -734,12 +757,6 @@ def shim_tds_flux_biases(
             under the role swap), as produced by
             :func:`~dwave.experimental.multicolor_anneal.make_tds_x_anneal_schedules`
             with ``use_common_bounds=True``.
-        symmetrize_experiments: If ``True``, symmetry-breaking elements in the
-            experiment are inverted for a second run and magnetizations are
-            averaged. Passed through to :func:`.shim_flux_biases` for the
-            optimization. Default is ``False``. Must be ``False`` when
-            ``td_shim_type="alternating"``, which instead resolves symmetry by
-            alternating the detector and target roles.
         shimmed_variables: Variables to shim. By default, variables assigned to
             ``detector_lines`` (and, for the ``"alternating"`` strategy, also
             ``target_lines``). If provided, they must be a subset of variables
@@ -760,17 +777,17 @@ def shim_tds_flux_biases(
             (shim detector qubits only), ``"by_line_quench"`` (shim every line
             independently by single-line quench), ``"sequential"`` (a line-wise
             quench followed by the detector-only shim), or ``"alternating"``
-            (alternate the detector and target roles to shim both). The
-            ``"alternating"`` strategy requires ``symmetrize_experiments=False``.
+            (alternate the detector and target roles to shim both).
         sampling_params_in_place: If ``True``, the provided ``sampling_params``
             is mutated in place, with its
             :ref:`flux biases <parameter_qpu_flux_biases>` updated to the final
             shimmed values. Default is ``True``. Ignored when
             ``sampling_params`` is ``None``.
-        **kwargs: Additional keyword arguments passed through to
-            :func:`.shim_flux_biases`, such as ``learning_schedule``,
-            ``convergence_test``, ``beta_hypergradient``, ``num_steps``, and
-            ``alpha``.
+        learning_schedule: Passed through to :func:`.shim_flux_biases`.
+        convergence_test: Passed through to :func:`.shim_flux_biases`.
+        beta_hypergradient: Passed through to :func:`.shim_flux_biases`.
+        num_steps: Passed through to :func:`.shim_flux_biases`.
+        alpha: Passed through to :func:`.shim_flux_biases`.
     Returns:
         A tuple of three parts mirroring the return value of
         :func:`.shim_flux_biases`:
@@ -792,14 +809,6 @@ def shim_tds_flux_biases(
     if source_lines is not None:
         source_lines = list(source_lines)
         _check_no_duplicate_lines("source_lines", source_lines)
-
-    if td_shim_type == "alternating" and symmetrize_experiments:
-        # Alternation resolves symmetry via the detector-role weighting, which
-        # assumes one experiment per role; per-experiment symmetrization would
-        # double the experiment count and is incompatible with those weights.
-        raise ValueError(
-            "td_shim_type='alternating' requires symmetrize_experiments=False."
-        )
 
     line_assignments = line_assignments_from_feature_info(exp_feature_line_info)
 
@@ -870,7 +879,11 @@ def shim_tds_flux_biases(
                 shimmed_variables=shimmed_variables,
                 lines=tds_lines,
                 target_c=target_c,
-                **kwargs,
+                learning_schedule=learning_schedule,
+                convergence_test=convergence_test,
+                beta_hypergradient=beta_hypergradient,
+                num_steps=num_steps,
+                alpha=alpha,
             )
             if td_shim_type == "by_line_quench":
                 if (
@@ -943,11 +956,14 @@ def shim_tds_flux_biases(
                         detector_lines={detector_line},
                         by_line_pair=False,
                         sampling_params=sampling_params,
-                        symmetrize_experiments=symmetrize_experiments,
                         shimmed_variables=shimmed_variables_dt,
                         decouple_tar_and_det=True,  # decouples this pair
                         exp_feature_line_info=exp_feature_line_info,
-                        **kwargs,
+                        learning_schedule=learning_schedule,
+                        convergence_test=convergence_test,
+                        beta_hypergradient=beta_hypergradient,
+                        num_steps=num_steps,
+                        alpha=alpha,
                     )
                     _extend_history(dict_fb_all, dict_fb)
                     _extend_history(dict_mag_all, {k: dict_mag[k] for k in dict_fb})
@@ -1011,11 +1027,15 @@ def shim_tds_flux_biases(
         bqm,
         sampler,
         sampling_params=sampling_params,
-        symmetrize_experiments=symmetrize_experiments,
+        symmetrize_experiments=False,
         sampling_params_updates=sampling_params_updates,
         exp_weights_per_update=exp_weights_per_update,
         shimmed_variables=shimmed_variables,
-        **kwargs,
+        learning_schedule=learning_schedule,
+        convergence_test=convergence_test,
+        beta_hypergradient=beta_hypergradient,
+        num_steps=num_steps,
+        alpha=alpha,
     )
     _extend_history(dict_fb_all, dict_fb)
     _extend_history(dict_mag_all, dict_mag)
