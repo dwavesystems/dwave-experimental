@@ -1039,16 +1039,16 @@ def shim_tds_flux_biases(
                     )
                     _extend_history(dict_fb_all, dict_fb)
                     _extend_history(dict_mag_all, {k: dict_mag[k] for k in dict_fb})
-            if flux_biases is None:
-                # No pair produced a shim (all empty); no flux biases to return.
-                flux_biases = [0] * sampler.properties["num_qubits"]
-            if (
-                sampling_params_in_place
-                and caller_sampling_params is not None
-                and flux_biases is not None
-            ):
-                caller_sampling_params["flux_biases"] = flux_biases
-            return flux_biases, dict_fb_all, dict_mag_all
+            # A pair produces no shim only if every pair is empty (unreachable
+            # when a target variable is shimmed); fall back to zero flux biases.
+            final_fb: list[Bias] = (
+                [0] * sampler.properties["num_qubits"]
+                if flux_biases is None
+                else flux_biases
+            )
+            if sampling_params_in_place and caller_sampling_params is not None:
+                caller_sampling_params["flux_biases"] = final_fb
+            return final_fb, dict_fb_all, dict_mag_all
         else:
             # Alternate between detector and target quench. The swap below
             # applies one representative line's schedule to every line of the
