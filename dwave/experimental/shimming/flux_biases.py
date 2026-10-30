@@ -401,7 +401,6 @@ def shim_flux_biases(
     use_hypergradient = learning_schedule is None
     if not use_hypergradient:
         num_steps = len(learning_schedule)
-        alpha = 0.0  # replaced each step from learning_schedule
     else:
         if alpha is None:
             alpha = qubit_freezeout_alpha_phi()
@@ -409,6 +408,10 @@ def shim_flux_biases(
             raise ValueError("beta_hypergradient should be in the (0,1) interval")
         if not (alpha > 0):
             raise ValueError("alpha should be positively valued")
+
+    # Concrete float learning rate: the hypergradient initial rate, or set per
+    # step from learning_schedule.
+    rate: float = alpha if alpha is not None else 0.0
 
     if convergence_test is None:
         convergence_test = lambda x, y: False
@@ -471,18 +474,18 @@ def shim_flux_biases(
                     # When magnetization norms are zero the paper method is ill defined.
                     # One could choose to convergence test to exit at zero magnetization
                     # as an alternative.
-                    alpha *= 1 - beta_hypergradient
+                    rate *= 1 - beta_hypergradient
                 else:
-                    alpha *= (
+                    rate *= (
                         1
                         + beta_hypergradient * np.dot(magnetizations, last_mags) / norm
                     )
             last_mags = magnetizations
         else:
-            alpha = learning_schedule[step]
+            rate = learning_schedule[step]
 
         for v in shimmed_variables:
-            flux_biases[v] -= alpha * exp_av_mags[v]
+            flux_biases[v] -= rate * exp_av_mags[v]
             flux_bias_history[v].append(flux_biases[v])
 
     if sampling_params_in_place and caller_sampling_params is not None:
@@ -1036,6 +1039,9 @@ def shim_tds_flux_biases(
                     )
                     _extend_history(dict_fb_all, dict_fb)
                     _extend_history(dict_mag_all, {k: dict_mag[k] for k in dict_fb})
+            if flux_biases is None:
+                # No pair produced a shim (all empty); no flux biases to return.
+                flux_biases = [0] * sampler.properties["num_qubits"]
             if (
                 sampling_params_in_place
                 and caller_sampling_params is not None
