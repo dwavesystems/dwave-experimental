@@ -32,8 +32,8 @@ def run_embeddings(
     solver = ctx.solver_name
     max_num_embeddings = ctx.max_num_embeddings
     seed = ctx.seed
-    Jtd = ctx.Jtd
-    Jts = ctx.Jts
+    J_td = ctx.J_td
+    J_ts = ctx.J_ts
     line_color = ctx.line_color
     save_figures = ctx.save_figures
 
@@ -68,11 +68,6 @@ def run_embeddings(
     # Embeddings are reprocessed, to be treated as independent.
     S, Snode_to_tds = make_tds_graph(target_graph)
     if loop_length is not None:
-        if not (loop_length >= 4 and loop_length % 2 == 0):
-            raise ValueError(
-                "loop_length, when specified, must be an even number greater than or equal to 4."
-            )
-
         target_graph_experiment = nx.Graph()
         target_graph_experiment.add_nodes_from(range(loop_length))
         target_graph_experiment.add_edges_from(
@@ -170,8 +165,8 @@ def run_embeddings(
 
     bqm = dimod.BinaryQuadraticModel("SPIN").from_ising(
         {n: 0 for n in S.nodes()},
-        {e: Jtd for e in S.edges() if any(Snode_to_tds[v] == "detector" for v in e)}
-        | {e: Jts for e in S.edges() if any(Snode_to_tds[v] == "source" for v in e)},
+        {e: J_td for e in S.edges() if any(Snode_to_tds[v] == "detector" for v in e)}
+        | {e: J_ts for e in S.edges() if any(Snode_to_tds[v] == "source" for v in e)},
     )  # bqm restricted to decoupled source and target nodes
 
     if create_plot:

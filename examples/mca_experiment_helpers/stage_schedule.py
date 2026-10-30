@@ -4,7 +4,16 @@ These parameterize the anneal-offset refinement and the accuracy threshold for
 x_schedule_delay refinements.
 """
 
+import csv
+
 from .common import *
+
+
+def _load_schedule(fn: str) -> dict[str, np.ndarray]:
+    """Read an annealing-schedule CSV into one float array per column header."""
+    with open(fn, newline="") as f:
+        rows = list(csv.DictReader(f))
+    return {key: np.array([float(row[key]) for row in rows]) for key in rows[0]}
 
 
 def run_schedule(
@@ -45,11 +54,9 @@ def run_schedule(
         print(
             "For calibration refinement of anneal offsets, dA/dc must be a reasonable match in the vicinity of target_A."
         )
-        qpu_anneal_schedule = pd.read_excel(
-            schedule_fn, sheet_name="Fast-Annealing Schedule"
-        )
+        qpu_anneal_schedule = _load_schedule(schedule_fn)
 
-        delta_vs_s = qpu_anneal_schedule[::-1]
+        delta_vs_s = {key: values[::-1] for key, values in qpu_anneal_schedule.items()}
         if create_plot:
             plt.figure("Schedule")
             plt.title("Annealing Schedule")

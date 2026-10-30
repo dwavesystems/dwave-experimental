@@ -30,7 +30,8 @@ if __name__ == "__main__":
         description=(
             "Target-detector-source model embedding demo with optional flux-bias, "
             "anneal offset and x_schedule_delay refinement. "
-            "Higher accuracy methods are possible with experimental insight and enhanced data."
+            "Higher accuracy methods are possible with experimental insight and "
+            "enhanced data."
         )
     )
     # Stage control: presence/absence of refinement stages.
@@ -46,13 +47,17 @@ if __name__ == "__main__":
             "by_line_quench",
         ],
         default="detector_only",
-        help="Flux-bias calibration refinement mode: 'None' disables calibration refinement; "
-        "'detector_only' refines detector qubit flux_biases to achieve zero measured magnetization; "
-        "'by_line_quench' refines flux biases on all lines by assuming the required correction can be determined by independent quenches on every line; "
+        help="Flux-bias calibration refinement mode: 'None' disables calibration "
+        "refinement; 'detector_only' refines detector qubit flux_biases to achieve "
+        "zero measured magnetization; 'by_line_quench' refines flux biases on all "
+        "lines by assuming the required correction can be determined by "
+        "independent quenches on every line; "
         "'sequential' combines by_line_quench and detector_only; "
-        "'alternating' alternates detector/target roles to refine detector and target flux_biases "
+        "'alternating' alternates detector/target roles to refine detector and "
+        "target flux_biases "
         "(but this can cause divergence, particularly at small frequencies and "
-        "when the qubit state realized by target_c varies significantly by line or qubit).",
+        "when the qubit state realized by target_c varies significantly by line or "
+        "qubit).",
     )
     parser.add_argument(
         "--refine-frequencies",
@@ -87,9 +92,10 @@ if __name__ == "__main__":
         dest="loop_length",
         type=int,
         help="Length of the loop model (even and >=4), defaulting to 16. "
-        "T-D-S systems compatible with coupled parallel unfrustrated loops are embedded. "
-        "Specifying a value 1 results in a Larmor precession demonstration for independent "
-        "T-D-S systems with no final loop experiment stage, this allows more T-D-S embeddings.",
+        "T-D-S systems compatible with coupled parallel unfrustrated loops are "
+        "embedded. Specifying a value 1 results in a Larmor precession "
+        "demonstration for independent T-D-S systems with no final loop "
+        "experiment stage, this allows more T-D-S embeddings.",
         default=16,
     )
     # Solver and matching schedule.
@@ -104,8 +110,9 @@ if __name__ == "__main__":
         "--schedule-fn",
         dest="schedule_fn",
         type=str,
-        help="Path to the annealing schedule Excel file (.xlsx). Should be matched to the solver.",
-        default="09-1323A-D_Advantage2_system4_annealing_schedule.xlsx",
+        help="Path to the annealing schedule CSV file (columns s, A(s) (GHz) and "
+        "B(s) (GHz)). Should be matched to the solver.",
+        default="09-1323A-D_Advantage2_system4_fast_annealing_schedule.csv",
     )
     # Embedding selection.
     parser.add_argument(
@@ -151,7 +158,8 @@ if __name__ == "__main__":
         dest="target_A",
         type=float,
         help="Expected qubit frequency (GHz). "
-        "(default A(target_c) such that A(target_c)=B(target_c), which is approximately 2 GHz)",
+        "(default A(target_c) such that A(target_c)=B(target_c), which is "
+        "approximately 2 GHz)",
         default=None,
     )
     # Waveform option.

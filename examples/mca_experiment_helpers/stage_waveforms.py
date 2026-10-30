@@ -29,8 +29,8 @@ def run_waveforms(ctx: MCAContext) -> MCAContext:
     target_c = ctx.target_c
     use_common_c_bounds = ctx.use_common_c_bounds
     use_overshoot = ctx.use_overshoot
-    Jts = ctx.Jts
-    Jtd = ctx.Jtd
+    J_ts = ctx.J_ts
+    J_td = ctx.J_td
     preparation_orientation = ctx.preparation_orientation
     num_reads = ctx.num_reads
     save_figures = ctx.save_figures
@@ -75,9 +75,6 @@ def run_waveforms(ctx: MCAContext) -> MCAContext:
         online = True
     if len(exp_feature_info) != 2:
         raise ValueError("Legacy format")
-    line_assignments = line_assignments_from_feature_info(
-        exp_feature_info.annealing_line_info
-    )
     num_lines = len(exp_feature_info.annealing_line_info)
     # 2/3 of lines reserved for the target (typical applications)
     if (detector_lines is None) != (source_lines is None):
@@ -111,9 +108,9 @@ def run_waveforms(ctx: MCAContext) -> MCAContext:
         target_c=target_c,
         detector_lines=detector_lines,
         source_lines=source_lines,
-        use_common_bounds=use_common_c_bounds,
+        use_common_c_bounds=use_common_c_bounds,
         use_overshoot=use_overshoot,
-        sign_polarization=-np.sign(Jts * Jtd * preparation_orientation),
+        sign_polarization=-np.sign(J_ts * J_td * preparation_orientation),
     )
     _plot_tds_schedules(
         x_polarizing_schedule,

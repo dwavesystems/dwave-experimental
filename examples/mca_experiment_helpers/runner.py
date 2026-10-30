@@ -12,7 +12,9 @@ Caching (the ``--use-cache`` default) is described under ``cache_str`` in
 from typing import Literal
 from collections.abc import Iterable
 
-from .common import MCAContext, _save_open_figures, _apply_tight_layout, plt
+from matplotlib import pyplot as plt
+
+from .common import MCAContext, _save_open_figures, _apply_tight_layout
 from . import (
     stage_target_frequency,
     stage_delays,
@@ -32,10 +34,10 @@ def main(
     refine_frequencies: bool = True,
     verify_anneal_offsets: bool = True,
     refine_delays: bool = True,
-    loop_length: int | None = 16,
+    loop_length: int = 16,
     # Solver and matching schedule.
     solver_name: dict | str | None = None,
-    schedule_fn: str = "09-1323A-D_Advantage2_system4_annealing_schedule.xlsx",
+    schedule_fn: str = "09-1323A-D_Advantage2_system4_fast_annealing_schedule.csv",
     # Embedding selection.
     detector_lines: Iterable[int] | None = None,
     source_lines: Iterable[int] | None = None,
@@ -48,9 +50,9 @@ def main(
     target_B: float | None = None,
     dAdc: float | None = None,
     # Couplings.
-    Jtd: float = 1.0,
-    Jts: float = 1.0,
-    Jtt: float = -0.1,
+    J_td: float = 1.0,
+    J_ts: float = 1.0,
+    J_tt: float = -0.1,
     # Decoupling-delay and anneal-offset tuning.
     t_decoupled: float | None = None,
     by_det_src_pair: bool = True,
@@ -98,7 +100,7 @@ def main(
             line. When "sequential" (by_line_quench followed by detector_only) or
             "alternating", flux_biases are modified on both target and
             detector qubits. The "alternating" method can diverge, particularly
-            for fast quenches of sources and detectors, large |Jtd| or |Jts|,
+            for fast quenches of sources and detectors, large |J_td| or |J_ts|,
             and small target_A. See :func:`~dwave.experimental.shimming.shim_tds_flux_biases`.
         refine_frequencies:
             When True (default), estimate and apply per-qubit anneal_offsets so that
@@ -116,14 +118,17 @@ def main(
             detectors/sources on a per-qubit basis. When False, this refinement
             stage is skipped.
         loop_length: When a positive (even, >=4) value is given, target qubits are
-            embedded in unfrustrated loops of this length coupled with ``Jtt``
-            (defaults to 16). Pass ``1`` (or ``None``) to use independent T-D-S
-            systems without a loop constraint (Larmor precession example), which
-            also skips the final loop experiment stage.
+            embedded in unfrustrated loops of this length coupled with ``J_tt``
+            (defaults to 16). Loop length is constrained to be even, since these
+            are more easily embedded after reserving qubits for detectors and sources.
+            Pass ``1`` to use independent T-D-S systems without a loop constraint 
+            (Larmor precession example), which also skips the final loop experiment stage.
         solver_name:
             Name of the solver, or dictionary of characteristics.
-        schedule_fn: A schedule file that is used to estimate an appropriate sampling interval for delay
-            time and an appropriate scale for anneal_offset synchronization. This should be matched to the
+        schedule_fn: A CSV file of the fast annealing schedule, with columns
+            ``s``, ``A(s) (GHz)`` and ``B(s) (GHz)``. It is used to estimate an
+            appropriate sampling interval for delay time and an appropriate scale
+            for anneal_offset synchronization. This should be matched to the
             solver.
         detector_lines:
             An iterable of integer indices of the detector lines.
@@ -153,15 +158,15 @@ def main(
             Approximate rate of change of A(c) with the normalized control bias c
             near target_c (GHz per unit c), used to convert a frequency discrepancy
             into an anneal offset. If None, it is estimated from the schedule file.
-        Jtd: The coupling strength between target and detector qubits. The AFM
+        J_td: The coupling strength between target and detector qubits. The AFM
             value maximizing the effective quench rate is used by default; an FM
             value (-2.0) can achieve higher quench rates still but at risk of
             enhanced control errors.
-        Jts: The coupling strength between target and source qubits. The AFM
+        J_ts: The coupling strength between target and source qubits. The AFM
             value maximizing the effective quench rate is used by default; an FM
             value (-2.0) can achieve higher quench rates still but at risk of
             enhanced control errors.
-        Jtt: The coupling strength between coupled target qubits. Only used when
+        J_tt: The coupling strength between coupled target qubits. Only used when
             ``loop_length`` is specified. A sufficiently weak coupling limit
             [B(s_target) J_tt << A(s_target)] is required for independent sourcing
             and detection of qubits.
@@ -198,9 +203,12 @@ def main(
             when building the multi-color annealing schedules. By default this is True
             to maximize the quench rate on source and detector.
         use_common_c_bounds:
-            When True, align the c-bounds of the generated schedules across annealing lines.
-            This ensures quench rates are nominally independent of the line choices,
-            and is required by some non-default shimming methods.
+            When True (default), align the c-bounds of the generated schedules across
+            annealing lines. This ensures quench rates are nominally independent of the
+            line choices, which is risky to leave to vary, and is required by some
+            non-default shimming methods. The cost is of order 1-3% in quench rate
+            relative to the per-line maxima. See
+            :func:`~dwave.experimental.multicolor_anneal.make_tds_x_schedules`.
         num_reads:
             The number of reads to perform for each measurement.
         T2:
@@ -233,8 +241,8 @@ def main(
     Raises:
         ValueError: If the delay/fit window is empty (too small for
             ``target_A``); if neither or both of ``target_c`` and ``target_A``
-            are specified; or if ``exp_feature_info`` has an unexpected (legacy)
-            format.
+            are specified; if ``loop_length`` is neither 1 nor an even integer
+            >= 4; or if ``exp_feature_info`` has an unexpected (legacy) format.
         RuntimeError: If the solver cannot be created. Cached solver properties
             are used without contacting the client; when a stage's cache
             misses, the solver is created on demand (see ``connect_qpu``) with
@@ -243,11 +251,12 @@ def main(
             possible)".
     """
 
-    if loop_length == 1:
-        # Sentinel for "no loop constraint": use independent T-D-S systems.
-        loop_length = None
-    elif not (loop_length > 2):
-        raise ValueError("loop_length should be 1 or atleast 3")
+    if not isinstance(loop_length, int) or not (
+        loop_length == 1 or (loop_length >= 4 and loop_length % 2 == 0)
+    ):
+        raise ValueError("loop_length should be 1 (no loop) or an even integer >= 4.")
+    # 1 is the sentinel for "no loop constraint": use independent T-D-S systems.
+    ctx_loop_length = None if loop_length == 1 else loop_length
 
     if fit_window is None:
         fit_window = T2
@@ -291,7 +300,7 @@ def main(
         refine_frequencies=refine_frequencies,
         verify_anneal_offsets=verify_anneal_offsets,
         refine_delays=refine_delays,
-        loop_length=loop_length,
+        loop_length=ctx_loop_length,
         solver_name=solver_name,
         schedule_fn=schedule_fn,
         detector_lines=detector_lines,
@@ -303,9 +312,9 @@ def main(
         target_c=target_c,
         target_B=target_B,
         dAdc=dAdc,
-        Jtd=Jtd,
-        Jts=Jts,
-        Jtt=Jtt,
+        J_td=J_td,
+        J_ts=J_ts,
+        J_tt=J_tt,
         t_decoupled=t_decoupled,
         by_det_src_pair=by_det_src_pair,
         dt_dc=dt_dc,

@@ -644,7 +644,7 @@ def verify_schedules(
 
 def parse_exp_feature_line_info(
     exp_feature_line_info: list[LineFeatureInfo],
-    use_common_bounds: bool,
+    use_common_c_bounds: bool,
     symmetrize_c_bounds: bool,
     sigfigs: int = 3,
     standard_01_c_range: bool = False,
@@ -672,7 +672,7 @@ def parse_exp_feature_line_info(
             dictionaries. Typically the ``annealing_line_info`` field of the
             structure returned
             by :func:`~dwave.experimental.multicolor_anneal.api.get_properties`.
-        use_common_bounds: When True, replace per-line bounds with values that
+        use_common_c_bounds: When True, replace per-line bounds with values that
             are jointly valid across all lines. This applies to time
             steps as well as c-ranges. False allows faster quench rates for
             high performance applications, but delays need to be considered
@@ -682,7 +682,7 @@ def parse_exp_feature_line_info(
             common-bound reduction.
         sigfigs: Significant figures used when rounding C and overshoot bounds.
         standard_01_c_range: When True, C and C-overshoot ranges are set to
-            ``[0, 1]`` for all lines. In this mode, ``use_common_bounds`` and
+            ``[0, 1]`` for all lines. In this mode, ``use_common_c_bounds`` and
             ``symmetrize_c_bounds`` are ignored for C ranges.
 
     Returns:
@@ -699,7 +699,7 @@ def parse_exp_feature_line_info(
         ValueError: If any line has non-ordered bounds after rounding,
             i.e. if ``minCOvershoot <= minC < maxC <= maxCOvershoot`` is not
             satisfied.
-        ValueError: If ``use_common_bounds`` is requested but no compatible
+        ValueError: If ``use_common_c_bounds`` is requested but no compatible
             shared ``minC/maxC`` or ``minCOvershoot/maxCOvershoot`` interval
             exists across lines.
     """
@@ -714,7 +714,7 @@ def parse_exp_feature_line_info(
         line: efi.get("holdOvershootFor", 0.0)
         for line, efi in enumerate(exp_feature_line_info)
     }
-    if use_common_bounds:
+    if use_common_c_bounds:
         # The shared step must satisfy every line, so take the largest minimum.
         min_time_step = max(min_time_steps.values())
         min_time_steps = {line: min_time_step for line in range(num_lines)}
@@ -759,7 +759,7 @@ def parse_exp_feature_line_info(
                 f"line(s) {invalid_lines}."
             )
 
-    if use_common_bounds and not standard_01_c_range:
+    if use_common_c_bounds and not standard_01_c_range:
         maxC = min(maxCs.values())
         maxCs = {line: maxC for line in range(num_lines)}
         minC = max(minCs.values())
@@ -902,7 +902,7 @@ def make_tds_x_anneal_schedules(
     detector_quench_time: float | None = None,
     source_lines: Iterable[int] = tuple(),
     source_quench_time: float | None = None,
-    use_common_bounds: bool = False,
+    use_common_c_bounds: bool = True,
     symmetrize_c_bounds: bool = False,
     use_standard_01_c_range: bool = False,
     use_overshoot: bool | dict[str, bool] = True,
@@ -966,14 +966,21 @@ def make_tds_x_anneal_schedules(
             ``detector_quench_time``. Setting ``source_quench_time`` equal to
             ``detector_quench_time`` is recommended as ``x_schedule_delays`` can
             be used for higher fidelity variation of the time difference.
-        use_common_bounds: Parameters can vary by line. When True is used,
-            a set of common compatible values define all lines. False allows
-            faster quench rates for high performance applications, but delays
-            need to be considered more carefully between lines and QPUs.
+        use_common_c_bounds: When True (default), replace per-line bounds with
+            values that are jointly valid across all lines. This applies to time
+            steps as well as c-ranges. Quench rates that vary by line risk
+            systematic differences between lines, and some methods (such as the
+            ``"alternating"`` flux-bias shim) require interchangeable line
+            waveforms. The common bounds typically cost of order 1-3% in quench
+            rate relative to the per-line maxima. False allows the fastest
+            quench on each line, which is optimal in some sense for detection,
+            but delays then need to be considered more carefully between lines
+            and QPUs.
         symmetrize_c_bounds: Whether to enforce maxC = -minC across all lines.
-            Defaults to False. False allows faster quench rates for high
-            performance applications, but delays need to be considered more
-            carefully between lines and QPUs.
+            Symmetric bounds allow the roles of detectors and sources to be
+            exchanged (waveform inversion), which some methods use. Defaults to
+            False because the associated reduction in quench rate is considered
+            too large to impose by default.
         use_standard_01_c_range: Whether to ignore exp_feature_line_info C bounds and
             use C and C-overshoot ranges ``[0, 1]`` for all lines.
         use_overshoot: Whether to use overshoot transitions for source and
@@ -1063,7 +1070,7 @@ def make_tds_x_anneal_schedules(
         holdOvershootFors,
     ) = parse_exp_feature_line_info(
         exp_feature_line_info,
-        use_common_bounds=use_common_bounds,
+        use_common_c_bounds=use_common_c_bounds,
         symmetrize_c_bounds=symmetrize_c_bounds,
         standard_01_c_range=use_standard_01_c_range,
     )
@@ -1296,7 +1303,7 @@ def make_tds_x_schedules(
     target_c: float | dict[int, float] | None = None,
     post_preparation_delay: float = 20.0,
     depolarization_time_scale: float = 2.0,
-    use_common_bounds: bool = False,
+    use_common_c_bounds: bool = True,
     use_01_c_range: bool = False,
     symmetrize_c_bounds: bool = False,
     use_overshoot: bool | dict[str, bool] = True,
@@ -1340,18 +1347,24 @@ def make_tds_x_schedules(
         depolarization_time_scale: Time scale for slow (quasi-static)
             modification of the polarizing signal and
             preparation of qubits to polarized/depolarized states.
-        use_common_bounds: When True, replace per-line bounds with values that
-            are jointly valid across all lines. This applies to time
-            steps as well as c-ranges. False allows faster quench rates for
-            high performance applications, but delays need to be considered
-            more carefully between lines and QPUs.
+        use_common_c_bounds: When True (default), replace per-line bounds with
+            values that are jointly valid across all lines. This applies to time
+            steps as well as c-ranges. Quench rates that vary by line risk
+            systematic differences between lines, and some methods (such as the
+            ``"alternating"`` flux-bias shim) require interchangeable line
+            waveforms. The common bounds typically cost of order 1-3% in quench
+            rate relative to the per-line maxima. False allows the fastest
+            quench on each line, which is optimal in some sense for detection,
+            but delays then need to be considered more carefully between lines
+            and QPUs.
         use_01_c_range: Whether to force C and C-overshoot bounds to ``[0, 1]``
             when constructing anneal schedules.
         symmetrize_c_bounds: Whether to enforce symmetric per-line C-bounds,
             i.e. ``minC = -maxC`` and ``minCOvershoot = -maxCOvershoot``.
-            Defaults to False. False allows faster quench rates for high
-            performance applications, but delays need to be considered more
-            carefully between lines and QPUs.
+            Symmetric bounds allow the roles of detectors and sources to be
+            exchanged (waveform inversion), which some methods use. Defaults to
+            False because the associated reduction in quench rate is considered
+            too large to impose by default.
         use_overshoot: Whether to use overshoot transitions for source and
             detector quenches. When a bool, the same setting is applied to both
             source and detector quenches. A mapping with keys ``"source"`` and
@@ -1397,7 +1410,7 @@ def make_tds_x_schedules(
         polarized_preparation_interval=polarized_preparation_interval,
         target_c=target_c,
         post_pwl_delay=depolarization_time_scale,
-        use_common_bounds=use_common_bounds,
+        use_common_c_bounds=use_common_c_bounds,
         use_standard_01_c_range=use_01_c_range,
         symmetrize_c_bounds=symmetrize_c_bounds,
         use_overshoot=use_overshoot,

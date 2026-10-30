@@ -22,13 +22,13 @@ def run_loop(ctx: MCAContext, *, dt_div_A_final: float = 0.25) -> MCAContext:
     stage_idx = ctx.stage_idx
     loop_length = ctx.loop_length
     target_B = ctx.target_B
-    Jtt = ctx.Jtt
+    J_tt = ctx.J_tt
     qpu = ctx.qpu
     embs_experiment = ctx.embs_experiment
     S_experiment = ctx.S_experiment
     Snode_to_tds = ctx.Snode_to_tds
-    Jtd = ctx.Jtd
-    Jts = ctx.Jts
+    J_td = ctx.J_td
+    J_ts = ctx.J_ts
     cache_str = ctx.cache_str
     target_A = ctx.target_A
     delay_min = ctx.delay_min
@@ -45,7 +45,7 @@ def run_loop(ctx: MCAContext, *, dt_div_A_final: float = 0.25) -> MCAContext:
     print()
     print(f"Stage {stage_idx}: pi/2 pulse propagation.")
     print(
-        f"Target qubits are coupled with Jtt={Jtt} in loops of length {loop_length}. "
+        f"Target qubits are coupled with J_tt={J_tt} in loops of length {loop_length}. "
     )
     print(
         "A pi/2 pulse is applied to the (loop_length//2 indexed) qubit. "
@@ -62,24 +62,24 @@ def run_loop(ctx: MCAContext, *, dt_div_A_final: float = 0.25) -> MCAContext:
     )
     if target_B is not None:
         print(
-            f"Single-site propagation occurs on a time scale  ~ 1/(2pi B(s) |Jtt|) = {1/np.abs(target_B * np.pi * 2 * Jtt):.3g}ns"
+            f"Single-site propagation occurs on a time scale  ~ 1/(2pi B(s) |J_tt|) = {1/np.abs(target_B * np.pi * 2 * J_tt):.3g}ns"
         )
     bqm_experiment = dimod.BinaryQuadraticModel("SPIN").from_ising(
         {n: 0 for n in S_experiment.nodes()},
         {
-            e: Jtd
+            e: J_td
             for e in S_experiment.edges()
             if any(Snode_to_tds[v] == "detector" for v in e)
         }
         | {
-            e: Jts
+            e: J_ts
             for e in S_experiment.edges()
             if any(
                 (Snode_to_tds[v] == "source" and v[1] == loop_length // 2) for v in e
             )
         }
         | {
-            e: Jtt
+            e: J_tt
             for e in S_experiment.edges()
             if all(Snode_to_tds[v] == "target" for v in e)
         },
