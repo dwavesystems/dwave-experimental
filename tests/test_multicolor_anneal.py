@@ -804,9 +804,39 @@ class UtilsTestWithoutClient(unittest.TestCase):
             self.assertEqual(min(values), 0.0)
             self.assertEqual(max(values), 1.0)
 
-        with self.subTest(option="use_common_bounds"):
-            schedules, _ = make_tds_x_schedules(**common, use_common_bounds=True)
+        with self.subTest(option="use_common_c_bounds"):
+            schedules, _ = make_tds_x_schedules(**common, use_common_c_bounds=True)
             self.assertEqual(len(schedules), n_lines)
+
+    def test_make_tds_x_schedules_bound_defaults(self):
+        n_lines = 4
+        annealing_line_info = self._annealing_line_info(n_lines)
+        annealing_line_info[2]["maxC"] = 2.5  # Per-line bounds would differ.
+        kwargs = dict(
+            exp_feature_info=[
+                {
+                    "minPolarizingTimeStep": 0.02,
+                    "depolarizationAnnealScheduleRequiredDelay": 2.0,
+                    "polarizationChangeAnnealScheduleRequiredDelay": 1.0,
+                },
+                annealing_line_info,
+            ],
+            target_lines={0},
+            target_c=0.5,
+            detector_lines={1},
+            source_lines={2},
+        )
+        default, _ = make_tds_x_schedules(**kwargs)
+
+        with self.subTest(option="use_common_c_bounds"):
+            common, _ = make_tds_x_schedules(**kwargs, use_common_c_bounds=True)
+            per_line, _ = make_tds_x_schedules(**kwargs, use_common_c_bounds=False)
+            self.assertEqual(default, common)
+            self.assertNotEqual(default, per_line)
+
+        with self.subTest(option="symmetrize_c_bounds"):
+            unsymmetrized, _ = make_tds_x_schedules(**kwargs, symmetrize_c_bounds=False)
+            self.assertEqual(default, unsymmetrized)
 
     def test_parse_exp_feature_line_info_common_time_step(self):
         # Lines have different minimum time steps; the common step must satisfy
@@ -818,7 +848,7 @@ class UtilsTestWithoutClient(unittest.TestCase):
 
         min_time_steps = parse_exp_feature_line_info(
             annealing_line_info,
-            use_common_bounds=True,
+            use_common_c_bounds=True,
             symmetrize_c_bounds=False,
         )[4]
 

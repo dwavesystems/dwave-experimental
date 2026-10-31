@@ -772,7 +772,7 @@ def shim_tds_flux_biases(
     otherwise). The target and detector schedules must additionally be mutually
     compatible, meaning interchangeable under the role swap, as produced by
     :func:`~dwave.experimental.multicolor_anneal.make_tds_x_anneal_schedules`
-    with ``use_common_bounds=True``.
+    with ``use_common_c_bounds=True``.
 
     To shim the source requires coupling into the target. Assuming degeneracy on
     targets and detectors is achieved. We can operate in a regime with the source
@@ -816,7 +816,7 @@ def shim_tds_flux_biases(
             detector schedules must be mutually compatible (interchangeable
             under the role swap), as produced by
             :func:`~dwave.experimental.multicolor_anneal.make_tds_x_anneal_schedules`
-            with ``use_common_bounds=True``.
+            with ``use_common_c_bounds=True``.
         sampling_params_in_place = False
         shimmed_variables: Variables to shim; validated before any sampling
             against the lines the chosen ``td_shim_type`` shims:
@@ -895,13 +895,14 @@ def shim_tds_flux_biases(
     # the line info; x_polarizing_schedule is dropped above for Z2 symmetry.
     if "x_anneal_schedules" not in sampling_params:
         sampling_params["x_anneal_schedules"] = make_tds_x_anneal_schedules(
-                    exp_feature_line_info=exp_feature_line_info,
-                    target_lines=target_lines,
-                    target_c=target_c,
-                    detector_lines=detector_lines,
-                    use_common_bounds=(td_shim_type == "alternating"),
-                    symmetrize_c_bounds=(td_shim_type == "alternating"),
-                )  # For consistency under line swapping.
+            exp_feature_line_info=exp_feature_line_info,
+            target_lines=target_lines,
+            target_c=target_c,
+            detector_lines=detector_lines,
+            use_common_c_bounds=True,
+            # Exchanging detector and target roles needs symmetric bounds.
+            symmetrize_c_bounds=(td_shim_type == "alternating"),
+        )
     if "num_reads" not in sampling_params:
         sampling_params["num_reads"] = num_reads
     if "x_disable_filtering" not in sampling_params:
