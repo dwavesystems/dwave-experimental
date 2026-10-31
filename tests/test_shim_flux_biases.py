@@ -28,6 +28,7 @@ from dwave.experimental.shimming import (
 from dwave.experimental.shimming.flux_biases import (
     shim_linewise_flux_biases,
     _extend_history,
+    _neutralize_line_schedule,
 )
 from dwave.experimental.shimming.testing import ShimmingMockSampler
 from dwave.samplers import SteepestDescentSampler
@@ -383,6 +384,14 @@ class FluxBiases(unittest.TestCase):
         self.assertNotEqual(x, y)
         self.assertEqual(1, y)
 
+    def test_neutralize_line_schedule_starts_at_zero(self):
+        schedule = [[0.0, 0.0], [2.0, 0.0], [34.0, 0.0]]
+
+        self.assertEqual(
+            _neutralize_line_schedule(schedule, -2.0, no_polarizing_schedule=True),
+            [[0.0, 0.0], [2.0, -2.0], [34.0, -2.0]],
+        )
+
     def _tds_setup(self):
         """Return a (sampler, bqm, target_lines, detector_lines,
         line_assignments, sampling_params) tuple for exercising
@@ -564,6 +573,7 @@ class FluxBiases(unittest.TestCase):
             exp_feature_line_info,
             target_c,
         ) = self._tds_setup()
+        original_schedules = deepcopy(sampling_params["x_anneal_schedules"])
 
         _, fb_history, mag_history = shim_tds_flux_biases(
             bqm,
@@ -575,6 +585,7 @@ class FluxBiases(unittest.TestCase):
             num_steps=2,
             td_shim_type="detector_only",
         )
+        self.assertEqual(sampling_params["x_anneal_schedules"], original_schedules)
         detector_vars = {
             v for v in bqm.variables if line_assignments[v] in detector_lines
         }

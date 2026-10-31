@@ -646,7 +646,7 @@ def _neutralize_line_schedule(
 ) -> AnnealSchedule:
     """Flatten a single line's schedule to a constant ``min_c`` hold.
 
-    Leading zero-valued support points are kept; from the first point whose
+    The initial point at ``t=0`` is kept at zero. From the first point whose
     value deviates from 0 onward, every value is replaced by ``min_c``. Only
     existing support points are revalued and their times are untouched, so no
     new interval of variability is introduced and every step size is preserved
@@ -657,7 +657,10 @@ def _neutralize_line_schedule(
     """
     neutralized = []
     neutralize = False
-    for t, k in schedule:
+    for i, (t, k) in enumerate(schedule):
+        if i == 0 and t == 0:
+            neutralized.append([t, 0.0])
+            continue
         if k != 0 or no_polarizing_schedule:
             neutralize = True
         neutralized.append([t, min_c if neutralize else k])
