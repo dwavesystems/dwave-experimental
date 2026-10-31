@@ -1,0 +1,15 @@
+---
+features:
+  - |
+    Add :func:`~dwave.experimental.shimming.shim_tds_flux_biases` for refining
+    flux-bias calibration of target-detector-source (TDS) experiments. The
+    ``td_shim_type`` argument selects the strategy: ``"detector_only"``,
+    ``"by_line_quench"``, ``"sequential"``, or ``"alternating"``.
+  - |
+    Add :func:`~dwave.experimental.shimming.shim_linewise_flux_biases` to shim
+    flux biases one annealing line at a time via a per-line quench.
+  - |
+    Add an ``exp_weights_per_update`` parameter to
+    :func:`~dwave.experimental.shimming.shim_flux_biases` so the per-variable
+    update can be a weighted sum of per-experiment magnetizations instead of a
+    plain mean.

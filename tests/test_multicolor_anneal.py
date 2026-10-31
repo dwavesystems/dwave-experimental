@@ -193,19 +193,13 @@ class UtilsTestWithoutClient(unittest.TestCase):
         )
 
     def test_line_assignments_from_feature_info(self):
-        polarizing_line_info = {
-            "minPolarizingTimeStep": 0.02,
-            "depolarizationAnnealScheduleRequiredDelay": 2.0,
-            "polarizationChangeAnnealScheduleRequiredDelay": 1.0,
-        }
         annealing_line_info = [
             {"annealingLine": 0, "qubits": [2, 6, 9]},
             {"annealingLine": 1, "qubits": [0, 4]},
             {"annealingLine": 2, "qubits": [1, 3, 5, 7]},
         ]
-        exp_feature_info = (polarizing_line_info, annealing_line_info)
 
-        assignments = line_assignments_from_feature_info(exp_feature_info)
+        assignments = line_assignments_from_feature_info(annealing_line_info)
 
         self.assertEqual(
             assignments,
@@ -219,7 +213,7 @@ class UtilsTestWithoutClient(unittest.TestCase):
             )
         )
         # Empty annealing-line list yields an empty mapping.
-        self.assertEqual(line_assignments_from_feature_info(({}, [])), {})
+        self.assertEqual(line_assignments_from_feature_info([]), {})
 
     def test_tds_graph(self):
         target_graph = nx.from_edgelist([(0, 1)])
