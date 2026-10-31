@@ -286,22 +286,15 @@ def run_refine_delays(
         "Detected decoupling times by detector line (or relative offset required on source line)",
         t_decoupled,
     )
-    print("We refine the x_schedule_delay per line accordingly.")
-    for line, val in t_decoupled.items():
-        sampling_params["x_schedule_delays"][line] += val
-
-    print(
-        "We then refine the anneal offset on detectors to mitigate for remaining per-qubit variation. "
-        "c(t)=anneal_offset(t) is to a good approximation linear, assuming "
-        f"dt/dc ~ {dt_dc}us we can correct a measured delay in one step."
-    )
-    # The measurements below depend on the decoupling estimate just applied, so
-    # cached ones are reused only when that estimate was cached as well.
+    # The three measurements of magnetization at delay 0 (coarse delays, refined
+    # line-wise delays, and additional anneal_offsets) depend on the decoupling
+    # estimate, so cached ones are reused only when that estimate was cached too.
     fn_cache_mags = f"cache/refine_delays_mags_{cache_str}.npy"
     mags_cached = estimate_cached and os.path.isfile(fn_cache_mags)
     if mags_cached:
         mags_t0 = list(np.load(fn_cache_mags))
     else:
+        # Measured before the refined delays are applied, with the coarse delays.
         connect_qpu(ctx)
         sampler = ctx.sampler
         mags_t0 = [
@@ -309,24 +302,33 @@ def run_refine_delays(
                 sampler, bqm, sampling_params, detector_lines
             ).ravel()
         ]
-    if len(source_lines) == 1:
-        t_decoupled[source_lines[0]] = 0.0
-    for emb in embs:
-        det_q = emb[("detector", 0)][0]
-        src_q = emb[("source", 0)][0]
-        if det_q in t_decoupled_by_qubit:
-            t_decoupled_by_qubit[det_q] -= (
-                t_decoupled[line_assignments[det_q]]
-                - t_decoupled[line_assignments[src_q]]
-            )
-        # Residual part, not captured by line-wise correction.
 
+    print("We refine the x_schedule_delay per line accordingly.")
+    for line, val in t_decoupled.items():
+        sampling_params["x_schedule_delays"][line] += val
     if not mags_cached:
         mags_t0.append(
             run_parallel_experiment(
                 sampler, bqm, sampling_params, detector_lines
             ).ravel()
         )
+
+    print(
+        "We then refine the anneal offset on detectors to mitigate for remaining per-qubit variation. "
+        "c(t)=anneal_offset(t) is to a good approximation linear, assuming "
+        f"dt/dc ~ {dt_dc}us we can correct a measured delay in one step."
+    )
+    if len(source_lines) == 1:
+        t_decoupled[source_lines[0]] = 0.0
+    for emb in embs:
+        det_q = emb[("detector", 0)][0]
+        src_q = emb[("source", 0)][0]
+        if det_q in t_decoupled_by_qubit:
+            # Residual part, not captured by line-wise correction.
+            t_decoupled_by_qubit[det_q] -= t_decoupled[
+                line_assignments[det_q]
+            ] - t_decoupled.get(line_assignments[src_q], 0.0)
+
     relative_offset = np.mean(list(t_decoupled_by_qubit.values()))
     for emb in embs:
         det_q = emb[("detector", 0)][0]
