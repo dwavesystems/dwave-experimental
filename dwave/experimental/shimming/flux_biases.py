@@ -999,6 +999,16 @@ def shim_tds_flux_biases(
         shimmed_variables = set(
             v for v in shimmed_variables if line_assignments.get(v) in shim_lines
         )
+    if td_shim_type == "sequential" and not shimmed_variables:
+        # No detector variables are shimmed (e.g. only target or source variables
+        # were requested), so the line-wise stage already completed the shim.
+        if (
+            sampling_params_in_place
+            and caller_sampling_params is not None
+            and flux_biases is not None
+        ):
+            caller_sampling_params["flux_biases"] = flux_biases
+        return flux_biases, dict_fb_all, dict_mag_all
     use_target_variables = any(
         line_assignments.get(v) in target_lines for v in shimmed_variables
     )

@@ -914,6 +914,45 @@ class FluxBiases(unittest.TestCase):
             len(fb_history[detector_qubit]), len(fb_history[target_qubit])
         )
 
+    def test_shim_tds_flux_biases_sequential_target_only_shimmed_variables(self):
+        """``"sequential"`` with no detector variables shimmed completes after the
+        line-wise stage instead of raising once QPU time has been spent."""
+        (
+            sampler,
+            bqm,
+            target_lines,
+            detector_lines,
+            line_assignments,
+            sampling_params,
+            exp_feature_line_info,
+            target_c,
+        ) = self._tds_setup()
+        target_qubit = next(
+            v for v, l in line_assignments.items() if l in target_lines
+        )
+        num_steps = 2
+
+        with unittest.mock.patch.object(
+            sampler, "sample", wraps=sampler.sample
+        ) as sample:
+            flux_biases, fb_history, mag_history = shim_tds_flux_biases(
+                bqm,
+                sampler,
+                target_lines,
+                detector_lines,
+                exp_feature_line_info,
+                sampling_params=sampling_params,
+                num_steps=num_steps,
+                td_shim_type="sequential",
+                shimmed_variables={target_qubit},
+            )
+
+        # Line-wise stage only: one sampler call per step.
+        self.assertEqual(sample.call_count, num_steps)
+        self.assertSetEqual(set(fb_history), {target_qubit})
+        self.assertEqual(len(fb_history[target_qubit]), num_steps + 1)
+        self.assertEqual(sampling_params["flux_biases"], flux_biases)
+
     def test_shim_linewise_flux_biases_default_sampling_params(self):
         """``sampling_params=None`` falls back to internally built defaults."""
         (
