@@ -560,6 +560,43 @@ class FluxBiases(unittest.TestCase):
         self.assertSetEqual(set(mag_history), shimmed_variables)
         self.assertEqual(len(fb_history[next(iter(shimmed_variables))]), 2)
 
+    def test_shim_tds_flux_biases_alternating_skips_pairs_without_target_variables(self):
+        """A pair whose target line has no shimmed variables is skipped rather
+        than degenerating into a detector-only shim, so each detector is shimmed
+        once per pair with a populated target line."""
+        (
+            sampler,
+            bqm,
+            target_lines,
+            detector_lines,
+            line_assignments,
+            sampling_params,
+            exp_feature_line_info,
+            _,
+        ) = self._tds_setup()
+        target_lines.add(2)  # Line 2 has no qubits.
+        num_steps = 1
+
+        with unittest.mock.patch.object(
+            sampler, "sample", wraps=sampler.sample
+        ) as sample:
+            _, fb_history, _ = shim_tds_flux_biases(
+                bqm,
+                sampler,
+                target_lines,
+                detector_lines,
+                exp_feature_line_info,
+                sampling_params=sampling_params,
+                num_steps=num_steps,
+                td_shim_type="alternating",
+                by_line_pair=True,
+            )
+
+        # Only the populated (0, 1) pair runs, with two experiments per step.
+        self.assertEqual(sample.call_count, 2 * num_steps)
+        self.assertSetEqual(set(fb_history), set(bqm.variables))
+        self.assertTrue(all(len(h) == num_steps + 1 for h in fb_history.values()))
+
     def test_shim_tds_flux_biases_detector_only_explicit(self):
         """td_shim_type='detector_only' shims only detector-line variables with
         a single experiment per step."""

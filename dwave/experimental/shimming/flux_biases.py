@@ -1023,7 +1023,12 @@ def shim_tds_flux_biases(
                         for v in shimmed_variables
                         if line_assignments[v] in {target_line, detector_line}
                     )
-                    if not shimmed_variables_dt:
+                    # Without shimmed target variables the pair would reduce to a
+                    # detector-only shim with the real target line neutralized,
+                    # re-shimming the detector in a decoupled regime.
+                    if not any(
+                        line_assignments[v] == target_line for v in shimmed_variables_dt
+                    ):
                         continue
                     flux_biases, dict_fb, dict_mag = shim_tds_flux_biases(
                         bqm=bqm,
