@@ -38,7 +38,6 @@ from collections.abc import Collection, Iterable, Sequence
 from typing import Any, Literal
 
 import pickle
-import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.colors import SymLogNorm
 import networkx as nx
