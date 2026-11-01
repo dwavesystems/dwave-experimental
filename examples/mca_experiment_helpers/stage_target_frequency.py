@@ -8,7 +8,9 @@ def run_anneal_offsets(ctx: MCAContext) -> MCAContext:
 
     Collects a detector-magnetization time series, estimates the power-spectral
     density per embedding, and proposes per-qubit anneal_offsets that center the
-    PSD peak on the target frequency. Produces the time series, heatmap, PSD and
+    PSD peak on the target frequency. The proposed offsets are applied to the
+    targets in ``sampling_params["anneal_offsets"]``, whether or not they are
+    subsequently verified. Produces the time series, heatmap, PSD and
     proposed-offset figures.
 
     Args:
@@ -16,7 +18,7 @@ def run_anneal_offsets(ctx: MCAContext) -> MCAContext:
             stages.
 
     Returns:
-        The same ``ctx``, updated with the collected data, PSD and proposed
+        The same ``ctx``, updated with the collected data, PSD and the applied
         ``anneal_offsets_target``.
     """
     compute_delay_grid(ctx, ctx.fit_window, rel_sampling_rate=2, rel_start=1.0)
@@ -179,6 +181,13 @@ def run_anneal_offsets(ctx: MCAContext) -> MCAContext:
     plt.xlabel("Proposed anneal offset")
     plt.ylabel("Cumulative distribution function")
     plt.legend()
+
+    # Apply unconditionally, so later stages (and verification, when enabled)
+    # run with the refined target frequencies.
+    for emb, ao in zip(embs, anneal_offsets_target):
+        sampling_params["anneal_offsets"][
+            emb[0][0]
+        ] -= ao  # Apply correction to target on each embedding
     if not verify_anneal_offsets:
         if save_figures:
             _save_open_figures("figures/", cache_str)
@@ -202,17 +211,17 @@ def run_anneal_offsets(ctx: MCAContext) -> MCAContext:
 def run_verification(ctx: MCAContext) -> MCAContext:
     """Re-measure after applying anneal_offsets and verify the alignment.
 
-    Applies the proposed ``anneal_offsets_target`` to the targets, re-collects
-    the detector magnetization, re-estimates the PSD, and fills the "after"
-    panels of the time series, heatmap and PSD figures alongside an
-    offset-correlation plot.
+    The offsets proposed by :func:`run_anneal_offsets` are already applied.
+    Re-collects the detector magnetization, re-estimates the PSD, applies the
+    residual correction to the targets, and fills the "after" panels of the time
+    series, heatmap and PSD figures alongside an offset-correlation plot.
 
     Args:
         ctx: Shared context carrying configuration and computed state between
             stages.
 
     Returns:
-        The same ``ctx``, updated with the verification data, PSD and refined
+        The same ``ctx``, updated with the verification data, PSD and residual
         ``anneal_offsets_target``.
     """
     stage_idx = ctx.stage_idx
@@ -255,10 +264,6 @@ def run_verification(ctx: MCAContext) -> MCAContext:
         if not online:
             connect_qpu(ctx)
             sampler = ctx.sampler
-        for emb, ao in zip(embs, anneal_offsets_target):
-            sampling_params["anneal_offsets"][
-                emb[0][0]
-            ] -= ao  # Apply correction to target on each embedding
         mean_Z_detector = run_parallel_experiment(
             sampler, bqm, sampling_params, detector_lines, delays=delays
         )

@@ -679,6 +679,7 @@ def estimate_decoupling_timescale(
     line_assignments: dict[int, int] | None = None,
     source_lines: Iterable[int] | None = None,
     interpolate_final_interval: bool = False,
+    max_bracket_steps: int = 100,
 ) -> tuple[dict[int, float], list, dict[int, float]]:
     """Estimate bulk decoupling timescales
 
@@ -738,6 +739,15 @@ def estimate_decoupling_timescale(
         interpolate_final_interval: When True, refine each returned delay past the
             bisection bracket by linearly interpolating the half-cycle-averaged
             proxy to its threshold crossing (used by the refinement stage).
+        max_bracket_steps: Maximum number of steps of size ``T2`` taken when
+            bracketing the decoupling delay (when ``t_min`` or ``t_max`` is not
+            provided). Bounds the number of QPU programmings if the signal never
+            crosses the threshold, for example with poor polarization, a wrong
+            ``preparation_orientation`` or an inaccurate ``target_A``.
+
+    Raises:
+        ValueError: If the decoupling delay cannot be bracketed within
+            ``max_bracket_steps`` steps.
 
     Returns:
         A tuple containing:
@@ -778,7 +788,17 @@ def estimate_decoupling_timescale(
         """Bracket, then bisect, the decoupling delay for a magnetization selector."""
         if verbose and (t_min is None or t_max is None):
             print("Estimate bounds O(T1) on decoupling time scale (two programmings)")
+        t_start = t_guess
+        num_steps = 0
         while t_min is None or t_max is None:
+            if num_steps >= max_bracket_steps:
+                raise ValueError(
+                    f"Unable to bracket the decoupling delay within {max_bracket_steps} "
+                    f"steps of T2={T2} from t_guess={t_start} (reached delay {t_guess}). "
+                    "Check the polarization, preparation_orientation and target_A, or "
+                    "provide t_decoupled explicitly."
+                )
+            num_steps += 1
             v = vec(t_guess)
             if np.median(v) * preparation_orientation < threshold_cycle_av:
                 t_max = t_guess
