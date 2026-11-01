@@ -696,6 +696,50 @@ class FluxBiases(unittest.TestCase):
             for tv in target_vars:
                 self.assertGreater(len(fb_history[dv]), len(fb_history[tv]))
 
+    def test_shim_tds_flux_biases_in_place_writes_only_flux_biases(self):
+        """The examples carry every programmed parameter between stages in
+        ``sampling_params``, relying on the write-back changing only
+        ``flux_biases``."""
+        for td_shim_type in (
+            "detector_only",
+            "by_line_quench",
+            "sequential",
+            "alternating",
+        ):
+            for in_place in (True, False):
+                with self.subTest(td_shim_type=td_shim_type, in_place=in_place):
+                    (
+                        sampler,
+                        bqm,
+                        target_lines,
+                        detector_lines,
+                        _,
+                        sampling_params,
+                        exp_feature_line_info,
+                        target_c,
+                    ) = self._tds_setup()
+                    sampling_params["flux_biases"] = [0.0] * sampler.properties[
+                        "num_qubits"
+                    ]
+                    expected = deepcopy(sampling_params)
+
+                    flux_biases, _, _ = shim_tds_flux_biases(
+                        bqm,
+                        sampler,
+                        target_lines,
+                        detector_lines,
+                        exp_feature_line_info,
+                        sampling_params=sampling_params,
+                        num_steps=2,
+                        td_shim_type=td_shim_type,
+                        target_c=target_c,
+                        sampling_params_in_place=in_place,
+                    )
+
+                    if in_place:
+                        expected["flux_biases"] = flux_biases
+                    self.assertEqual(sampling_params, expected)
+
     def test_shim_tds_flux_biases_invalid_td_shim_type(self):
         (
             sampler,

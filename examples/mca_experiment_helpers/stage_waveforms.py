@@ -17,8 +17,9 @@ def run_waveforms(ctx: MCAContext) -> MCAContext:
             stages.
 
     Returns:
-        The same ``ctx``, updated with the QPU sampler, line assignments,
-        schedules and ``sampling_params``.
+        The same ``ctx``, updated with the QPU sampler, the detector, source and
+        target lines, and ``sampling_params``, which carries the schedules,
+        delays, anneal offsets and flux biases between stages.
     """
     stage_idx = ctx.stage_idx
     cache_str = ctx.cache_str
@@ -127,19 +128,15 @@ def run_waveforms(ctx: MCAContext) -> MCAContext:
     _apply_tight_layout()
     plt.show()
 
-    x_schedule_delays = [0.0] * num_lines
-
-    anneal_offsets = [0.0] * qpu.properties["num_qubits"]
-    flux_biases = [0.0] * qpu.properties["num_qubits"]
     sampling_params = dict(
         num_reads=num_reads,
         answer_mode="raw",
         x_disable_filtering=True,
-        x_schedule_delays=x_schedule_delays,
+        x_schedule_delays=[0.0] * num_lines,
         x_anneal_schedules=x_anneal_schedules,
         x_polarizing_schedule=x_polarizing_schedule,
-        flux_biases=flux_biases,
-        anneal_offsets=anneal_offsets,
+        flux_biases=[0.0] * qpu.properties["num_qubits"],
+        anneal_offsets=[0.0] * qpu.properties["num_qubits"],
         auto_scale=False,
     )
 
@@ -152,10 +149,5 @@ def run_waveforms(ctx: MCAContext) -> MCAContext:
     ctx.source_lines = source_lines
     ctx.target_lines = target_lines
     ctx.line_color = line_color
-    ctx.x_anneal_schedules = x_anneal_schedules
-    ctx.x_polarizing_schedule = x_polarizing_schedule
-    ctx.x_schedule_delays = x_schedule_delays
-    ctx.anneal_offsets = anneal_offsets
-    ctx.flux_biases = flux_biases
     ctx.sampling_params = sampling_params
     return ctx

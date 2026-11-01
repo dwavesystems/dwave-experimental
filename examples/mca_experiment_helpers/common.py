@@ -1063,6 +1063,10 @@ class MCAContext:
     The stages (see the ``stage_*`` modules) read and write attributes on this
     object, allowing the monolithic workflow to be split into small, individually
     readable scripts while preserving the original sequential data flow.
+
+    Everything programmed to the QPU (``flux_biases``, ``anneal_offsets``,
+    ``x_anneal_schedules``, ``x_polarizing_schedule`` and ``x_schedule_delays``)
+    lives only in ``sampling_params``, so there is a single copy to keep consistent.
     """
 
     #: Names of every attribute threaded between stages. Config values mirror the
@@ -1108,11 +1112,6 @@ class MCAContext:
         "cached_chip_id",
         "exp_feature_info",
         "line_color",
-        "x_anneal_schedules",
-        "x_polarizing_schedule",
-        "x_schedule_delays",
-        "anneal_offsets",
-        "flux_biases",
         "sampling_params",
         "T",
         "Tnode_to_tds",

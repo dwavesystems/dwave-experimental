@@ -16,8 +16,8 @@ def run_flux_biases(
             reported as a possible calibration issue or bad qubit.
 
     Returns:
-        The same ``ctx``, updated with the refined ``flux_biases`` and
-        ``sampling_params``.
+        The same ``ctx``, with the refined flux biases stored in
+        ``ctx.sampling_params["flux_biases"]``.
     """
     stage_idx = ctx.stage_idx
     td_shim_type = ctx.td_shim_type
@@ -36,8 +36,6 @@ def run_flux_biases(
         exp_feature_info.annealing_line_info
     )
     save_figures = ctx.save_figures
-    x_polarizing_schedule = ctx.x_polarizing_schedule
-    flux_biases = ctx.flux_biases
 
     stage_idx += 1
     print()
@@ -50,6 +48,7 @@ def run_flux_biases(
     if cache_str and os.path.isfile(fn_cache):
         with open(fn_cache, "rb") as f:
             flux_biases, flux_history, mag_history = pickle.load(f)
+        sampling_params["flux_biases"] = flux_biases
     else:
         if not online:
             connect_qpu(ctx)
@@ -73,6 +72,7 @@ def run_flux_biases(
             exp_feature_line_info=exp_feature_info.annealing_line_info,
             source_lines=set(source_lines),
             target_c=target_c,
+            sampling_params_in_place=True,
         )
         polarization_candidates = [
             (i, flux_biases[i])
@@ -100,15 +100,11 @@ def run_flux_biases(
             mag_history=mag_history,
             flux_history=flux_history,
         )
-    sampling_params["flux_biases"] = flux_biases
     if save_figures:
         _save_open_figures("figures/", cache_str)
     print("Close figures to proceed to next stages.")
     _apply_tight_layout()
     plt.show()
-    sampling_params["x_polarizing_schedule"] = x_polarizing_schedule
 
     ctx.stage_idx = stage_idx
-    ctx.flux_biases = flux_biases
-    ctx.sampling_params = sampling_params
     return ctx
