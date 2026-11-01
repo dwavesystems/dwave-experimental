@@ -3,6 +3,34 @@
 from .common import *
 
 
+def _check_one_to_one_embeddings(embeddings: list[dict], source: str) -> None:
+    """Raise if embeddings are not one-to-one and mutually disjoint.
+
+    Each source node must map to a single-qubit chain, and no qubit may be used
+    more than once across the embeddings (as required for parallel programming).
+
+    Args:
+        embeddings: Embeddings mapping source nodes to chains of qubits.
+        source: Description of where the embeddings came from, for the message.
+    """
+    used = set()
+    for i, emb in enumerate(embeddings):
+        for node, chain in emb.items():
+            if len(chain) != 1:
+                raise ValueError(
+                    f"The embeddings from {source} must be one-to-one, but node "
+                    f"{node!r} of embedding {i} maps to a chain of length "
+                    f"{len(chain)}."
+                )
+            if chain[0] in used:
+                raise ValueError(
+                    f"The embeddings from {source} must be disjoint, but qubit "
+                    f"{chain[0]!r} (node {node!r} of embedding {i}) is used more "
+                    "than once."
+                )
+            used.add(chain[0])
+
+
 def run_embeddings(
     ctx: MCAContext, *, embedding_timeout: int = 60, create_plot: bool = True
 ) -> MCAContext:
@@ -109,6 +137,7 @@ def run_embeddings(
                 f"The cached embeddings in {fn_cache} are empty; delete the file "
                 "to repeat the embedding search."
             )
+        _check_one_to_one_embeddings(embs_experiment, fn_cache)
     else:
         subgraph_kwargs = dict(
             node_labels=(Snode_to_tds, Tnode_to_tds),

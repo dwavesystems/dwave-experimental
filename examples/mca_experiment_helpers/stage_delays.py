@@ -318,23 +318,27 @@ def run_refine_delays(
         "c(t)=anneal_offset(t) is to a good approximation linear, assuming "
         f"dt/dc ~ {dt_dc}us we can correct a measured delay in one step."
     )
-    if len(source_lines) == 1:
-        t_decoupled[source_lines[0]] = 0.0
+    # A line absent from t_decoupled received no line-wise delay (e.g. the
+    # reference source line, or any source line when by_det_src_pair=False).
     for emb in embs:
-        det_q = emb[("detector", 0)][0]
-        src_q = emb[("source", 0)][0]
-        if det_q in t_decoupled_by_qubit:
+        det_chain = emb.get(("detector", 0))
+        src_chain = emb.get(("source", 0))
+        if det_chain and det_chain[0] in t_decoupled_by_qubit:
+            det_shift = t_decoupled[line_assignments[det_chain[0]]]
+            src_shift = (
+                t_decoupled.get(line_assignments[src_chain[0]], 0.0)
+                if src_chain
+                else 0.0
+            )
             # Residual part, not captured by line-wise correction.
-            t_decoupled_by_qubit[det_q] -= t_decoupled[
-                line_assignments[det_q]
-            ] - t_decoupled.get(line_assignments[src_q], 0.0)
+            t_decoupled_by_qubit[det_chain[0]] -= det_shift - src_shift
 
     relative_offset = np.mean(list(t_decoupled_by_qubit.values()))
     for emb in embs:
-        det_q = emb[("detector", 0)][0]
-        if det_q in t_decoupled_by_qubit:
+        det_chain = emb.get(("detector", 0))
+        if det_chain and det_chain[0] in t_decoupled_by_qubit:
             # TO DO - split evenly with src makes a bit more sense.
-            det_q = emb[("detector", 0)][0]
+            det_q = det_chain[0]
             sampling_params["anneal_offsets"][det_q] = (
                 -(t_decoupled_by_qubit[det_q] - relative_offset) / dt_dc
             )
