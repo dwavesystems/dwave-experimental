@@ -145,6 +145,7 @@ def _calc_anneal_offsets(
     dAdc: float,
     dAfit: float = 0.5,
     fit_to_target_A: bool = True,
+    embeddings: Sequence[dict] | None = None,
 ) -> np.ndarray:
     """Determine the anneal_offset necessary to synchronize frequency.
 
@@ -171,9 +172,16 @@ def _calc_anneal_offsets(
         dAdc: Approximate rate of change of A with c (anneal offset).
         dAfit: Fractional range around target_A to use for estimation.
         fit_to_target_A: If True, use target_A as the reference; if False, use the mean.
+        embeddings: The embeddings corresponding to the rows of ``psd``, used to
+            identify the target, detector and source qubits of any embedding whose
+            offset cannot be estimated.
 
     Returns:
         Estimated anneal offsets per qubit/embedding in units of normalized c.
+        An embedding without power in the fit window (for example a constant
+        detector time series from a dead or fully polarized qubit) cannot be
+        estimated; its offset is set to 0 and a warning is issued. Such embeddings
+        are also excluded from the mean used when ``fit_to_target_A`` is False.
     """
 
     # NB a symmetric window only works for frequencies in the range,
@@ -182,16 +190,38 @@ def _calc_anneal_offsets(
     Amax = target_A * (1 + dAfit)
 
     Afilter = np.logical_and(frequencies < Amax, frequencies > Amin)
-    mean_A_est = np.sum(
-        psd[:, Afilter] * frequencies[Afilter][np.newaxis, :], axis=1
-    ) / np.sum(psd[:, Afilter], axis=1)
-    mu = np.mean(mean_A_est)
+    total_power = np.sum(psd[:, Afilter], axis=1)
+    weighted_power = np.sum(psd[:, Afilter] * frequencies[Afilter][np.newaxis, :], axis=1)
+    valid = np.isfinite(total_power) & (total_power > 0) & np.isfinite(weighted_power)
+    mean_A_est = np.zeros(len(total_power))
+    mean_A_est[valid] = weighted_power[valid] / total_power[valid]
+    if not valid.all():
+        invalid_descriptions = []
+        for i in np.flatnonzero(~valid):
+            if embeddings is None:
+                invalid_descriptions.append(f"embedding {i}")
+            else:
+                emb = embeddings[i]
+                invalid_descriptions.append(
+                    f"embedding {i} (target qubit {emb[0][0]}, "
+                    f"detector qubit {emb[('detector', 0)][0]}, "
+                    f"source qubit {emb[('source', 0)][0]})"
+                )
+        warnings.warn(
+            "No power in the frequency fit window (e.g. a constant detector "
+            "magnetization), anneal offset set to 0 for: "
+            + "; ".join(invalid_descriptions)
+        )
+    if not valid.any():
+        print("A: no embedding has power in the frequency fit window")
+        return np.zeros(len(total_power))
+    mu = np.mean(mean_A_est[valid])
     print(
-        f"A: target={target_A:.3g}, estimated_mean={np.mean(mean_A_est):.3g}, and standard deviation={np.std(mean_A_est):.3g}",
+        f"A: target={target_A:.3g}, estimated_mean={mu:.3g}, and standard deviation={np.std(mean_A_est[valid]):.3g}",
     )
     if fit_to_target_A:
         mu = target_A
-    dcs = (mean_A_est - mu) / dAdc
+    dcs = np.where(valid, (mean_A_est - mu) / dAdc, 0.0)
     return dcs
 
 

@@ -165,7 +165,7 @@ def run_anneal_offsets(ctx: MCAContext) -> MCAContext:
 
     # Calculate anneal_offsets for synchronization
     anneal_offsets_target = y = _calc_anneal_offsets(
-        frequencies, psd, target_A, dAdc
+        frequencies, psd, target_A, dAdc, embeddings=embs
     )  # Per embedding
     # anneal offsets can be realized line-wise by changing target_c,
     # or qubit-wise by modification of anneal_offset. We can
@@ -276,7 +276,7 @@ def run_verification(ctx: MCAContext) -> MCAContext:
         ]
     ) / (last - first)
     y = anneal_offsets_target = _calc_anneal_offsets(
-        frequencies, psd, target_A, dAdc
+        frequencies, psd, target_A, dAdc, embeddings=embs
     )  # Per embedding
 
     for emb, ao in zip(embs, anneal_offsets_target):
