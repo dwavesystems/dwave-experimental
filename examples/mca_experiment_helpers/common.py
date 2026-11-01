@@ -1088,6 +1088,7 @@ class MCAContext:
         "schedule_fn",
         "num_reads",
         "use_common_c_bounds",
+        "symmetrize_c_bounds",
         "use_overshoot",
         "save_figures",
         "J_td",

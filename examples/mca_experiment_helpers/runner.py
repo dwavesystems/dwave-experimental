@@ -63,6 +63,7 @@ def main(
     preparation_orientation: float = 1.0,
     use_overshoot: bool = True,
     use_common_c_bounds: bool = True,
+    symmetrize_c_bounds: bool = False,
     num_reads: int = 500,
     T2: float = 0.0101,
     # Output, plotting and caching.
@@ -101,7 +102,10 @@ def main(
             "alternating", flux_biases are modified on both target and
             detector qubits. The "alternating" method can diverge, particularly
             for fast quenches of sources and detectors, large |J_td| or |J_ts|,
-            and small target_A. See :func:`~dwave.experimental.shimming.shim_tds_flux_biases`.
+            and small target_A. The "alternating" method requires
+            ``use_common_c_bounds=True`` (a ValueError is raised otherwise), so
+            that detector and target waveforms are valid on the exchanged lines.
+            See :func:`~dwave.experimental.shimming.shim_tds_flux_biases`.
         refine_frequencies:
             When True (default), estimate and apply per-qubit anneal_offsets so that
             the peak power-spectral density is centered at a common target frequency
@@ -209,6 +213,12 @@ def main(
             non-default shimming methods. The cost is of order 1-3% in quench rate
             relative to the per-line maxima. See
             :func:`~dwave.experimental.multicolor_anneal.make_tds_x_schedules`.
+        symmetrize_c_bounds:
+            When True, enforce symmetric c-bounds (``minC = -maxC``) on every line of
+            the generated schedules, allowing the roles of detectors and sources to be
+            exchanged. The default is False because the associated reduction in quench
+            rate is considered too large to impose by default. See
+            :func:`~dwave.experimental.multicolor_anneal.make_tds_x_schedules`.
         num_reads:
             The number of reads to perform for each measurement.
         T2:
@@ -255,6 +265,12 @@ def main(
         loop_length == 1 or (loop_length >= 4 and loop_length % 2 == 0)
     ):
         raise ValueError("loop_length should be 1 (no loop) or an even integer >= 4.")
+    if td_shim_type == "alternating" and not use_common_c_bounds:
+        raise ValueError(
+            "td_shim_type='alternating' exchanges detector and target waveforms "
+            "between lines, so it requires use_common_c_bounds=True to ensure "
+            "each waveform is valid on the exchanged lines."
+        )
     # 1 is the sentinel for "no loop constraint": use independent T-D-S systems.
     ctx_loop_length = None if loop_length == 1 else loop_length
 
@@ -323,6 +339,7 @@ def main(
         preparation_orientation=preparation_orientation,
         use_overshoot=use_overshoot,
         use_common_c_bounds=use_common_c_bounds,
+        symmetrize_c_bounds=symmetrize_c_bounds,
         num_reads=num_reads,
         colormap_type=colormap_type,
         save_figures=save_figures,

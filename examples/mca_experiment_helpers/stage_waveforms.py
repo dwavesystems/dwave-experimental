@@ -28,6 +28,7 @@ def run_waveforms(ctx: MCAContext) -> MCAContext:
     target_lines = ctx.target_lines
     target_c = ctx.target_c
     use_common_c_bounds = ctx.use_common_c_bounds
+    symmetrize_c_bounds = ctx.symmetrize_c_bounds
     use_overshoot = ctx.use_overshoot
     J_ts = ctx.J_ts
     J_td = ctx.J_td
@@ -109,6 +110,7 @@ def run_waveforms(ctx: MCAContext) -> MCAContext:
         detector_lines=detector_lines,
         source_lines=source_lines,
         use_common_c_bounds=use_common_c_bounds,
+        symmetrize_c_bounds=symmetrize_c_bounds,
         use_overshoot=use_overshoot,
         sign_polarization=-np.sign(J_ts * J_td * preparation_orientation),
     )

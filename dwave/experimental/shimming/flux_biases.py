@@ -770,9 +770,13 @@ def shim_tds_flux_biases(
     ``target_lines`` must share one ``x_anneal_schedules`` entry and all
     ``detector_lines`` must share one (a :class:`ValueError` is raised
     otherwise). The target and detector schedules must additionally be mutually
-    compatible, meaning interchangeable under the role swap, as produced by
+    compatible, meaning interchangeable under the role swap: the detector
+    waveform must be valid on every target line it is exchanged onto, and the
+    target waveform on every detector line. This is not validated, but is
+    typically guaranteed by schedules generated with
     :func:`~dwave.experimental.multicolor_anneal.make_tds_x_anneal_schedules`
-    with ``use_common_c_bounds=True``.
+    using ``use_common_c_bounds=True``. Symmetric bounds
+    (``symmetrize_c_bounds``) are not required.
 
     To shim the source requires coupling into the target. Assuming degeneracy on
     targets and detectors is achieved. We can operate in a regime with the source
@@ -814,9 +818,12 @@ def shim_tds_flux_biases(
             ``x_anneal_schedules`` must be identical across all ``target_lines``
             and identical across all ``detector_lines``, and the target and
             detector schedules must be mutually compatible (interchangeable
-            under the role swap), as produced by
+            under the role swap): the detector waveform must be valid on every
+            target line it is exchanged onto, and the target waveform on every
+            detector line. This is not validated, but is typically guaranteed
+            by schedules generated with
             :func:`~dwave.experimental.multicolor_anneal.make_tds_x_anneal_schedules`
-            with ``use_common_c_bounds=True``.
+            using ``use_common_c_bounds=True``.
         sampling_params_in_place = False
         shimmed_variables: Variables to shim; validated before any sampling
             against the lines the chosen ``td_shim_type`` shims:
@@ -899,9 +906,10 @@ def shim_tds_flux_biases(
             target_lines=target_lines,
             target_c=target_c,
             detector_lines=detector_lines,
+            # The role swap of td_shim_type="alternating" needs each role's
+            # waveform to be valid on the exchanged lines, typically guaranteed
+            # by common bounds.
             use_common_c_bounds=True,
-            # Exchanging detector and target roles needs symmetric bounds.
-            symmetrize_c_bounds=(td_shim_type == "alternating"),
         )
     if "num_reads" not in sampling_params:
         sampling_params["num_reads"] = num_reads
