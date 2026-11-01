@@ -56,7 +56,7 @@ def main(
     # Decoupling-delay and anneal-offset tuning.
     t_decoupled: float | None = None,
     by_det_src_pair: bool = True,
-    dt_dc: float = 2.3e-3,
+    dt_dc: float = 2.31e-3,
     fit_window: float | None = None,
     loop_delay_range: float | None = None,
     # Waveform and sampling.
@@ -132,8 +132,8 @@ def main(
         schedule_fn: A CSV file of the fast annealing schedule, with columns
             ``s``, ``A(s) (GHz)`` and ``B(s) (GHz)``. It is used to estimate an
             appropriate sampling interval for delay time and an appropriate scale
-            for anneal_offset synchronization. This should be matched to the
-            solver.
+            for anneal_offset synchronization. The schedule must match the
+            solver (if dA/dc is not specified independently).
         detector_lines:
             An iterable of integer indices of the detector lines.
         source_lines:
@@ -162,6 +162,8 @@ def main(
             Approximate rate of change of A(c) with the normalized control bias c
             near target_c (GHz per unit c), used to convert a frequency discrepancy
             into an anneal offset. If None, it is estimated from the schedule file.
+            The schedule is subject to uncertainty and an improved estimate can be
+            inferred from data; the example is robust to modest errors in dA/dc.
         J_td: The coupling strength between target and detector qubits. The AFM
             value maximizing the effective quench rate is used by default; an FM
             value (-2.0) can achieve higher quench rates still but at risk of
@@ -184,10 +186,14 @@ def main(
             independently for each detector/source line pair. When False, a
             single bulk delay is shared across all lines. Has no effect when a
             single source and single detector line are present.
-        dt_dc: Decoupling time change as a function of anneal offset. This is primarily
-            anneal_schedule (quench C-interval and rate) dependent. For the default
-            overshoot waveform on Advantage2 processors dt_dc ~ 2.3ns.
-            A correction is applied using dt_dc = 2.3ns, data recollected, and the final
+        dt_dc: Decoupling time change per unit anneal offset c, in microseconds.
+            Used to refine c on detectors to synchronize delays. This is primarily
+            anneal_schedule (quench C-interval and rate) dependent. The default,
+            2.31ns, approximates the quench rate through the dynamically relevant
+            phase of evolution (c in [0, 1]) for Advantage2 research systems with
+            the default overshoot waveform; it differs significantly from the linear
+            ramp rate specified in the overshoot detector anneal_schedule.
+            A correction is applied using this value, data recollected, and the final
             anneal offset applied using a corrected model.
         fit_window: Width of the delay data window (measured from the decoupling
             time ``delay_min``, spanning ``[delay_min, delay_min + fit_window]``)

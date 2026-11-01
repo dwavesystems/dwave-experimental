@@ -379,20 +379,38 @@ def run_refine_delays(
     emb_det_lines = np.array(
         [line_assignments[emb[("detector", 0)][0]] for emb in embs]
     )
+    # Offsets applied as -dt/dt_dc_assumed shift the decoupling time by
+    # -dt*(dt_dc_true/dt_dc_assumed), so the ratio of the pre-offset magnetization
+    # spread to the offset-induced magnetization change estimates
+    # dt_dc_assumed/dt_dc_true. Qubits that received no offset carry no
+    # information and are excluded.
+    # This estimate is biased by magnetization spread unrelated to delay and by
+    # noise in the per-qubit delays. A regression of the magnetization change on
+    # the applied offsets, using the local magnetization-versus-delay response
+    # from the decoupling sweep (t_mags), would improve on it.
+    has_offset = np.array(
+        [
+            bool(emb.get(("detector", 0)))
+            and emb[("detector", 0)][0] in t_decoupled_by_qubit
+            for emb in embs
+        ]
+    )
+
+    def _estimate_dt_dc(mask):
+        m_base = mags_t0[1][mask]
+        spread = np.median(np.abs(m_base - np.mean(m_base)))
+        change = np.median(np.abs(m_base - mags_t0[2][mask]))
+        return dt_dc * change / spread
+
     dt_dc_new = {}
     for src, det in sorted(set(zip(emb_src_lines.tolist(), emb_det_lines.tolist()))):
-        mask = (emb_src_lines == src) & (emb_det_lines == det)
-        m_base = mags_t0[1][mask]
-        dt_dc_new[(src, det)] = (
-            np.median(np.abs(m_base - np.mean(m_base)))
-            / np.median(np.abs(m_base - mags_t0[2][mask]))
-            * dt_dc
-        )
-    dt_dc_bulk = (
-        np.median(np.abs(mags_t0[1] - np.mean(mags_t0[1])))
-        / np.median(np.abs(mags_t0[1] - mags_t0[2]))
-        * dt_dc
-    )
+        mask = (emb_src_lines == src) & (emb_det_lines == det) & has_offset
+        if np.any(mask):
+            dt_dc_new[(src, det)] = _estimate_dt_dc(mask)
+    if np.any(has_offset):
+        dt_dc_bulk = _estimate_dt_dc(has_offset)
+    else:
+        dt_dc_bulk = dt_dc
     for emb in embs:
         det_q = emb[("detector", 0)][0]
         sampling_params["anneal_offsets"][det_q] *= dt_dc / dt_dc_bulk

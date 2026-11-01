@@ -111,7 +111,8 @@ if __name__ == "__main__":
         dest="schedule_fn",
         type=str,
         help="Path to the annealing schedule CSV file (columns s, A(s) (GHz) and "
-        "B(s) (GHz)). Should be matched to the solver.",
+        "B(s) (GHz)). Must match the solver (if --dA-dc is not specified "
+        "independently).",
         default="09-1323A-D_Advantage2_system4_fast_annealing_schedule.csv",
     )
     # Embedding selection.
@@ -161,6 +162,31 @@ if __name__ == "__main__":
         "(default A(target_c) such that A(target_c)=B(target_c), which is "
         "approximately 2 GHz)",
         default=None,
+    )
+    parser.add_argument(
+        "--dA-dc",
+        dest="dA_dc",
+        type=float,
+        help="Rate of change of A(c) with normalized control bias c near target_c "
+        "(GHz per unit c), used to convert frequency discrepancies into anneal "
+        "offsets. When not specified it is estimated from the schedule, which is "
+        "subject to uncertainty; an improved estimate can be inferred from data. "
+        "The example is robust to modest errors in dA/dc.",
+        default=None,
+    )
+    # Decoupling-delay and anneal-offset tuning.
+    parser.add_argument(
+        "--dt-dc",
+        dest="dt_dc",
+        type=float,
+        help="Decoupling time change per unit anneal offset c, in nanoseconds. "
+        "Used to refine c on detectors to synchronize delays. The default "
+        "approximates the quench rate through the dynamically relevant phase of "
+        "evolution (c in [0, 1]) for Advantage2 research systems with overshoot "
+        "waveforms; it differs significantly from the linear ramp rate specified "
+        "in the (default) overshoot detector anneal_schedule. "
+        "(default: %(default)s)",
+        default=2.31,
     )
     # Waveform option.
     parser.add_argument(
@@ -217,6 +243,8 @@ if __name__ == "__main__":
         max_num_embeddings=args.max_num_embeddings,
         seed=args.seed,
         target_A=args.target_A,
+        dAdc=args.dA_dc,
+        dt_dc=args.dt_dc * 1e-3,  # ns to microseconds
         use_overshoot=args.use_overshoot,
         save_figures=args.save_figures,
         cache_str=cache_str,

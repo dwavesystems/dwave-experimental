@@ -52,7 +52,9 @@ def run_schedule(
         )
         print(f"Schedule file used: {schedule_fn} ")
         print(
-            "For calibration refinement of anneal offsets, dA/dc must be a reasonable match in the vicinity of target_A."
+            "For calibration refinement of anneal offsets, the schedule must match the "
+            "solver (if dA/dc is not specified independently); dA/dc must be a "
+            "reasonable match in the vicinity of target_A."
         )
         qpu_anneal_schedule = _load_schedule(schedule_fn)
 
