@@ -1079,6 +1079,7 @@ class MCAContext:
         "source_lines",
         "target_lines",
         "seed",
+        "exclude_qubits",
         "max_num_embeddings",
         "target_c",
         "target_A",

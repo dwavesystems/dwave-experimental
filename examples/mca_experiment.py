@@ -153,6 +153,19 @@ if __name__ == "__main__":
         help="Random seed for embedding generation.",
         default=None,
     )
+    parser.add_argument(
+        "--exclude-qubits",
+        dest="exclude_qubits",
+        type=int,
+        nargs="+",
+        help="Qubits to exclude from embeddings (one or more integer indices). "
+        "Effort is taken to ensure qubits in the working graph are operational, " \
+        "but some operational modes reveal sufficiently atypical behavior in a qubit "
+        "that the best course of action can be "
+        "to exploit redundancy and exclude the qubit from embeddings, " \
+        "rather than to allow inclusion and attempt calibration refinement.",
+        default=None,
+    )  # Specifically 566 on Advantage2_research2 seems difficult to shim (Nov 1 2026)
     # Target frequency.
     parser.add_argument(
         "--target-A",
@@ -242,6 +255,7 @@ if __name__ == "__main__":
         target_lines=args.target_lines,
         max_num_embeddings=args.max_num_embeddings,
         seed=args.seed,
+        exclude_qubits=args.exclude_qubits,
         target_A=args.target_A,
         dAdc=args.dA_dc,
         dt_dc=args.dt_dc * 1e-3,  # ns to microseconds

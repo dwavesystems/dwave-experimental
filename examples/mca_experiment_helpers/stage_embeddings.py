@@ -60,6 +60,7 @@ def run_embeddings(
     solver = ctx.solver_name
     max_num_embeddings = ctx.max_num_embeddings
     seed = ctx.seed
+    exclude_qubits = None if ctx.exclude_qubits is None else set(ctx.exclude_qubits)
     J_td = ctx.J_td
     J_ts = ctx.J_ts
     line_color = ctx.line_color
@@ -119,6 +120,9 @@ def run_embeddings(
                     "loop_length": loop_length,
                     "max_num_embeddings": max_num_embeddings,
                     "seed": seed,
+                    "exclude_qubits": (
+                        None if exclude_qubits is None else sorted(exclude_qubits)
+                    ),
                     "embedding_timeout": embedding_timeout,
                 },
                 sort_keys=True,
@@ -132,6 +136,12 @@ def run_embeddings(
     if fn_cache is not None and os.path.isfile(fn_cache):
         with open(fn_cache, "rb") as f:
             embs_experiment = pickle.load(f)
+        if exclude_qubits is not None:
+            embs_experiment = [
+                emb
+                for emb in embs_experiment
+                if not any(q in exclude_qubits for chain in emb.values() for q in chain)
+            ]
         if len(embs_experiment) == 0:
             raise RuntimeError(
                 f"The cached embeddings in {fn_cache} are empty; delete the file "
@@ -144,9 +154,13 @@ def run_embeddings(
             as_embedding=True,
             timeout=embedding_timeout,
         )
+        T_search = T
+        if exclude_qubits is not None:
+            T_search = T.copy()
+            T_search.remove_nodes_from(exclude_qubits)
         embs_experiment = find_multiple_embeddings(
             S_experiment,
-            T,
+            T_search,
             max_num_emb=max_num_embeddings,
             embedder_kwargs=subgraph_kwargs,
             one_to_iterable=True,

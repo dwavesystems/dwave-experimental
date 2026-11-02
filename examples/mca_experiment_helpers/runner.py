@@ -44,6 +44,7 @@ def main(
     target_lines: Iterable[int] | None = None,
     max_num_embeddings: int | None = None,
     seed: int | None = None,
+    exclude_qubits: Iterable[int] | None = None,
     # Target frequency and schedule-derived scales.
     target_A: float | None = None,
     target_c: float | None = None,
@@ -146,6 +147,13 @@ def main(
         seed:
             Random seed used for embedding generation. When None, embedding
             generation is not seeded.
+        exclude_qubits:
+            An iterable of qubit indices to exclude from the embeddings, for
+            example qubits that show atypical behavior and for which excluding
+            the qubit is preferable to calibration refinement. They are removed
+            from the target graph of the embedding search, and any embedding
+            loaded from file that uses one is omitted. When None, no qubits
+            are excluded.
         target_A:
             The expected qubit frequency in GHz.
             When None target_A is inferred from target_c (and the given processor schedule).
@@ -330,6 +338,7 @@ def main(
         target_lines=target_lines,
         max_num_embeddings=max_num_embeddings,
         seed=seed,
+        exclude_qubits=exclude_qubits,
         target_A=target_A,
         target_c=target_c,
         target_B=target_B,
