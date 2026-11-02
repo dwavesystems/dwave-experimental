@@ -44,6 +44,7 @@ def main(
     target_lines: Iterable[int] | None = None,
     max_num_embeddings: int | None = None,
     seed: int | None = None,
+    seed_bootstrap: int | None = None,
     exclude_qubits: Iterable[int] | None = None,
     # Target frequency and schedule-derived scales.
     target_A: float | None = None,
@@ -147,6 +148,13 @@ def main(
         seed:
             Random seed used for embedding generation. When None, embedding
             generation is not seeded.
+        seed_bootstrap:
+            Seed for the pseudo-random number generator
+            (:func:`numpy.random.default_rng`) of the bootstrap standard error
+            on the dt/dc re-estimate in the delay-refinement stage, which
+            determines whether the anneal offsets are readjusted. When None
+            (default) the result is not reproducible. Not a command-line
+            parameter.
         exclude_qubits:
             An iterable of qubit indices to exclude from the embeddings, for
             example qubits that show atypical behavior and for which excluding
@@ -338,6 +346,7 @@ def main(
         target_lines=target_lines,
         max_num_embeddings=max_num_embeddings,
         seed=seed,
+        seed_bootstrap=seed_bootstrap,
         exclude_qubits=exclude_qubits,
         target_A=target_A,
         target_c=target_c,

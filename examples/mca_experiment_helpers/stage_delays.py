@@ -177,18 +177,75 @@ def run_detect_delays(ctx: MCAContext) -> MCAContext:
     return ctx
 
 
+def _median_change_to_spread(m_base: np.ndarray, m_offset: np.ndarray) -> float:
+    """Ratio of the offset-induced magnetization change to the baseline spread.
+
+    Both are median absolute deviations; the ratio estimates
+    ``dt_dc_true / dt_dc_assumed``.
+    """
+    spread = np.median(np.abs(m_base - np.mean(m_base)))
+    change = np.median(np.abs(m_base - m_offset))
+    return change / spread
+
+
+def _bootstrap_stderr(
+    m_base: np.ndarray,
+    m_offset: np.ndarray,
+    *,
+    num_bootstrap: int = 200,
+    seed: int | None = None,
+) -> float:
+    """Bootstrap standard error of :func:`_median_change_to_spread`.
+
+    Qubits (paired baseline and offset magnetizations) are resampled with
+    replacement ``num_bootstrap`` times, and the standard deviation of the
+    resulting estimates is returned.
+
+    Args:
+        m_base: Per-qubit magnetizations before the offsets are applied.
+        m_offset: Per-qubit magnetizations after the offsets are applied.
+        num_bootstrap: Number of bootstrap resamples.
+        seed: Seed for :func:`numpy.random.default_rng`. The default ``None``
+            draws fresh entropy, so the result is not reproducible; pass an
+            integer to reproduce it.
+
+    Returns:
+        The standard error, or ``nan`` if fewer than two qubits are provided.
+    """
+    n = len(m_base)
+    if n < 2 or num_bootstrap < 2:
+        return np.nan
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, n, size=(num_bootstrap, n))
+    base = m_base[idx]
+    spread = np.median(np.abs(base - base.mean(axis=1, keepdims=True)), axis=1)
+    change = np.median(np.abs(base - m_offset[idx]), axis=1)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        estimates = change / spread
+    if not np.all(np.isfinite(estimates)):
+        return np.nan
+    return float(np.std(estimates, ddof=1))
+
+
 def run_refine_delays(
     ctx: MCAContext,
     *,
     refine_phase_accuracy: float = 0.05,
     refine_delay_t_min_factor: float = -2.0,
     refine_delay_t_max_factor: float = 4.0,
+    num_bootstrap: int = 200,
 ) -> MCAContext:
     """Refine source and detector delays after anneal-offset refinement.
 
     Both the refined decoupling-delay estimate and the dt/dc experiments that
     follow it are cached; the solver is created on demand only if either is
     missing.
+
+    The bulk dt/dc is re-estimated from the data with a bootstrap standard
+    error, and the anneal offsets are readjusted only when it differs
+    significantly from the assumed ``dt_dc``. With the default
+    ``ctx.seed_bootstrap=None`` the bootstrap standard error, and hence this
+    decision when the discrepancy is marginal, is not reproducible between runs.
 
     Args:
         ctx: Shared context carrying configuration and computed state between
@@ -199,6 +256,9 @@ def run_refine_delays(
             window, as a multiple of the target period ``1 / target_A``.
         refine_delay_t_max_factor: Upper bound of the refinement bisection search
             window, as a multiple of the target period ``1 / target_A``.
+        num_bootstrap: Number of bootstrap resamples used for the dt/dc standard
+            error. The bootstrap pseudo-random number generator is seeded by
+            ``ctx.seed_bootstrap`` (see :func:`~mca_experiment_helpers.runner.main`).
 
     Returns:
         The same ``ctx``, updated with the refined per-line and per-qubit
@@ -396,26 +456,47 @@ def run_refine_delays(
         ]
     )
 
-    def _estimate_dt_dc(mask):
-        m_base = mags_t0[1][mask]
-        spread = np.median(np.abs(m_base - np.mean(m_base)))
-        change = np.median(np.abs(m_base - mags_t0[2][mask]))
-        return dt_dc * change / spread
+    def _estimate_dt_dc(m_base, m_offset):
+        return dt_dc * _median_change_to_spread(m_base, m_offset)
 
     dt_dc_new = {}
     for src, det in sorted(set(zip(emb_src_lines.tolist(), emb_det_lines.tolist()))):
         mask = (emb_src_lines == src) & (emb_det_lines == det) & has_offset
         if np.any(mask):
-            dt_dc_new[(src, det)] = _estimate_dt_dc(mask)
+            dt_dc_new[(src, det)] = _estimate_dt_dc(
+                mags_t0[1][mask], mags_t0[2][mask]
+            )
     if np.any(has_offset):
-        dt_dc_bulk = _estimate_dt_dc(has_offset)
+        dt_dc_bulk = _estimate_dt_dc(mags_t0[1][has_offset], mags_t0[2][has_offset])
+        dt_dc_bulk_stderr = dt_dc * _bootstrap_stderr(
+            mags_t0[1][has_offset],
+            mags_t0[2][has_offset],
+            num_bootstrap=num_bootstrap,
+            seed=ctx.seed_bootstrap,
+        )
     else:
-        dt_dc_bulk = dt_dc
-    for emb in embs:
-        det_q = emb[("detector", 0)][0]
-        sampling_params["anneal_offsets"][det_q] *= dt_dc / dt_dc_bulk
-    print("Revised estimation of dt/dc ", dt_dc_bulk, " used value ", dt_dc)
-    print("The final anneal_offsets are adjusted to this new estimate.")
+        dt_dc_bulk, dt_dc_bulk_stderr = dt_dc, np.nan
+    print(
+        f"Revised estimation of dt/dc {dt_dc_bulk:.4g} +/- {dt_dc_bulk_stderr:.2g} "
+        f"(bootstrap standard error), used value {dt_dc:.4g}"
+    )
+    # Readjust only for a statistically significant discrepancy; the estimate
+    # is noisy and a rescale within its error would add noise.
+    significance_threshold = 2.0
+    if (
+        np.isfinite(dt_dc_bulk_stderr)
+        and abs(dt_dc_bulk - dt_dc) > significance_threshold * dt_dc_bulk_stderr
+    ):
+        for emb in embs:
+            det_q = emb[("detector", 0)][0]
+            sampling_params["anneal_offsets"][det_q] *= dt_dc / dt_dc_bulk
+        print("The final anneal_offsets are adjusted to this new estimate.")
+    else:
+        print(
+            "The revised estimate is not significantly different from the used "
+            f"value (threshold {significance_threshold} standard errors); the "
+            "anneal_offsets are not adjusted."
+        )
 
     ctx.stage_idx = stage_idx
     ctx.t_decoupled = t_decoupled
