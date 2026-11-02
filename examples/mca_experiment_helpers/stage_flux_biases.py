@@ -3,17 +3,15 @@
 from .common import *
 
 
-def run_flux_biases(
-    ctx: MCAContext, *, anomalous_flux_bias_threshold: float = 1e-4
-) -> MCAContext:
+def run_flux_biases(ctx: MCAContext) -> MCAContext:
     """Compensate static qubit body cross-talks via flux_biases.
+
+    Qubits whose refined flux_bias changed anomalously (more than 3 standard
+    deviations from the mean change) are reported.
 
     Args:
         ctx: Shared context carrying configuration and computed state between
             stages.
-        anomalous_flux_bias_threshold: Magnitude (in normalized flux-bias units)
-            above which a refined flux_bias is flagged as anomalously large and
-            reported as a possible calibration issue or bad qubit.
 
     Returns:
         The same ``ctx``, with the refined flux biases stored in
@@ -43,6 +41,11 @@ def run_flux_biases(
         f"Stage {stage_idx}: Compensate for static qubit body cross talks (with flux_biases)."
     )
     print(f"Use the (CLI-configurable) {td_shim_type} method for flux_biases.")
+    flux_biases_before = (
+        None
+        if sampling_params.get("flux_biases") is None
+        else list(sampling_params["flux_biases"])
+    )
 
     fn_cache = f"cache/FB_{cache_str}.npy"
     if cache_str and os.path.isfile(fn_cache):
@@ -74,21 +77,17 @@ def run_flux_biases(
             target_c=target_c,
             sampling_params_in_place=True,
         )
-        polarization_candidates = [
-            (i, flux_biases[i])
-            for i in range(len(flux_biases))
-            if abs(flux_biases[i]) > anomalous_flux_bias_threshold
-        ]
-        if polarization_candidates:
-            print(
-                "WARNING: Anomalously large flux biases could indicate "
-                "a calibration issue, check magnetization plots "
-                "for evidence of polarization and report bad qubits."
-            )
-            print(polarization_candidates)
         if cache_str:
             with open(fn_cache, "wb") as f:
                 pickle.dump((flux_biases, flux_history, mag_history), f)
+    if flux_biases is not None:
+        _report_outlier_changes(
+            "flux_biases",
+            flux_history.keys(),
+            flux_biases_before,
+            flux_biases,
+            embs,
+        )
     if td_shim_type != "detector_only":
         plot_shim(
             line_assignments=line_assignments,

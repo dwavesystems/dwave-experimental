@@ -94,6 +94,7 @@ __all__ = [
     "_apply_tight_layout",
     "_save_open_figures",
     "_calc_anneal_offsets",
+    "_report_outlier_changes",
     "run_parallel_experiment",
     "plot_shim",
     "_plot_tds_schedules",
@@ -223,6 +224,78 @@ def _calc_anneal_offsets(
         mu = target_A
     dcs = np.where(valid, (mean_A_est - mu) / dAdc, 0.0)
     return dcs
+
+
+def _report_outlier_changes(
+    variable_type: str,
+    qubits: Iterable[int],
+    before: Sequence[float] | None,
+    after: Sequence[float],
+    embs: Sequence[dict],
+    n_sigma: float = 3.0,
+) -> list[tuple[int, int, float]]:
+    """Print the qubits whose variable changed anomalously over a stage.
+
+    The change on each qubit is ``after - before``. The spread of the changes
+    across qubits (their sample standard deviation, not the standard error of
+    their mean) is the scale against which an individual qubit is judged: a qubit
+    is an outlier when its change deviates from the mean change by more than
+    ``n_sigma`` standard deviations. Qubits with an exactly zero change were not
+    updated (for example an embedding whose offset could not be estimated) and are
+    excluded from the changed set. Qubits not used by any embedding are ignored.
+
+    The standard deviation is not robust, so a few extreme outliers inflate it
+    and can mask each other; with ``n`` changed variables no change can exceed
+    ``(n - 1) / sqrt(n)`` standard deviations, so nothing is flagged for
+    ``n_sigma=3`` unless more than 10 variables changed.
+
+    Args:
+        variable_type: Label for the printed message, for example
+            ``"flux_biases"``.
+        qubits: Qubits whose variable could have changed in the stage.
+        before: Values (indexed by qubit) at the start of the stage; ``None``
+            means all zero.
+        after: Values (indexed by qubit) at the end of the stage.
+        embs: Embeddings (as used by the sampler), used to identify the
+            embedding of each outlier qubit.
+        n_sigma: Outlier threshold in standard deviations.
+
+    Returns:
+        A list of ``(qubit, embedding index, change)`` for the outliers.
+    """
+    qubit_to_emb = {
+        q: i for i, emb in enumerate(embs) for chain in emb.values() for q in chain
+    }
+    changed = []
+    for q in qubits:
+        if q not in qubit_to_emb:
+            continue
+        change = after[q] - (0.0 if before is None else before[q])
+        if change != 0 and np.isfinite(change):
+            changed.append((q, change))
+    if len(changed) < 2:
+        return []
+    changes = np.array([c for _, c in changed])
+    mean_shift = np.mean(changes)
+    std = np.std(changes, ddof=1)
+    if not std > 0:
+        return []
+    outliers = [
+        (q, qubit_to_emb[q], change)
+        for q, change in changed
+        if abs(change - mean_shift) > n_sigma * std
+    ]
+    if outliers:
+        print(
+            f"{variable_type}: The mean shift was {mean_shift:.3g}, the standard "
+            f"deviation on the changed variables was {std:.3g}."
+        )
+        for q, emb_idx, change in outliers:
+            print(
+                f"- qubit {q} in embedding {emb_idx} was a {n_sigma:g}-sigma "
+                f"outlier (value {change:.3g})"
+            )
+    return outliers
 
 
 def run_parallel_experiment(

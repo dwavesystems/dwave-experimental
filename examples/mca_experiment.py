@@ -121,7 +121,9 @@ if __name__ == "__main__":
         dest="detector_lines",
         type=int,
         nargs="+",
-        help="Detector lines (one or more integer indices).",
+        help="Detector lines (one or more integer indices). Must be specified "
+        "together with --source-lines, or both omitted (default: line 0 for 6 "
+        "lines; lines 0 and 4 for 12 lines).",
         default=None,  # First vertical qubit line
     )
     parser.add_argument(
@@ -129,7 +131,9 @@ if __name__ == "__main__":
         dest="source_lines",
         type=int,
         nargs="+",
-        help="Source lines (one or more integer indices).",
+        help="Source lines (one or more integer indices). Must be specified "
+        "together with --detector-lines, or both omitted (default: line 3 for 6 "
+        "lines; lines 6 and 10 for 12 lines).",
         default=None,  # First horizontal qubit line under 6-line control
     )
     parser.add_argument(
@@ -137,7 +141,8 @@ if __name__ == "__main__":
         dest="target_lines",
         type=int,
         nargs="+",
-        help="Target lines (one or more integer indices).",
+        help="Target lines (one or more integer indices). Default: all lines "
+        "that are neither detector nor source lines.",
         default=None,  # Default: all lines that are neither detector nor source lines
     )
     parser.add_argument(
@@ -159,11 +164,13 @@ if __name__ == "__main__":
         type=int,
         nargs="+",
         help="Qubits to exclude from embeddings (one or more integer indices). "
-        "Effort is taken to ensure qubits in the working graph are operational, " \
+        "Effort is taken to ensure qubits in the working graph are operational, "
         "but some operational modes reveal sufficiently atypical behavior in a qubit "
         "that the best course of action can be "
-        "to exploit redundancy and exclude the qubit from embeddings, " \
-        "rather than to allow inclusion and attempt calibration refinement.",
+        "to exploit redundancy and exclude the qubit from embeddings, "
+        "rather than to allow inclusion and attempt calibration refinement. "
+        "Qubits reported as outliers in calibration, or qubits adjacent to them "
+        "in an embedding, are candidates for exclusion.",
         default=None,
     )  # Specifically 566 on Advantage2_research2 seems difficult to shim (Nov 1 2026)
     # Target frequency.

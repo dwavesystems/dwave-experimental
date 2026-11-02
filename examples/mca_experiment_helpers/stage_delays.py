@@ -278,6 +278,7 @@ def run_refine_delays(
     by_det_src_pair = ctx.by_det_src_pair
     embs = ctx.embs
     dt_dc = ctx.dt_dc
+    offsets_before = list(sampling_params["anneal_offsets"])
 
     # Repeat the source-decoupling detection; the outcome differs because
     # of the updated anneal_offsets on the targets.
@@ -497,6 +498,14 @@ def run_refine_delays(
             f"value (threshold {significance_threshold} standard errors); the "
             "anneal_offsets are not adjusted."
         )
+
+    _report_outlier_changes(
+        "anneal_offsets (detector delay)",
+        t_decoupled_by_qubit.keys(),
+        offsets_before,
+        sampling_params["anneal_offsets"],
+        embs,
+    )
 
     ctx.stage_idx = stage_idx
     ctx.t_decoupled = t_decoupled

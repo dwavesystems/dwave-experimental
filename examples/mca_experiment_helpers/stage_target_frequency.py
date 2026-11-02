@@ -184,10 +184,19 @@ def run_anneal_offsets(ctx: MCAContext) -> MCAContext:
 
     # Apply unconditionally, so later stages (and verification, when enabled)
     # run with the refined target frequencies.
+    target_qubits = [emb[0][0] for emb in embs]
+    offsets_before = list(sampling_params["anneal_offsets"])
     for emb, ao in zip(embs, anneal_offsets_target):
         sampling_params["anneal_offsets"][
             emb[0][0]
         ] -= ao  # Apply correction to target on each embedding
+    _report_outlier_changes(
+        "anneal_offsets (frequency synchronization)",
+        target_qubits,
+        offsets_before,
+        sampling_params["anneal_offsets"],
+        embs,
+    )
     if not verify_anneal_offsets:
         if save_figures:
             _save_open_figures("figures/", cache_str)
@@ -279,10 +288,19 @@ def run_verification(ctx: MCAContext) -> MCAContext:
         frequencies, psd, target_A, dAdc, embeddings=embs
     )  # Per embedding
 
+    target_qubits = [emb[0][0] for emb in embs]
+    offsets_before = list(sampling_params["anneal_offsets"])
     for emb, ao in zip(embs, anneal_offsets_target):
         sampling_params["anneal_offsets"][
             emb[0][0]
         ] -= ao  # Apply correction to target on each embedding
+    _report_outlier_changes(
+        "anneal_offsets (frequency synchronization)",
+        target_qubits,
+        offsets_before,
+        sampling_params["anneal_offsets"],
+        embs,
+    )
 
     plt.figure("Proposed anneal_offsets")
     plt.plot(
