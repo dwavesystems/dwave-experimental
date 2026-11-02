@@ -597,6 +597,43 @@ class FluxBiases(unittest.TestCase):
         self.assertSetEqual(set(fb_history), set(bqm.variables))
         self.assertTrue(all(len(h) == num_steps + 1 for h in fb_history.values()))
 
+    def test_shim_tds_flux_biases_alternating_shims_only_coupled_variables(self):
+        """In a by_line_pair alternating shim, bqm variables on the pair's lines
+        that are not coupled to the other line are not shimmed."""
+        (
+            sampler,
+            bqm,
+            target_lines,
+            detector_lines,
+            line_assignments,
+            sampling_params,
+            exp_feature_line_info,
+            _,
+        ) = self._tds_setup()
+        coupled = set(bqm.variables)
+        isolated = next(
+            q for q in sampler.nodelist if q not in coupled and not (
+                set(sampler.adjacency[q]) & coupled
+            )
+        )
+        exp_feature_line_info[0]["qubits"].append(isolated)
+        bqm.add_variable(isolated, 0.0)
+
+        _, fb_history, mag_history = shim_tds_flux_biases(
+            bqm,
+            sampler,
+            target_lines,
+            detector_lines,
+            exp_feature_line_info,
+            sampling_params=sampling_params,
+            num_steps=1,
+            td_shim_type="alternating",
+            by_line_pair=True,
+        )
+
+        self.assertSetEqual(set(fb_history), coupled)
+        self.assertNotIn(isolated, mag_history)
+
     def test_shim_tds_flux_biases_detector_only_explicit(self):
         """td_shim_type='detector_only' shims only detector-line variables with
         a single experiment per step."""

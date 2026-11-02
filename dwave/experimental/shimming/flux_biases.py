@@ -766,6 +766,15 @@ def shim_tds_flux_biases(
     When ``shimmed_variables`` contains only detector variables, no alternation
     is performed and shimming reduces to a single-experiment call to
     :func:`.shim_flux_biases`.
+    Under the assumption that waveforms have a small impact on the required
+    ``flux_biases`` the sources and detectors can have interchangeable roles,
+    with a fixed calibration. The alternating method can be applied to
+    target-source pairs to shim source flux biases, where there role is switched
+    to detector (but this refinement method is not fully implemented here).
+    With ``by_line_pair=True``, each target/detector line pair is shimmed
+    independently, restricted to the variables on the pair's lines that are
+    coupled (nonzero quadratic bias) under the ``bqm`` to a variable on the
+    other line of the pair.
     The role swap uses a single representative schedule per role, so all
     ``target_lines`` must share one ``x_anneal_schedules`` entry and all
     ``detector_lines`` must share one (a :class:`ValueError` is raised
@@ -1037,10 +1046,19 @@ def shim_tds_flux_biases(
                 for detector_line in detector_lines:
                     if flux_biases is not None:
                         sampling_params["flux_biases"] = flux_biases
+                    # Only qubits coupled (under the bqm) to the other line of the
+                    # pair can act as complementary detectors/targets.
+                    pair_lines = {target_line, detector_line}
                     shimmed_variables_dt = set(
                         v
                         for v in shimmed_variables
-                        if line_assignments[v] in {target_line, detector_line}
+                        if line_assignments[v] in pair_lines
+                        and any(
+                            bias != 0
+                            and line_assignments.get(u)
+                            in pair_lines - {line_assignments[v]}
+                            for u, bias in bqm.adj[v].items()
+                        )
                     )
                     # Without shimmed target variables the pair would reduce to a
                     # detector-only shim with the real target line neutralized,

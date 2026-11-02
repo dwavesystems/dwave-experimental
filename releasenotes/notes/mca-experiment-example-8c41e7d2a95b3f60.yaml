@@ -26,3 +26,11 @@ upgrade:
     :func:`~dwave.experimental.multicolor_anneal.make_tds_x_schedules` and
     :func:`~dwave.experimental.multicolor_anneal.parse_exp_feature_line_info`
     is renamed ``use_common_c_bounds``. The previous name is no longer accepted.
+fixes:
+  - |
+    Fix :func:`~dwave.experimental.shimming.shim_tds_flux_biases` with
+    ``td_shim_type="alternating"`` and ``by_line_pair=True`` so that each
+    target/detector line pair shims only the variables coupled, under the
+    ``bqm``, to a variable on the other line of the pair. Previously, variables
+    on the pair's lines with no coupling across the pair were also shimmed,
+    although they cannot act as complementary detectors.
