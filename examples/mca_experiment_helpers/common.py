@@ -94,6 +94,9 @@ __all__ = [
     "_apply_tight_layout",
     "_save_open_figures",
     "_calc_anneal_offsets",
+    "_peak_frequency_estimates",
+    "_median_change_to_spread",
+    "_reestimate_response_slope",
     "_report_outlier_changes",
     "run_parallel_experiment",
     "plot_shim",
@@ -137,6 +140,38 @@ def _save_open_figures(figures_dir: str, cache_str: str | None = None) -> None:
         fig = plt.figure(fig_num)
         figure_label = fig.get_label() or f"Figure_{fig_num}"
         fig.savefig(_figure_path(figures_dir, figure_label, cache_str))
+
+
+def _peak_frequency_estimates(
+    frequencies: np.ndarray, psd: np.ndarray, target_A: float, dAfit: float = 0.5
+) -> tuple[np.ndarray, np.ndarray]:
+    """Estimate the oscillation frequency of each row of a power spectral density.
+
+    The estimate is the power-weighted mean frequency on the interval
+    ``(target_A * dAfit, target_A * (1 + dAfit))``.
+
+    Args:
+        frequencies: Frequencies at which power is provided (GHz).
+        psd: Power spectral density, one row per embedding.
+        target_A: Expected/desired peak position (GHz).
+        dAfit: Fractional range around target_A to use for estimation.
+
+    Returns:
+        A tuple of the per-embedding frequency estimates (0 where invalid) and a
+        boolean mask of the rows with finite power in the fit window.
+    """
+    # NB a symmetric window only works for frequencies in the range,
+    # and some bias is introduced as a function of the window.
+    Amin = target_A * dAfit
+    Amax = target_A * (1 + dAfit)
+
+    Afilter = np.logical_and(frequencies < Amax, frequencies > Amin)
+    total_power = np.sum(psd[:, Afilter], axis=1)
+    weighted_power = np.sum(psd[:, Afilter] * frequencies[Afilter][np.newaxis, :], axis=1)
+    valid = np.isfinite(total_power) & (total_power > 0) & np.isfinite(weighted_power)
+    mean_A_est = np.zeros(len(total_power))
+    mean_A_est[valid] = weighted_power[valid] / total_power[valid]
+    return mean_A_est, valid
 
 
 def _calc_anneal_offsets(
@@ -184,18 +219,7 @@ def _calc_anneal_offsets(
         estimated; its offset is set to 0 and a warning is issued. Such embeddings
         are also excluded from the mean used when ``fit_to_target_A`` is False.
     """
-
-    # NB a symmetric window only works for frequencies in the range,
-    # and some bias is introduced as a function of the window.
-    Amin = target_A * dAfit
-    Amax = target_A * (1 + dAfit)
-
-    Afilter = np.logical_and(frequencies < Amax, frequencies > Amin)
-    total_power = np.sum(psd[:, Afilter], axis=1)
-    weighted_power = np.sum(psd[:, Afilter] * frequencies[Afilter][np.newaxis, :], axis=1)
-    valid = np.isfinite(total_power) & (total_power > 0) & np.isfinite(weighted_power)
-    mean_A_est = np.zeros(len(total_power))
-    mean_A_est[valid] = weighted_power[valid] / total_power[valid]
+    mean_A_est, valid = _peak_frequency_estimates(frequencies, psd, target_A, dAfit)
     if not valid.all():
         invalid_descriptions = []
         for i in np.flatnonzero(~valid):
@@ -215,7 +239,7 @@ def _calc_anneal_offsets(
         )
     if not valid.any():
         print("A: no embedding has power in the frequency fit window")
-        return np.zeros(len(total_power))
+        return np.zeros(len(mean_A_est))
     mu = np.mean(mean_A_est[valid])
     print(
         f"A: target={target_A:.3g}, estimated_mean={mu:.3g}, and standard deviation={np.std(mean_A_est[valid]):.3g}",
@@ -224,6 +248,109 @@ def _calc_anneal_offsets(
         mu = target_A
     dcs = np.where(valid, (mean_A_est - mu) / dAdc, 0.0)
     return dcs
+
+
+def _median_change_to_spread(deviation: np.ndarray, change: np.ndarray) -> float:
+    """Ratio of the median absolute change to the median absolute deviation.
+
+    A per-qubit correction proportional to ``deviation / assumed_slope`` is
+    applied to remove ``deviation``; the realized per-qubit ``change`` then
+    exceeds or falls short of ``deviation`` according to the true slope, so the
+    ratio estimates ``true_slope / assumed_slope``.
+    """
+    return np.median(np.abs(change)) / np.median(np.abs(deviation))
+
+
+def _bootstrap_stderr(
+    deviation: np.ndarray,
+    change: np.ndarray,
+    *,
+    num_bootstrap: int = 200,
+    seed: int | None = None,
+) -> float:
+    """Bootstrap standard error of :func:`_median_change_to_spread`.
+
+    Qubits (paired deviations and changes) are resampled with replacement
+    ``num_bootstrap`` times, and the standard deviation of the resulting
+    estimates is returned.
+
+    Args:
+        deviation: Per-qubit deviation the correction aims to remove.
+        change: Per-qubit change realized after applying the correction.
+        num_bootstrap: Number of bootstrap resamples.
+        seed: Seed for :func:`numpy.random.default_rng`. The default ``None``
+            draws fresh entropy, so the result is not reproducible; pass an
+            integer to reproduce it.
+
+    Returns:
+        The standard error, or ``nan`` if fewer than two qubits are provided.
+    """
+    n = len(deviation)
+    if n < 2 or num_bootstrap < 2:
+        return np.nan
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, n, size=(num_bootstrap, n))
+    spread = np.median(np.abs(deviation[idx]), axis=1)
+    change_med = np.median(np.abs(change[idx]), axis=1)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        estimates = change_med / spread
+    if not np.all(np.isfinite(estimates)):
+        return np.nan
+    return float(np.std(estimates, ddof=1))
+
+
+def _reestimate_response_slope(
+    name: str,
+    assumed: float,
+    deviation: np.ndarray,
+    change: np.ndarray,
+    *,
+    num_bootstrap: int = 200,
+    seed: int | None = None,
+    significance_threshold: float = 2.0,
+) -> tuple[float, float, bool]:
+    """Re-estimate a linear-model slope from the response to applied corrections.
+
+    The estimate is ``assumed * median|change| / median|deviation|`` with a
+    bootstrap standard error (see :func:`_bootstrap_stderr`; with ``seed=None``
+    it is not reproducible). The estimate is reported, along with whether it
+    differs significantly (by more than ``significance_threshold`` standard
+    errors) from ``assumed``; callers readjust their corrections only then, since
+    a rescale within the error of a noisy estimate would add noise.
+
+    Args:
+        name: Name of the slope for reporting, for example ``"dt/dc"``.
+        assumed: The slope assumed when the corrections were computed.
+        deviation: Per-qubit deviation the corrections aimed to remove.
+        change: Per-qubit change realized after applying the corrections.
+        num_bootstrap: Number of bootstrap resamples.
+        seed: Seed for the bootstrap pseudo-random number generator.
+        significance_threshold: Number of standard errors defining significance.
+
+    Returns:
+        A tuple ``(estimate, standard_error, significant)``. Without data the
+        estimate is ``assumed``, the error ``nan`` and ``significant`` False.
+    """
+    if len(deviation) == 0:
+        return assumed, np.nan, False
+    estimate = assumed * _median_change_to_spread(deviation, change)
+    stderr = assumed * _bootstrap_stderr(
+        deviation, change, num_bootstrap=num_bootstrap, seed=seed
+    )
+    print(
+        f"Revised estimation of {name} {estimate:.4g} +/- {stderr:.2g} "
+        f"(bootstrap standard error), used value {assumed:.4g}"
+    )
+    significant = bool(
+        np.isfinite(stderr) and abs(estimate - assumed) > significance_threshold * stderr
+    )
+    if not significant:
+        print(
+            "The revised estimate is not significantly different from the used "
+            f"value (threshold {significance_threshold:g} standard errors); the "
+            "anneal_offsets are not adjusted."
+        )
+    return estimate, stderr, significant
 
 
 def _report_outlier_changes(

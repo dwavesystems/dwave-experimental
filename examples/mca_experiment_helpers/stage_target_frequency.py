@@ -25,7 +25,6 @@ def run_anneal_offsets(ctx: MCAContext) -> MCAContext:
     stage_idx = ctx.stage_idx
     verify_anneal_offsets = ctx.verify_anneal_offsets
     n_embs = ctx.n_embs
-    schedule_fn = ctx.schedule_fn
     target_A = ctx.target_A
     cache_str = ctx.cache_str
     online = ctx.online
@@ -63,7 +62,7 @@ def run_anneal_offsets(ctx: MCAContext) -> MCAContext:
         f"Stage {stage_idx}: Compensate for per-qubit target-frequency variation to reach {target_A:.3g}GHz (with anneal_offsets, for all {n_embs} parallel embeddings)."
     )
     print(print_once)
-    print(f"1-step anneal offset correction, parameterized by {schedule_fn}. ")
+    print(f"1-step anneal offset correction, parameterized by dA/dc = {dAdc:.3g} GHz. ")
 
     fn_cache = f"cache/AO_It0_{cache_str}.npy"
     if cache_str and os.path.isfile(fn_cache):
@@ -217,7 +216,7 @@ def run_anneal_offsets(ctx: MCAContext) -> MCAContext:
     return ctx
 
 
-def run_verification(ctx: MCAContext) -> MCAContext:
+def run_verification(ctx: MCAContext, *, num_bootstrap: int = 200) -> MCAContext:
     """Re-measure after applying anneal_offsets and verify the alignment.
 
     The offsets proposed by :func:`run_anneal_offsets` are already applied.
@@ -225,9 +224,17 @@ def run_verification(ctx: MCAContext) -> MCAContext:
     residual correction to the targets, and fills the "after" panels of the time
     series, heatmap and PSD figures alongside an offset-correlation plot.
 
+    The first-iteration offsets assumed a linear model with the given ``dAdc``.
+    The realized frequency change is used to re-estimate dA/dc with a bootstrap
+    standard error (seeded by ``ctx.seed_bootstrap``; not reproducible when
+    None), and the residual correction is readjusted only when the estimate
+    differs significantly from ``dAdc``.
+
     Args:
         ctx: Shared context carrying configuration and computed state between
             stages.
+        num_bootstrap: Number of bootstrap resamples used for the dA/dc
+            standard error.
 
     Returns:
         The same ``ctx``, updated with the verification data, PSD and residual
@@ -287,6 +294,27 @@ def run_verification(ctx: MCAContext) -> MCAContext:
     y = anneal_offsets_target = _calc_anneal_offsets(
         frequencies, psd, target_A, dAdc, embeddings=embs
     )  # Per embedding
+
+    # The first-iteration offsets were (A_est - target_A) / dAdc, assuming the
+    # linear model with the given dA/dc. Re-estimate dA/dc from the realized
+    # frequency change, and readjust the residual correction only when it differs
+    # significantly. Embeddings without power in either fit window are excluded.
+    A_est_first, valid_first = _peak_frequency_estimates(
+        frequencies, ctx.psd, target_A
+    )
+    A_est_second, valid_second = _peak_frequency_estimates(frequencies, psd, target_A)
+    valid = valid_first & valid_second
+    dAdc_bulk, _, significant = _reestimate_response_slope(
+        "dA/dc",
+        dAdc,
+        A_est_first[valid] - target_A,
+        A_est_first[valid] - A_est_second[valid],
+        num_bootstrap=num_bootstrap,
+        seed=ctx.seed_bootstrap,
+    )
+    if significant:
+        y = anneal_offsets_target = anneal_offsets_target * dAdc / dAdc_bulk
+        print("The residual anneal_offsets correction is adjusted to this new estimate.")
 
     target_qubits = [emb[0][0] for emb in embs]
     offsets_before = list(sampling_params["anneal_offsets"])

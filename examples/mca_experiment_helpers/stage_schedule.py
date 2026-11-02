@@ -95,6 +95,7 @@ def run_schedule(
         )
         if dAdc is None:
             dAdc = (target_Aplus - target_Aminus) / (2 * dtarget_c)
+            print(f"dA/dc estimated as {dAdc:.3g} GHz from {schedule_fn}")
         if create_plot:
             plt.plot(
                 [target_c, target_c],
