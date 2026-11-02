@@ -1,0 +1,36 @@
+---
+features:
+  - |
+    Replace the ``mca_shim_AO_FB.py`` multicolor annealing example with
+    ``mca_experiment.py``, a command-line calibration-refinement workflow split
+    into per-stage modules under ``mca_experiment_helpers``.
+    For single variable or unfrustrated loops target models,
+    many parallel embeddings are found with sources and detectors on every
+    variable.
+    ``flux_biases``, ``x_schedule_delays`` and ``anneal_offsets`` are optionally
+    refined based on simple models. These restore anticipated model symmetries:
+    Z2 symmetry, synchronization of decoupling from sources, and target
+    frequencies.
+    Calibration refinement is performed on a decoupled system, even if the
+    target system is a loop. Refined Larmor precession is demonstrated for these
+    decoupled targets.
+    For a loop embedding, the example concludes with a demonstration of
+    pi/2-pulse propagation.
+upgrade:
+  - |
+    Some defaults and variable names in
+    :mod:`dwave.experimental.multicolor_anneal` were modified for clarity and
+    best practice.
+    In particular, the ``use_common_bounds`` argument of
+    :func:`~dwave.experimental.multicolor_anneal.make_tds_x_anneal_schedules`,
+    :func:`~dwave.experimental.multicolor_anneal.make_tds_x_schedules` and
+    :func:`~dwave.experimental.multicolor_anneal.parse_exp_feature_line_info`
+    is renamed ``use_common_c_bounds``. The previous name is no longer accepted.
+fixes:
+  - |
+    Fix :func:`~dwave.experimental.shimming.shim_tds_flux_biases` with
+    ``td_shim_type="alternating"`` and ``by_line_pair=True`` so that each
+    target/detector line pair shims only the variables coupled, under the
+    ``bqm``, to a variable on the other line of the pair. Previously, variables
+    on the pair's lines with no coupling across the pair were also shimmed,
+    although they cannot act as complementary detectors.

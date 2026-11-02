@@ -766,13 +766,26 @@ def shim_tds_flux_biases(
     When ``shimmed_variables`` contains only detector variables, no alternation
     is performed and shimming reduces to a single-experiment call to
     :func:`.shim_flux_biases`.
+    Under the assumption that waveforms have a small impact on the required
+    ``flux_biases`` the sources and detectors can have interchangeable roles,
+    with a fixed calibration. The alternating method can be applied to
+    target-source pairs to shim source flux biases, where there role is switched
+    to detector (but this refinement method is not fully implemented here).
+    With ``by_line_pair=True``, each target/detector line pair is shimmed
+    independently, restricted to the variables on the pair's lines that are
+    coupled (nonzero quadratic bias) under the ``bqm`` to a variable on the
+    other line of the pair.
     The role swap uses a single representative schedule per role, so all
     ``target_lines`` must share one ``x_anneal_schedules`` entry and all
     ``detector_lines`` must share one (a :class:`ValueError` is raised
     otherwise). The target and detector schedules must additionally be mutually
-    compatible, meaning interchangeable under the role swap, as produced by
+    compatible, meaning interchangeable under the role swap: the detector
+    waveform must be valid on every target line it is exchanged onto, and the
+    target waveform on every detector line. This is not validated, but is
+    typically guaranteed by schedules generated with
     :func:`~dwave.experimental.multicolor_anneal.make_tds_x_anneal_schedules`
-    with ``use_common_bounds=True``.
+    using ``use_common_c_bounds=True``. Symmetric bounds
+    (``symmetrize_c_bounds``) are not required.
 
     To shim the source requires coupling into the target. Assuming degeneracy on
     targets and detectors is achieved. We can operate in a regime with the source
@@ -814,9 +827,12 @@ def shim_tds_flux_biases(
             ``x_anneal_schedules`` must be identical across all ``target_lines``
             and identical across all ``detector_lines``, and the target and
             detector schedules must be mutually compatible (interchangeable
-            under the role swap), as produced by
+            under the role swap): the detector waveform must be valid on every
+            target line it is exchanged onto, and the target waveform on every
+            detector line. This is not validated, but is typically guaranteed
+            by schedules generated with
             :func:`~dwave.experimental.multicolor_anneal.make_tds_x_anneal_schedules`
-            with ``use_common_bounds=True``.
+            using ``use_common_c_bounds=True``.
         sampling_params_in_place = False
         shimmed_variables: Variables to shim; validated before any sampling
             against the lines the chosen ``td_shim_type`` shims:
@@ -895,13 +911,15 @@ def shim_tds_flux_biases(
     # the line info; x_polarizing_schedule is dropped above for Z2 symmetry.
     if "x_anneal_schedules" not in sampling_params:
         sampling_params["x_anneal_schedules"] = make_tds_x_anneal_schedules(
-                    exp_feature_line_info=exp_feature_line_info,
-                    target_lines=target_lines,
-                    target_c=target_c,
-                    detector_lines=detector_lines,
-                    use_common_bounds=(td_shim_type == "alternating"),
-                    symmetrize_c_bounds=(td_shim_type == "alternating"),
-                )  # For consistency under line swapping.
+            exp_feature_line_info=exp_feature_line_info,
+            target_lines=target_lines,
+            target_c=target_c,
+            detector_lines=detector_lines,
+            # The role swap of td_shim_type="alternating" needs each role's
+            # waveform to be valid on the exchanged lines, typically guaranteed
+            # by common bounds.
+            use_common_c_bounds=True,
+        )
     if "num_reads" not in sampling_params:
         sampling_params["num_reads"] = num_reads
     if "x_disable_filtering" not in sampling_params:
@@ -1028,10 +1046,19 @@ def shim_tds_flux_biases(
                 for detector_line in detector_lines:
                     if flux_biases is not None:
                         sampling_params["flux_biases"] = flux_biases
+                    # Only qubits coupled (under the bqm) to the other line of the
+                    # pair can act as complementary detectors/targets.
+                    pair_lines = {target_line, detector_line}
                     shimmed_variables_dt = set(
                         v
                         for v in shimmed_variables
-                        if line_assignments[v] in {target_line, detector_line}
+                        if line_assignments[v] in pair_lines
+                        and any(
+                            bias != 0
+                            and line_assignments.get(u)
+                            in pair_lines - {line_assignments[v]}
+                            for u, bias in bqm.adj[v].items()
+                        )
                     )
                     # Without shimmed target variables the pair would reduce to a
                     # detector-only shim with the real target line neutralized,
