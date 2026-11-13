@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from pathlib import Path
 
 import dimod
@@ -20,8 +20,12 @@ import numpy as np
 from numpy.typing import NDArray
 
 from dwave.experimental.lattice_utils.lattice.lattice import Lattice
-from dwave.experimental.lattice_utils.lattice.spin_glass import SpinGlassMixin
+from dwave.experimental.lattice_utils.lattice.spin_glass import (
+    SpinGlassLattice,
+    SpinGlassMixin,
+)
 from dwave.experimental.lattice_utils.lattice.embedded_lattice import EmbeddedLattice
+
 
 __all__ = ['Cubic', 'DimerizedCubic', 'CubicSpinGlass', 'DimerizedCubicSpinGlass']
 
@@ -152,7 +156,7 @@ class DimerizedCubic(EmbeddedLattice):
         dimensions: tuple[int, int, int],
         periodic: tuple[bool, bool, bool] = (False, False, True),
         data_root: str | Path,
-        orbit_type: str = "standard",
+        orbit_type: str = "singleton",
         qubit_orbits: NDArray | None = None,
         coupler_orbits: NDArray | None = None,
         chain_strength: float = 2,
@@ -238,6 +242,8 @@ class DimerizedCubicSpinGlass(DimerizedCubic):
         chain_strength: The strength of the couplings within each chain.
         precision: 1 for bimodal ±1 couplings, or a positive even integer
             specifying the number of uniformly distributed signed values.
+        coupling_function: Optional function generating the logical couplings,
+            passed to ``CubicSpinGlass``. Defaults to ``generate_spin_glass_couplings``.
     """
 
     def __init__(
@@ -251,13 +257,21 @@ class DimerizedCubicSpinGlass(DimerizedCubic):
         coupler_orbits: NDArray | None = None,
         chain_strength: float = 2,
         precision: int = 1,
+        coupling_function: Callable[[SpinGlassLattice, int], tuple[NDArray, str]] | None = None,
     ):
+        if orbit_type == "standard":
+            raise ValueError(
+                "orbit_type='standard' is not supported for spin-glass lattices: orbits "
+                "computed from one disorder instance don't apply to others. Use "
+                "'singleton' (default) or pass explicit orbits."
+            )
         logical_lattice = CubicSpinGlass(
             dimensions=dimensions,
             periodic=periodic,
             data_root=data_root,
             orbit_type="singleton",
             precision=precision,
+            coupling_function=coupling_function,
         )
 
         super().__init__(

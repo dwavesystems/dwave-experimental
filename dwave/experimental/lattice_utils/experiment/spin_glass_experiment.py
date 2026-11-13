@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import hashlib
+import inspect
 from numbers import Integral
 
 import dimod
@@ -25,6 +26,14 @@ __all__ = ["SpinGlassExperiment"]
 
 class SpinGlassExperiment(Experiment):
     """Experiment that cycles deterministic spin-glass disorder instances."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if "seed" not in inspect.signature(self.lattice.make_bqm).parameters:
+            raise TypeError(
+                f"SpinGlassExperiment requires a lattice whose make_bqm() accepts a "
+                f"seed (e.g. a SpinGlassMixin lattice); got {type(self.lattice).__name__}."
+            )
 
     def _make_logical_bqms(self) -> list[dimod.BQM]:
         """Make one seeded spin-glass BQM per QPU embedding."""

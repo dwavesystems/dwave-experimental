@@ -23,6 +23,8 @@ import dimod
 import numpy as np
 from numpy.typing import NDArray
 
+__all__ = ['generate_spin_glass_couplings', 'SpinGlassMixin',]
+
 
 class SpinGlassLattice(Protocol):
     precision: int
@@ -61,6 +63,11 @@ def generate_spin_glass_couplings(lattice: SpinGlassLattice, seed: int) -> tuple
 class SpinGlassMixin:
     """Add seeded spin-glass couplings to a lattice.
 
+    Overrides ``make_bqm()`` to accept a ``seed`` argument, and adds the
+    ``precision`` and ``coupling_function`` init arguments. Because of this, it
+    must be listed before the lattice class when interiting, e.g.
+    ``class CubicSpinGlass(SpinGlassMixin, Cubic)``.
+
     By default, precision 1 produces ±1 couplings; positive even precisions
     produce uniformly sampled discrete signed couplings. A custom coupling
     function can override this distribution.
@@ -72,6 +79,12 @@ class SpinGlassMixin:
         coupling_function: Callable[[SpinGlassLattice, int], tuple[NDArray, str]] | None = None,
         **kwargs,
     ):
+        if kwargs.get("orbit_type") == "standard":
+            raise ValueError(
+                "orbit_type='standard' is not supported for spin-glass lattices: orbits "
+                "computed from one disorder instance don't apply to others. Use "
+                "'singleton' (default) or pass explicit orbits."
+            )
         if not isinstance(precision, Integral) or isinstance(precision, bool):
             raise TypeError(f"precision must be an integer, got {precision!r}")
         if precision != 1 and (precision < 2 or precision % 2 != 0):

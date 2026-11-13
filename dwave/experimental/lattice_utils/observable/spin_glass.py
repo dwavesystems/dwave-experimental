@@ -25,6 +25,8 @@ from dwave.experimental.lattice_utils.observable.observable import Observable
 if TYPE_CHECKING:
     from dwave.experimental.lattice_utils.experiment.experiment import Experiment
 
+__all__ = ["EdwardsAndersonOverlap"]
+
 
 class EdwardsAndersonOverlap(Observable):
     """A class for calculating the Edwards-Anderson overlap order parameter."""

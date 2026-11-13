@@ -194,7 +194,7 @@ class Experiment:
     def run_iteration(
         self,
         parameter_list: list,
-        progress: bool = False,
+        progress: bool | None = None,
         scaling_factor: float = 1.0,
     ) -> bool:
         """Run one experiment iteration for each parameter set in ``parameter_list``.
@@ -205,14 +205,18 @@ class Experiment:
 
         Args:
             parameter_list: List of parameter dictionaries to run.
-            progress: If true, displays a progress bar for waiting on results.
+            progress: Whether to show a progress bar. Defaults to ``None``,
+                which shows one if the optional ``tqdm`` dependency is installed.
+                ``True`` requires ``tqdm``.
             scaling_factor: A multiplicative factor to apply to the BQM before sampling.
 
         Returns:
             A boolean value corresponding to whether or not the experiment is
             finished.
         """
-        if progress and tqdm is None:
+        if progress is None:
+            progress = tqdm is not None
+        elif progress and tqdm is None:
             raise ImportError("Progress reporting requires the optional 'tqdm' dependency.")
 
         embeddings = getattr(self.lattice, "embedding_list", None)

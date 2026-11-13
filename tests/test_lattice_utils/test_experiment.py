@@ -462,6 +462,15 @@ class TestSpinGlassExperiment(unittest.TestCase):
                     for bqm, seed in zip(bqms, seeds):
                         self.assertEqual(bqm, glass.make_bqm(seed=seed))
 
+    def test_rejects_unseeded_lattice(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            chain = lattice.Chain(dimensions=(4,), data_root=tmpdir)
+            with self.assertRaisesRegex(TypeError, "accepts a seed"):
+                experiment.SpinGlassExperiment(
+                    lattice=chain,
+                    sampler=MockDWaveSampler(),
+                    config=experiment.ExperimentConfig(num_random_instances=3),
+                )
 
 if __name__ == "__main__":
     unittest.main()

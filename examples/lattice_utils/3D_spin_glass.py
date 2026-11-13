@@ -45,6 +45,9 @@ sampler = DWaveSampler(solver={"topology__type": 'zephyr'})
 # We add a long anneal time to help find ground-state energies.
 ANNEAL_TIMES = np.round(np.geomspace(0.005, 0.03, 9), 6)
 ANNEAL_TIMES = np.append(ANNEAL_TIMES, 100)
+MAX_EMBEDDING_ATTEMPTS = 3
+NUM_ITERATIONS = 40
+INITIAL_EMBEDDING_TIMEOUT = 120
 
 errorbar_style = {"marker": "", "linestyle": "", "capsize": 2}
 point_style = {"linestyle": "", "markersize": 5, "marker": "o"}
@@ -61,8 +64,10 @@ data_root = Path(__file__).resolve().parents[1]
 exps = {}
 for L in [3, 4]:
     for precision in [1, 256]:
-        # Find at least two parallel embeddings, allowing a 100-second search timeout.
-        # SpinGlassExperiment assigns a different disorder seed to each embedding.
+        # Find at least two parallel embeddings, starting with a search timeout
+        # of INITIAL_EMBEDDING_TIMEOUT seconds and doubling it after every
+        # failed attempt. SpinGlassExperiment assigns a different disorder seed
+        # to each embedding.
 
         # We explore bimodal (precision=1) and uniformly distributed discrete
         # couplings (precision=256). Coupling precision only changes the weights,
@@ -75,13 +80,23 @@ for L in [3, 4]:
             precision=precision,
             data_root=data_root,
         )
-        cubic_spin_glass.embed_lattice(
-            sampler,
-            timeout=100,
-            min_number_of_embeddings=2,
-            max_number_of_embeddings=40,
-        )
-
+        timeout = INITIAL_EMBEDDING_TIMEOUT
+        for attempt in range(1, MAX_EMBEDDING_ATTEMPTS + 1):
+            try:
+                cubic_spin_glass.embed_lattice(
+                    sampler,
+                    timeout=timeout,
+                    min_number_of_embeddings=2,
+                    max_number_of_embeddings=40,
+                )
+                break
+            except ValueError as e:
+                print(f"Embedding attempt {attempt} failed (timeout={timeout}s): {e}")
+                timeout *= 2
+        else:
+            raise RuntimeError(
+                f"Could not embed L={L} after {MAX_EMBEDDING_ATTEMPTS} attempts."
+            )
         # Apply flux-bias shimming to the dimerized cubic spin glasses at a fixed
         # energy scale. Each anneal time has a separate shim history because the
         # appropriate flux-bias correction may depend on anneal time.
@@ -92,7 +107,7 @@ for L in [3, 4]:
         exps[L, precision] = experiment.SpinGlassExperiment(
             lattice=cubic_spin_glass,
             sampler=sampler,
-            max_iterations=40,
+            max_iterations=NUM_ITERATIONS,
             config=config,
         )
         exps[L, precision].observables_to_collect.append(observable.EdwardsAndersonOverlap())
@@ -115,27 +130,42 @@ for exp in exps.values():
 # flux biases and anneal offsets, which are given as a single
 # array since they are indexed by physical qubit.
 
-resene = {}  # residual energy
-ea = {}
+res_energy = {}  # residual energy
+ea_overlap = {}
+mag = {}
+fb_shim = {}
 
 for precision in [1, 256]:
     for L in [3, 4]:
         exp = exps[L, precision]
         for anneal_time in ANNEAL_TIMES:
             exp.apply_param({"anneal_time": anneal_time})
-            res = exp.load_results(num_iterations=40)
+            res = exp.load_results(num_iterations=NUM_ITERATIONS)
 
             # To compute the residual energy, compute the sample energy and
             # subtract the reference energy.
             # For this example we simply assume that the reference energy is the
             # ground-state energy.
-            resene[precision, L, anneal_time] = np.array([it["SampleEnergy"] for it in res])
-            resene[precision, L, anneal_time] -= np.tile(
+            res_energy[precision, L, anneal_time] = np.array([it["SampleEnergy"] for it in res])
+            res_energy[precision, L, anneal_time] -= np.tile(
                 np.atleast_3d(np.array([it["ReferenceEnergy"] for it in res])),
-                (1, 1, resene[precision, L, anneal_time].shape[2]),
+                (1, 1, res_energy[precision, L, anneal_time].shape[2]),
             )
 
-            ea[precision, L, anneal_time] = np.array([it["EdwardsAndersonOverlap"] for it in res])
+            ea_overlap[precision, L, anneal_time] = np.array(
+                [it["EdwardsAndersonOverlap"] for it in res]
+            )
+            mag[precision, L, anneal_time] = np.array([it["QubitMagnetization"] for it in res])
+            fb_shim[precision, L, anneal_time] = np.array(
+                [it["shim_data"]["flux_biases"] for it in res]
+            )
+
+
+def binder_cumulant(_q2, _q4, axis=-1):
+    _meanq2 = np.array(_q2).mean(axis=axis)
+    _meanq4 = np.array(_q4).mean(axis=axis)
+    return 1.5 - 0.5 * _meanq4 / (_meanq2**2)
+
 
 title = f"3D dimer spin glass, J={exp.param['signed_energy_scale']}, {sampler.solver.name}"
 fig, axes = plt.subplots(2, 4, figsize=(16, 8), sharex="col", sharey="col")
@@ -150,12 +180,17 @@ for iprec, precision in enumerate([1, 256]):
         # Compute mean and bootstrap CI for each anneal time
         cis = [
             bootstrap(
-                (ea[precision, L, anneal_time][:, :, 1].flatten(),), np.mean, confidence_level=0.95
+                (ea_overlap[precision, L, anneal_time][:, :, 1].flatten(),),
+                np.mean,
+                confidence_level=0.95,
             ).confidence_interval
             for anneal_time in ANNEAL_TIMES[:-1]
         ]
         y = np.array(
-            [ea[precision, L, anneal_time][:, :, 1].mean() for anneal_time in ANNEAL_TIMES[:-1]]
+            [
+                ea_overlap[precision, L, anneal_time][:, :, 1].mean()
+                for anneal_time in ANNEAL_TIMES[:-1]
+            ]
         )
         y_lower = y - np.array([ci.low for ci in cis])
         y_upper = np.array([ci.high for ci in cis]) - y
@@ -181,7 +216,7 @@ for iprec, precision in enumerate([1, 256]):
         ax.loglog()
 
         residual_energy = [
-            resene[precision, L, anneal_time].mean(axis=2) / (L * L * L)
+            res_energy[precision, L, anneal_time].mean(axis=2) / (L * L * L)
             for anneal_time in ANNEAL_TIMES[:-1]
         ]
         residual_energy_cis = [
@@ -211,16 +246,11 @@ for iprec, precision in enumerate([1, 256]):
         ax = axes[iprec, 2]
         ax.loglog()
 
-        def binder_cumulant(_q2, _q4, axis=-1):
-            _meanq2 = np.array(_q2).mean(axis=axis)
-            _meanq4 = np.array(_q4).mean(axis=axis)
-            return 1.5 - 0.5 * _meanq4 / (_meanq2**2)
-
         cis = {}
         U_mean = {}
         for anneal_time in ANNEAL_TIMES[:-1]:
-            q_squared = ea[precision, L, anneal_time][:, :, 1].ravel()
-            q_fourth = ea[precision, L, anneal_time][:, :, 2].ravel()
+            q_squared = ea_overlap[precision, L, anneal_time][:, :, 1].ravel()
+            q_fourth = ea_overlap[precision, L, anneal_time][:, :, 2].ravel()
             U_mean[anneal_time] = binder_cumulant(q_squared, q_fourth)
 
             cis[anneal_time] = bootstrap(
@@ -274,4 +304,43 @@ fig.tight_layout()
 
 filename = re.sub(r"[^A-Za-z0-9._-]", "_", title)
 fig.savefig(Path(os.getcwd()) / "figures" / f"{filename}.png")
+
+# Plot shim data to test improvement in statistics.
+shim_anneal_times = ANNEAL_TIMES[:-1]
+shim_anneal_times = shim_anneal_times[[0, len(shim_anneal_times) // 2, -1]]
+precision = 256
+L = 4
+shim_title = f"Flux offset shim: {title}, L={L:d}, prec={precision:d}"
+shim_fig, shim_axes = plt.subplots(3, 3, figsize=(12, 9), sharex="col", sharey="col")
+shim_fig.suptitle(shim_title, fontsize=16)
+for iat, anneal_time in enumerate(shim_anneal_times):
+    magnetization = mag[precision, L, anneal_time]
+
+    ax = shim_axes[iat, 0]
+    ax.plot(magnetization.std(axis=(1, 2)))
+    ax.set_ylabel(f"{anneal_time:g} µs\nMagnetization std")
+
+    ax = shim_axes[iat, 1]
+    ax.hist(magnetization[:5].ravel(), label="First 5 iterations", alpha=0.5)
+    ax.hist(magnetization[-5:].ravel(), label="Last 5 iterations", alpha=0.5)
+    ax.set_yticks([])
+    ax.set_ylabel("Frequency")
+
+    ax = shim_axes[iat, 2]
+    used_qubits = np.unique(exps[L, precision].lattice.embedding_list)
+    ax.plot(fb_shim[precision, L, anneal_time][:, used_qubits], alpha=0.2)
+    ax.set_ylabel("Flux bias")
+
+shim_axes[0, 0].set_title("Magnetization std")
+shim_axes[0, 1].set_title("Magnetization")
+shim_axes[0, 2].set_title("Flux offset shim")
+shim_axes[-1, 0].set_xlabel("Iteration")
+shim_axes[-1, 1].set_xlabel("Magnetization")
+shim_axes[-1, 2].set_xlabel("Iteration")
+shim_axes[-1, 1].legend()
+
+shim_fig.tight_layout()
+filename = re.sub(r"[^A-Za-z0-9._-]", "_", shim_title)
+shim_fig.savefig(Path(os.getcwd()) / "figures" / f"{filename}.png")
+
 plt.show()
