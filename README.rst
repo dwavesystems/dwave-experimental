@@ -1,3 +1,15 @@
+.. image:: https://badge.fury.io/py/dwave-experimental.svg
+    :target: https://badge.fury.io/py/dwave-experimental
+    :alt: Latest version on PyPI
+
+.. image:: https://circleci.com/gh/dwavesystems/dwave-experimental.svg?style=shield
+    :target: https://circleci.com/gh/dwavesystems/dwave-experimental
+    :alt: Linux/MacOS/Windows build status
+
+.. image:: https://codecov.io/gh/dwavesystems/dwave-experimental/branch/main/graph/badge.svg
+    :target: https://codecov.io/gh/dwavesystems/dwave-experimental
+    :alt: Coverage report
+
 ==================
 dwave-experimental
 ==================
@@ -45,17 +57,9 @@ We recommend pinning specific versions in your dependencies.
 License
 =======
 
-Released under the Apache License 2.0. See LICENSE file.
+Released under the Apache License 2.0. See `<LICENSE>`_ file.
 
 Contributing
 ============
 
 Please follow Ocean's `contributing guide <https://docs.dwavequantum.com/en/latest/ocean/contribute.html>`_.
-
-Release Notes
--------------
-
-We use `reno <https://docs.openstack.org/reno/>`_ to manage release notes.
-
-See reno's `user guide <https://docs.openstack.org/reno/latest/user/usage.html>`_
-for details.
