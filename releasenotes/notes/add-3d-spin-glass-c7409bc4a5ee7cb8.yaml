@@ -1,0 +1,40 @@
+---
+features:
+  - |
+    Add ``Cubic`` and ``DimerizedCubic`` lattice classes, with
+    ``CubicSpinGlass`` and ``DimerizedCubicSpinGlass`` variants for
+    reproducible seeded spin-glass couplings.
+  - |
+    Add ``SpinGlassExperiment`` for cycling disorder instances across
+    embeddings and ``EdwardsAndersonOverlap`` for measuring sample overlap.
+  - |
+    Add ``SpinGlassMixin`` and ``generate_spin_glass_couplings`` for adding
+    seeded spin-glass couplings to a lattice, with configurable ``precision``
+    (bimodal or uniformly distributed discrete couplings) and an optional
+    custom ``coupling_function``.
+  - |
+    ``Experiment.run_iteration()`` now shows a progress bar by default when
+    the optional ``tqdm`` dependency is installed.
+  - |
+    Add an example of a 3D dimerized cubic spin-glass experiment.
+upgrade:
+  - |
+    ``Experiment.run_iteration()`` now raises a ``RuntimeError`` if the
+    lattice has no embeddings, instead of loading them from disk. Call
+    ``lattice.embed_lattice(sampler)`` before running an experiment.
+  - |
+    ``Lattice.embed_lattice()`` no longer accepts arbitrary keyword
+    arguments. It now raises a ``ValueError`` if fewer than
+    ``min_number_of_embeddings`` embeddings are found, or if
+    ``max_number_of_embeddings`` is less than ``min_number_of_embeddings``.
+fixes:
+  - |
+    ``DimerizedTriangular`` no longer passes ``orbit_type``,
+    ``qubit_orbits`` and ``coupler_orbits`` to its logical lattice. These
+    arguments now apply only to the physical lattice, so explicit orbits
+    sized for the physical lattice no longer fail validation, and the
+    unused logical orbits are no longer computed.
+  - |
+    ``Lattice.embed_lattice()`` now filters cached embeddings against
+    ``exclude_qubits``, and checks ``min_number_of_embeddings`` after
+    filtering.
