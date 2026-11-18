@@ -19,7 +19,6 @@ import dimod
 import networkx as nx
 import numpy as np
 from numpy.typing import NDArray
-
 from dwave.graphs.algorithms.automorphism import schreier_rep
 
 __all__ = [

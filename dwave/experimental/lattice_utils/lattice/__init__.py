@@ -13,8 +13,10 @@
 # limitations under the License.
 
 from dwave.experimental.lattice_utils.lattice.chain import *
+from dwave.experimental.lattice_utils.lattice.cubic import *
 from dwave.experimental.lattice_utils.lattice.embedded_lattice import *
 from dwave.experimental.lattice_utils.lattice.lattice import *
 from dwave.experimental.lattice_utils.lattice.optimize import *
 from dwave.experimental.lattice_utils.lattice.orbits import *
+from dwave.experimental.lattice_utils.lattice.spin_glass import *
 from dwave.experimental.lattice_utils.lattice.triangular import *

@@ -146,12 +146,12 @@ class EmbeddedLattice(Lattice):
         """Embed a logical BQM onto the physical lattice.
 
         This is a lattice-aware alternative to ``dwave.embedding.embed_bqm``.
-        The standard implementation treats each chain as an unodered set of
+        The standard implementation treats each chain as an unordered set of
         physical qubits and routes interactions across whatever target edges
         happen to be available. Here, chains are ordered tuples and the
         physical edges used for each logical interaction are chosen
         deterministically by ``get_chain_connectivity``, so that the position of
-        a qubit within its chain carries geometric meaining (e.g. in dimerized
+        a qubit within its chain carries geometric meaning (e.g. in dimerized
         lattices, index 0 vs. 1 corresponds to a specific sublattice). This
         allows for more structured embeddings that can be tailored to the
         geometry of the logical lattice and the physics of the problem.

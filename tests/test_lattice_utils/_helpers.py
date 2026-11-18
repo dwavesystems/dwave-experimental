@@ -16,14 +16,9 @@
 
 import dimod
 
-from dwave.experimental.lattice_utils import experiment
-from dwave.experimental.lattice_utils import lattice
+from dwave.experimental.lattice_utils import experiment, lattice
 
-__all__ = [
-    "_make_triangular",
-    "_make_experiment",
-    "_make_embedded_chain",
-]
+__all__ = ["_make_triangular", "_make_experiment", "_make_embedded_chain"]
 
 
 def _make_triangular(

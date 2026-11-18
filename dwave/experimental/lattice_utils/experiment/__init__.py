@@ -15,3 +15,4 @@
 from dwave.experimental.lattice_utils.experiment.experiment import *
 from dwave.experimental.lattice_utils.experiment.fast_anneal_experiment import *
 from dwave.experimental.lattice_utils.experiment.samplercall import *
+from dwave.experimental.lattice_utils.experiment.spin_glass_experiment import *
