@@ -1,0 +1,10 @@
+features:
+  - |
+    Store lattice-utils embeddings in a SQLite cache and reuse them when
+    compatible with the current sampler graph and qubit exclusions.
+upgrade:
+  - |
+    Existing text embedding caches are not imported. Lattice-utils searches
+    for new embeddings if no compatible set exists in the SQLite cache.
+    Start a fresh experiment run rather than resuming a checkpoint that
+    used the old text cache, because newly selected embeddings may differ.
