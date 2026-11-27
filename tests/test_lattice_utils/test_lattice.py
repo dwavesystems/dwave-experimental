@@ -12,16 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 import dimod
+import networkx as nx
 import numpy as np
 from dwave.samplers import SteepestDescentSolver
 from dwave.system.testing import MockDWaveSampler
 
 from dwave.experimental.lattice_utils import lattice
+from dwave.experimental.lattice_utils._database import decode_array, open_database
 from tests.test_lattice_utils._helpers import _make_embedded_chain, _make_triangular
 
 
@@ -138,115 +142,220 @@ class TestLattice(unittest.TestCase):
 
     def test_embed_no_embeddings_found(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = lattice.Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
+            data_root = Path(tmpdir) / "workspace"
+            chain = lattice.Chain(dimensions=(4,), periodic=(True,), data_root=data_root)
             sampler = MockDWaveSampler()
 
             with mock.patch(
                 "dwave.experimental.lattice_utils.lattice.lattice.find_multiple_embeddings",
                 return_value=[],
-            ):
+            ) as search:
                 with self.assertRaises(ValueError):
                     chain.embed_lattice(sampler, try_to_load=False, timeout=1)
 
+            search.assert_called_once()
+            database_path = Path(tmpdir) / "data" / "lattice_utils.sqlite3"
+            self.assertFalse(database_path.exists())
+
     def test_embed_load_existing(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = lattice.Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
+            data_root = Path(tmpdir) / "workspace"
+            chain = lattice.Chain(dimensions=(4,), periodic=(True,), data_root=data_root)
             sampler = MockDWaveSampler()
 
             embeddings = np.array([[0, 1, 2, 3]])
-            chain._save_embeddings(sampler, embeddings)
+            chain._save_embeddings(embeddings, sampler=sampler)
+            original_id = chain.embedding_set_id
 
-            chain.embed_lattice(sampler, try_to_load=True)
+            with (
+                mock.patch.object(
+                    sampler, "to_networkx_graph", side_effect=lambda: nx.cycle_graph(4)
+                ),
+                mock.patch(
+                    "dwave.experimental.lattice_utils.lattice.lattice.find_multiple_embeddings"
+                ) as search,
+            ):
+                chain.embed_lattice(sampler, try_to_load=True)
+
+            search.assert_not_called()
             np.testing.assert_array_equal(chain.embedding_list, embeddings)
+            self.assertEqual(chain.embedding_set_id, original_id)
+
+            database_path = Path(tmpdir) / "data" / "lattice_utils.sqlite3"
+            with open_database(database_path) as connection:
+                records = connection.execute(
+                    "SELECT embedding_set_id, data FROM embedding_sets"
+                ).fetchall()
+
+            self.assertEqual(len(records), 1)
+            self.assertEqual(records[0][0], original_id)
+            np.testing.assert_array_equal(decode_array(records[0][1]), embeddings)
 
     def test_embed_find_and_save(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = lattice.Chain(dimensions=(4,), periodic=(True,), data_root=tmpdir)
+            data_root = Path(tmpdir) / "workspace"
+            chain = lattice.Chain(dimensions=(4,), periodic=(True,), data_root=data_root)
             sampler = MockDWaveSampler()
+            embeddings = [[0, 1, 2, 3]]
 
-            emb_dict = {i: i for i in range(4)}
             with mock.patch(
                 "dwave.experimental.lattice_utils.lattice.lattice.find_multiple_embeddings",
-                return_value=[emb_dict],
-            ):
+                return_value=[dict(enumerate(embeddings[0]))],
+            ) as search:
                 chain.embed_lattice(sampler, try_to_load=False, timeout=1)
-            # Verify embedding was found and saved
-            emb_path = chain._get_path("embedding", sampler_name="MockDWaveSampler")
-            self.assertTrue(emb_path.exists())
+
+            search.assert_called_once()
+            np.testing.assert_array_equal(chain.embedding_list, embeddings)
+
+            database_path = Path(tmpdir) / "data" / "lattice_utils.sqlite3"
+            with open_database(database_path) as connection:
+                records = connection.execute(
+                    "SELECT embedding_set_id, data FROM embedding_sets"
+                ).fetchall()
+
+            self.assertEqual(len(records), 1)
+            saved_id, data = records[0]
+            self.assertEqual(saved_id, chain.embedding_set_id)
+            np.testing.assert_array_equal(decode_array(data), embeddings)
 
     def test_embed_excluded_qubits_reuses_filtered_unrestricted_cache(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = lattice.Chain(dimensions=(4,), data_root=tmpdir)
+            data_root = Path(tmpdir) / "workspace"
+            chain = lattice.Chain(dimensions=(4,), periodic=(True,), data_root=data_root)
             sampler = MockDWaveSampler()
-            chain._save_embeddings(sampler, np.array([[0, 1, 2, 3], [4, 5, 6, 7]]))
+            graph = nx.disjoint_union(nx.cycle_graph(4), nx.cycle_graph(4))
+            original = np.array([[0, 1, 2, 3], [4, 5, 6, 7]])
+            chain._save_embeddings(original, sampler=sampler)
+            original_id = chain.embedding_set_id
 
-            with mock.patch(
-                "dwave.experimental.lattice_utils.lattice.lattice.find_multiple_embeddings"
-            ) as search:
+            with (
+                mock.patch.object(sampler, "to_networkx_graph", side_effect=graph.copy),
+                mock.patch(
+                    "dwave.experimental.lattice_utils.lattice.lattice.find_multiple_embeddings"
+                ) as search,
+            ):
                 chain.embed_lattice(sampler, exclude_qubits=[1])
 
             search.assert_not_called()
-            np.testing.assert_array_equal(chain.embedding_list, [[4, 5, 6, 7]])
+            np.testing.assert_array_equal(chain.embedding_list, original[1:])
+            filtered_id = chain.embedding_set_id
+            self.assertNotEqual(filtered_id, original_id)
+
+            database_path = Path(tmpdir) / "data" / "lattice_utils.sqlite3"
+            with open_database(database_path) as connection:
+                records = dict(connection.execute(
+                    "SELECT embedding_set_id, data FROM embedding_sets"
+                ).fetchall())
+
+            self.assertEqual(set(records), {original_id, filtered_id})
+            np.testing.assert_array_equal(decode_array(records[original_id]), original)
+            np.testing.assert_array_equal(decode_array(records[filtered_id]), original[1:])
 
     def test_embed_excluded_qubits_saves_and_loads_separate_cache(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = lattice.Chain(dimensions=(4,), data_root=tmpdir)
+            data_root = Path(tmpdir) / "workspace"
+            chain = lattice.Chain(dimensions=(4,), periodic=(True,), data_root=data_root)
             sampler = MockDWaveSampler()
+            graph = nx.disjoint_union(nx.cycle_graph(4), nx.cycle_graph(4))
             unrestricted = np.array([[0, 1, 2, 3]])
-            restricted = np.array([[10, 11, 12, 13]])
-            chain._save_embeddings(sampler, unrestricted)
+            restricted = np.array([[4, 5, 6, 7]])
+            chain._save_embeddings(unrestricted, sampler=sampler)
+            original_id = chain.embedding_set_id
 
-            with (
-                mock.patch(
-                    "dwave.experimental.lattice_utils.lattice.lattice.find_multiple_embeddings",
-                    return_value=[dict(enumerate(restricted[0]))],
-                ) as search,
-                self.assertWarns(UserWarning),
-            ):
-                chain.embed_lattice(sampler, exclude_qubits=[3, 1, 3])
+            with mock.patch.object(sampler, "to_networkx_graph", side_effect=graph.copy):
+                with (
+                    mock.patch(
+                        "dwave.experimental.lattice_utils.lattice.lattice.find_multiple_embeddings",
+                        return_value=[dict(enumerate(restricted[0]))],
+                    ) as search,
+                    self.assertWarns(UserWarning),
+                ):
+                    chain.embed_lattice(sampler, exclude_qubits=[3, 1, 3])
 
-            search.assert_called_once()
-            np.testing.assert_array_equal(chain.embedding_list, restricted)
-            np.testing.assert_array_equal(
-                np.atleast_2d(np.loadtxt(chain._embedding_cache_filename(sampler), dtype=int)),
-                unrestricted,
-            )
-            specific_cache = chain._embedding_cache_filename(sampler, [1, 3])
-            self.assertTrue(specific_cache.exists())
-            self.assertNotEqual(specific_cache, chain._embedding_cache_filename(sampler))
+                search.assert_called_once()
+                restricted_id = chain.embedding_set_id
+                self.assertNotEqual(restricted_id, original_id)
 
-            another_chain = lattice.Chain(dimensions=(4,), data_root=tmpdir)
-            with mock.patch(
-                "dwave.experimental.lattice_utils.lattice.lattice.find_multiple_embeddings"
-            ) as search:
-                another_chain.embed_lattice(sampler, exclude_qubits=[1, 3])
+                restored = lattice.Chain(dimensions=(4,), periodic=(True,), data_root=data_root)
+                with mock.patch(
+                    "dwave.experimental.lattice_utils.lattice.lattice.find_multiple_embeddings"
+                ) as search:
+                    restored.embed_lattice(sampler, exclude_qubits=[1, 3])
 
-            search.assert_not_called()
-            np.testing.assert_array_equal(another_chain.embedding_list, restricted)
+                search.assert_not_called()
+                self.assertEqual(restored.embedding_set_id, restricted_id)
+                np.testing.assert_array_equal(restored.embedding_list, restricted)
+
+            with open_database(Path(tmpdir) / "data" / "lattice_utils.sqlite3") as connection:
+                records = {
+                    set_id: (json.loads(exclusions), decode_array(data))
+                    for set_id, exclusions, data in connection.execute(
+                        "SELECT embedding_set_id, exclude_qubits, data FROM embedding_sets"
+                    )
+                }
+
+            self.assertEqual(set(records), {original_id, restricted_id})
+            np.testing.assert_array_equal(records[original_id][1], unrestricted)
+            self.assertEqual(records[restricted_id][0], [1, 3])
+            np.testing.assert_array_equal(records[restricted_id][1], restricted)
 
     def test_embed_minimum_checked_after_filtering(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            chain = lattice.Chain(dimensions=(4,), data_root=tmpdir)
+            data_root = Path(tmpdir) / "workspace"
+            chain = lattice.Chain(dimensions=(4,), periodic=(True,), data_root=data_root)
             sampler = MockDWaveSampler()
-            chain._save_embeddings(sampler, np.array([[0, 1, 2, 3], [4, 5, 6, 7]]))
-            found = [dict(enumerate(row)) for row in ([8, 9, 10, 11], [12, 13, 14, 15])]
+            graph = nx.disjoint_union_all([nx.cycle_graph(4) for _ in range(4)])
+            chain._save_embeddings(np.array([[0, 1, 2, 3], [4, 5, 6, 7]]), sampler=sampler)
+            found = [[8, 9, 10, 11], [12, 13, 14, 15]]
 
             with (
+                mock.patch.object(sampler, "to_networkx_graph", side_effect=graph.copy),
                 mock.patch(
                     "dwave.experimental.lattice_utils.lattice.lattice.find_multiple_embeddings",
-                    return_value=found,
+                    return_value=[dict(enumerate(row)) for row in found],
                 ) as search,
                 self.assertWarns(UserWarning),
             ):
-                chain.embed_lattice(
-                    sampler,
-                    exclude_qubits=[1],
-                    min_number_of_embeddings=2,
-                    max_number_of_embeddings=2,
-                )
+                chain.embed_lattice(sampler, exclude_qubits=[1], min_number_of_embeddings=2)
 
             search.assert_called_once()
-            np.testing.assert_array_equal(chain.embedding_list, [[8, 9, 10, 11], [12, 13, 14, 15]])
+            np.testing.assert_array_equal(chain.embedding_list, found)
+
+    def test_embed_cache_prefers_exact_size_at_maximum(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_root = Path(tmpdir) / "workspace"
+            chain = lattice.Chain(dimensions=(4,), periodic=(True,), data_root=data_root)
+            sampler = MockDWaveSampler()
+            graph = nx.disjoint_union_all([nx.cycle_graph(4) for _ in range(4)])
+            larger = np.arange(16).reshape(4, 4)
+            exact = larger[2:]
+
+            chain._save_embeddings(exact, sampler=sampler)
+            exact_id = chain.embedding_set_id
+            chain._save_embeddings(larger, sampler=sampler)
+            larger_id = chain.embedding_set_id
+            chain._save_embeddings(larger[:1], sampler=sampler)
+
+            with (
+                mock.patch.object(sampler, "to_networkx_graph", side_effect=graph.copy),
+                mock.patch(
+                    "dwave.experimental.lattice_utils.lattice.lattice.find_multiple_embeddings",
+                    side_effect=AssertionError("Expected a cache hit"),
+                ),
+            ):
+                chain.embed_lattice(sampler, max_number_of_embeddings=2)
+                self.assertEqual(chain.embedding_set_id, exact_id)
+                np.testing.assert_array_equal(chain.embedding_list, exact)
+
+                chain.embed_lattice(sampler)
+                self.assertEqual(chain.embedding_set_id, larger_id)
+                np.testing.assert_array_equal(chain.embedding_list, larger)
+
+            database_path = Path(tmpdir) / "data" / "lattice_utils.sqlite3"
+            with open_database(database_path) as connection:
+                count, = connection.execute("SELECT COUNT(*) FROM embedding_sets").fetchone()
+
+            self.assertEqual(count, 3)
 
 
 class TestLatticeOptimize(unittest.TestCase):

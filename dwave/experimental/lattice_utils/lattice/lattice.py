@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import hashlib
+import json
 import os
 import warnings
 from abc import ABC, abstractmethod
@@ -29,6 +30,7 @@ from numpy.typing import NDArray
 
 from dwave.experimental.lattice_utils.lattice.optimize import optimize
 from dwave.experimental.lattice_utils.lattice.orbits import get_orbits
+from dwave.experimental.lattice_utils._database import decode_array, encode_array, open_database
 
 __all__ = ['Lattice']
 
@@ -40,12 +42,15 @@ class Lattice(ABC):
     a subclass must:
 
     - Implement the ``generate_edges`` method, which yields the edges of the lattice as pairs
-    - Initialize the ``self.num_spins`` attribute in the constructor, which is used by the base class
+    - Initialize the ``self.num_spins`` attribute in the constructor, which is
+        used by the base class
     - set any geometry-specific identifiers such as ``self.geometry_name``
 
     Args:
         dimensions: Tuple specifying the size of the lattice in each dimension.
-        data_root: Root directory for loading and saving lattice data such as embeddings and orbits.
+        data_root: Root directory for file-based lattice data such as orbits.
+            Embeddings are stored separately in ``data/lattice_utils.sqlite3``
+            under the parent of ``data_root``.
         periodic: Tuple indicating whether each dimension is periodic (True) or open (False).
         orbit_type: Method for determining qubit and coupler orbits. Must be one of "global",
             "standard", "singleton", or "explicit". See ``initialize_orbits`` for details.
@@ -101,15 +106,25 @@ class Lattice(ABC):
     ) -> None:
         """Find or load embeddings onto the sampler graph.
 
+        Check cached results with matching qubit exclusions first. Within each
+        group, start with results that contain more embeddings. If a maximum is
+        specified, count only up to that limit and prefer a result with exactly
+        that many embeddings over one that needs trimming. Use the first cached
+        result with at least ``min_number_of_embeddings`` compatible embeddings.
+
         Args:
-            sampler: Sampler whose hardware graph is used as the target for embedding.
-            try_to_load: If True, attempt to load embeddings from disk before
-                trying to find them.
-            timeout: Time limit for the embedding search, in seconds.
-            max_number_of_embeddings: Maximum number of embeddings to search for.
-            min_number_of_embeddings: Minimum number of embeddings required to save.
-            exclude_qubits: Qubits to remove from the sampler graph before searching
-                for embeddings.
+            sampler: Sampler whose hardware graph is used to validate cached
+                embeddings and find new ones.
+            try_to_load: If True, try to reuse cached embeddings before searching.
+                If False, skip the lookup. Newly found embeddings are saved either way.
+            timeout: Time limit in seconds for each attempt to find a new embedding.
+            max_number_of_embeddings: Maximum number of embeddings to find or load.
+                If None, no maximum is imposed.
+            min_number_of_embeddings: Minimum number of compatible embeddings needed
+                to reuse a cached result. If a new search finds fewer than this
+                number, raise ``ValueError``.
+            exclude_qubits: Qubits to remove from the sampler graph before validating
+                cached embeddings or searching for new ones.
         """
         if exclude_qubits is None:
             exclude_qubits = []
@@ -124,29 +139,24 @@ class Lattice(ABC):
         graph_sampler.remove_nodes_from(exclude_qubits)
 
         if try_to_load:
-            # Prefer the exact exclusion set; an unrestricted cache can also
-            # provide usable embeddings after filtering out excluded qubits.
-            cache_exclusions = (exclude_qubits, []) if exclude_qubits else ([],)
-            for cached_exclusions in cache_exclusions:
-                try:
-                    self._load_embeddings(sampler, exclude_qubits=cached_exclusions)
-                except FileNotFoundError:
-                    continue
-
-                cached = self.embedding_list
-
-                if exclude_qubits:
-                    valid_rows = ~np.isin(cached, exclude_qubits).any(axis=1)
-                    cached = cached[valid_rows]
-
-                if max_number_of_embeddings is not None:
-                    cached = cached[:max_number_of_embeddings]
-
-                if len(cached) >= min_number_of_embeddings:
-                    self.embedding_list = cached
-                    return
-
-            warnings.warn("No usable cached embeddings found, computing new embeddings.")
+            try:
+                self._load_embeddings(
+                    graph_sampler,
+                    exclude_qubits=exclude_qubits,
+                    min_number_of_embeddings=min_number_of_embeddings,
+                    max_number_of_embeddings=max_number_of_embeddings,
+                )
+            except FileNotFoundError:
+                warnings.warn("No usable cached embeddings found, computing new embeddings.")
+            else:
+                # Save the filtered subset under its own ID
+                if self.embedding_set_id is None:
+                    self._save_embeddings(
+                        self.embedding_list,
+                        sampler=sampler,
+                        exclude_qubits=exclude_qubits,
+                    )
+                return
 
         embedding_dicts = find_multiple_embeddings(
             graph_bqm,
@@ -167,7 +177,7 @@ class Lattice(ABC):
         self.embedding_list = np.asarray(
             [[embedding[v] for v in range(self.num_spins)] for embedding in embedding_dicts]
         )
-        self._save_embeddings(sampler, self.embedding_list, exclude_qubits=exclude_qubits)
+        self._save_embeddings(self.embedding_list, sampler=sampler, exclude_qubits=exclude_qubits)
 
     def make_bqm(self) -> dimod.BQM:
         """Construct a BQM with coupling strength values set to +1.
@@ -313,34 +323,117 @@ class Lattice(ABC):
             return self._get_path(kind, sampler_name="MockDWaveSampler")
         return self._get_path(kind, sampler_name=sampler.solver.name)
 
-    def _embedding_cache_filename(
-        self,
-        sampler: dimod.Sampler,
-        exclude_qubits: list | None = None,
-    ) -> Path:
-        """Identify an embedding cache by sampler and excluded-qubit set."""
-        filename = self._make_filename("embedding", sampler=sampler)
-        if exclude_qubits:
-            excluded = ",".join(map(str, sorted(set(exclude_qubits))))
-            digest = hashlib.sha256(excluded.encode("ascii")).hexdigest()[:16]
-            filename = filename.with_name(f"{filename.stem}_exclude_{digest}{filename.suffix}")
-        return filename
+    def _lattice_key(self) -> str:
+        identity = [
+            1,
+            int(self.num_spins),
+            sorted(sorted(map(int, edge)) for edge in self.edge_list),
+        ]
+        return hashlib.sha256(json.dumps(identity).encode("ascii")).hexdigest()
 
     def _save_embeddings(
         self,
-        sampler: dimod.Sampler,
         embeddings: NDArray,
+        *,
+        sampler: dimod.Sampler,
         exclude_qubits: list | None = None,
     ) -> None:
-        """Save embedding data to disk."""
-        cache_filename = self._embedding_cache_filename(sampler, exclude_qubits)
-        os.makedirs(cache_filename.parent, exist_ok=True)
-        np.savetxt(cache_filename, embeddings, fmt="%d")
+        """Save an ordered embedding set and record its database ID."""
+        if embeddings.ndim != 2 or embeddings.shape[1] != self.num_spins:
+            raise ValueError("Invalid embedding array.")
+        if not np.issubdtype(embeddings.dtype, np.integer):
+            raise ValueError("Embeddings must contain integer labels.")
 
-    def _load_embeddings(self, sampler: dimod.Sampler, exclude_qubits: list | None = None) -> None:
-        """Load embedding data."""
-        filename = self._embedding_cache_filename(sampler, exclude_qubits)
-        self.embedding_list = np.atleast_2d(np.loadtxt(filename, dtype=int))
+        sampler_name = (
+            "MockDWaveSampler"
+            if isinstance(sampler, MockDWaveSampler)
+            else sampler.solver.name
+        )
+        excluded_qubits = sorted({int(qubit) for qubit in (exclude_qubits or [])})
+
+        with open_database(self.data_root.parent / "data" / "lattice_utils.sqlite3") as connection:
+            cursor = connection.execute(
+                "INSERT INTO embedding_sets "
+                "(lattice_key, geometry_name, dimensions, periodic, sampler_name, "
+                "exclude_qubits, num_embeddings, data) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    self._lattice_key(),
+                    self.geometry_name,
+                    json.dumps(self.dimensions),
+                    json.dumps(self.periodic),
+                    sampler_name,
+                    json.dumps(excluded_qubits),
+                    len(embeddings),
+                    encode_array(embeddings),
+                ),
+            )
+            embedding_set_id = cursor.lastrowid
+
+        self.embedding_set_id = embedding_set_id
+
+    def _load_embeddings(
+        self,
+        hardware_graph: nx.Graph,
+        *,
+        exclude_qubits: list | None = None,
+        min_number_of_embeddings: int = 1,
+        max_number_of_embeddings: int | None = None,
+    ) -> None:
+        """Load embeddings from the SQLite cache that are compatible with the given hardware graph."""
+        with open_database(self.data_root.parent / "data" / "lattice_utils.sqlite3") as connection:
+            excluded = json.dumps(sorted({
+                int(qubit) for qubit in (exclude_qubits or [])
+            }))
+            records = connection.execute(
+                "SELECT embedding_set_id, data FROM embedding_sets "
+                "WHERE lattice_key = :lattice_key "
+                "ORDER BY (exclude_qubits = :excluded) DESC, "
+                "MIN(num_embeddings, COALESCE(:maximum, num_embeddings)) DESC, "
+                "(num_embeddings = :maximum) DESC, "
+                "embedding_set_id DESC",
+                {
+                    "lattice_key": self._lattice_key(),
+                    "excluded": excluded,
+                    "maximum": max_number_of_embeddings,
+                },
+            )
+
+            for embedding_set_id, encoded_embeddings in records:
+                embeddings = decode_array(encoded_embeddings)
+                if embeddings.ndim != 2 or embeddings.shape[1] != self.num_spins:
+                    raise ValueError("Invalid cached embedding array.")
+                if not np.issubdtype(embeddings.dtype, np.integer):
+                    raise ValueError("Cached embeddings must contain integer labels.")
+                if len(embeddings) < min_number_of_embeddings:
+                    continue
+
+                selected = []
+                for index, row in enumerate(embeddings):
+                    if len(set(row)) != self.num_spins:
+                        continue
+                    if not all(qubit in hardware_graph for qubit in row):
+                        continue
+                    if not all(
+                        hardware_graph.has_edge(row[source], row[target])
+                        for source, target in self.edge_list
+                    ):
+                        continue
+
+                    selected.append(index)
+                    if (
+                        max_number_of_embeddings is not None
+                        and len(selected) >= max_number_of_embeddings
+                    ):
+                        break
+
+                if selected and len(selected) >= min_number_of_embeddings:
+                    all_emb_kept = len(selected) == len(embeddings)
+                    self.embedding_list = (embeddings if all_emb_kept else embeddings[selected])
+                    self.embedding_set_id = embedding_set_id if all_emb_kept else None
+                    return
+
+        raise FileNotFoundError("No cached set has enough usable embeddings.")
 
     def _save_orbits(self) -> None:
         """Save qubit and coupler orbits to disk."""
